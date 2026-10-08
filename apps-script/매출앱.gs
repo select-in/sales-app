@@ -17,30 +17,74 @@ var DR = {
   CACHE_KEY: 'drData_v2'
 };
 
-/* ───────── 데이터 API 진입점 ─────────
- * 앱 화면은 Cloudflare(sales-app)에 있고, 이 스크립트는 데이터(JSON)만 내려줍니다.
- * API 키가 맞는 요청에만 응답합니다. 키는 drSetupApiKey()를 한 번 실행해 만듭니다.
+/* ───────── 앱 API (POST) ─────────
+ * 앱 화면(GitHub Pages, select-in/sales-app)이 이 웹앱 주소로 요청합니다.
+ *  - {action:'login', password}  → 비밀번호가 맞으면 90일짜리 로그인 토큰 발급
+ *  - {action:'data', token, force} → 토큰이 유효하면 매출 데이터(JSON)
+ * 비밀번호·서명키는 '프로젝트 설정 > 스크립트 속성'에만 저장됩니다. 처음 1회 drSetup() 실행.
+ * (이 프로젝트에서 doPost는 이 파일에만 있어야 합니다)
  */
-function doGet(e) {
-  var p = (e && e.parameter) || {};
-  var key = PropertiesService.getScriptProperties().getProperty('API_KEY');
-  if (!key || p.key !== key) {
-    return ContentService.createTextOutput(JSON.stringify({ error: 'unauthorized' }))
-      .setMimeType(ContentService.MimeType.JSON);
+var DR_AUTH = { SESSION_DAYS: 90, MAX_FAIL: 10, LOCK_SEC: 900 };
+
+function doPost(e) {
+  var req = {};
+  try { req = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (x) {}
+  if (req.action === 'login') return drOut_(JSON.stringify(drLogin_(req.password)));
+  if (req.action === 'data') {
+    if (!drVerify_(req.token)) return drOut_(JSON.stringify({ error: 'login' }));
+    return drOut_(drData(req.force === true));
   }
-  return ContentService.createTextOutput(drData(p.force === '1'))
-    .setMimeType(ContentService.MimeType.JSON);
+  return drOut_(JSON.stringify({ error: 'bad request' }));
 }
 
-/** 한 번만 실행: API 키 생성 → 실행 로그에 나온 키를 Cloudflare 설정(GAS_KEY)에 붙여넣기 */
-function drSetupApiKey() {
+function drOut_(text) {
+  return ContentService.createTextOutput(text).setMimeType(ContentService.MimeType.JSON);
+}
+
+/** 처음 1회 실행: 서명키·앱 비밀번호 생성 + 10분 캐시 트리거 설치. 비밀번호는 실행 로그에 표시 */
+function drSetup() {
   var props = PropertiesService.getScriptProperties();
-  var key = props.getProperty('API_KEY');
-  if (!key) {
-    key = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');
-    props.setProperty('API_KEY', key);
+  if (!props.getProperty('DR_SECRET')) props.setProperty('DR_SECRET', drRandom_(48));
+  if (!props.getProperty('DR_PASSWORD')) props.setProperty('DR_PASSWORD', drRandom_(10));
+  drInstallWarmTrigger();
+  Logger.log('앱 비밀번호: ' + props.getProperty('DR_PASSWORD') +
+    '  (바꾸려면 프로젝트 설정 > 스크립트 속성의 DR_PASSWORD 값을 수정. 수정하면 기존 로그인은 모두 해제)');
+}
+
+function drRandom_(n) {
+  var abc = 'abcdefghjkmnpqrstuvwxyz23456789', s = '';
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + Utilities.getUuid() + Date.now());
+  while (s.length < n) {
+    for (var i = 0; i < bytes.length && s.length < n; i++) s += abc.charAt((bytes[i] + 256) % abc.length);
+    bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + s);
   }
-  Logger.log('API_KEY = ' + key);
+  return s;
+}
+
+function drSign_(msg) {
+  var p = PropertiesService.getScriptProperties();
+  var key = (p.getProperty('DR_SECRET') || '') + '|' + (p.getProperty('DR_PASSWORD') || '');
+  return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(msg, key)).replace(/=+$/, '');
+}
+
+function drLogin_(password) {
+  var cache = CacheService.getScriptCache();
+  var fails = Number(cache.get('drFail') || 0);
+  if (fails >= DR_AUTH.MAX_FAIL) return { error: '로그인 시도가 너무 많습니다. 15분 뒤 다시 시도하세요.' };
+  var real = PropertiesService.getScriptProperties().getProperty('DR_PASSWORD');
+  if (!real || typeof password !== 'string' || drSign_('pw:' + password) !== drSign_('pw:' + real)) {
+    cache.put('drFail', String(fails + 1), DR_AUTH.LOCK_SEC);
+    Utilities.sleep(800);
+    return { error: '비밀번호가 맞지 않습니다.' };
+  }
+  var exp = String(Date.now() + DR_AUTH.SESSION_DAYS * 864e5);
+  return { token: exp + '.' + drSign_(exp) };
+}
+
+function drVerify_(token) {
+  var parts = String(token || '').split('.');
+  if (parts.length !== 2 || Number(parts[0]) < Date.now()) return false;
+  return parts[1] === drSign_(parts[0]);
 }
 
 /** force=true면 캐시를 무시하고 시트를 새로 읽음 */

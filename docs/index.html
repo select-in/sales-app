@@ -4,9 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>셀렉트인 매출</title>
-<link rel="manifest" href="/manifest.webmanifest">
-<link rel="icon" href="/icon-192.png">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="robots" content="noindex, nofollow">
+<script src="config.js"></script>
 <meta name="theme-color" content="#1f3a5f">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -275,15 +277,23 @@ function setData(json, fromLocal){
   if(P.end>maxDay()) P.end=maxDay();
   show();
 }
+/* ───── 서버(Apps Script) 호출 ───── */
+var LS_TOKEN='drToken_v1';
+function api(body){
+  // text/plain 본문 → 브라우저 사전요청 없이 Apps Script로 바로 전송
+  return fetch(window.SALES_API,{method:'POST',body:JSON.stringify(body),redirect:'follow',cache:'no-store'})
+    .then(function(res){ if(!res.ok) throw new Error('HTTP '+res.status); return res.text(); });
+}
 function fetchData(force){
+  var token=null; try{ token=localStorage.getItem(LS_TOKEN); }catch(e){}
+  if(!token){ showLogin(); return; }
   syncing=true; updStamp();
-  fetch('/api/data'+(force?'?force=1':''),{credentials:'same-origin',cache:'no-store'})
-    .then(function(res){
-      return res.text().then(function(txt){
-        if(res.status===401){ showLogin(); throw null; }
-        if(!res.ok){ var m; try{ m=JSON.parse(txt).error; }catch(e){} throw new Error(m||('HTTP '+res.status)); }
-        return txt;
-      });
+  api({action:'data',token:token,force:!!force})
+    .then(function(txt){
+      var j; try{ j=JSON.parse(txt); }catch(e){ throw new Error('응답을 읽지 못했습니다'); }
+      if(j.error==='login'){ try{ localStorage.removeItem(LS_TOKEN); }catch(e){} syncing=false; showLogin(); throw null; }
+      if(j.error) throw new Error(j.error);
+      return txt;
     })
     .then(function(txt){ syncing=false; setData(txt,false); })
     .catch(function(e){
@@ -303,11 +313,12 @@ function showLogin(){
   $('lf').onsubmit=function(ev){
     ev.preventDefault();
     var btn=this.querySelector('button'); btn.disabled=true; $('lmsg').textContent='';
-    fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({password:$('pw').value})})
-      .then(function(res){ return res.json().then(function(j){ return {ok:res.ok,j:j}; }); })
-      .then(function(r){
+    api({action:'login',password:$('pw').value})
+      .then(function(txt){ return JSON.parse(txt); })
+      .then(function(j){
         btn.disabled=false;
-        if(!r.ok){ $('lmsg').textContent=r.j.error||'로그인 실패'; return; }
+        if(!j.token){ $('lmsg').textContent=j.error||'로그인 실패'; return; }
+        try{ localStorage.setItem(LS_TOKEN,j.token); }catch(e){}
         $('hdr').style.display='';
         $('app').innerHTML='<div id="loading">불러오는 중…</div>';
         fetchData(false);
@@ -317,8 +328,8 @@ function showLogin(){
   setTimeout(function(){ if($('pw')) $('pw').focus(); },50);
 }
 function logout(){
-  try{ localStorage.removeItem(LS_KEY); }catch(e){}
-  fetch('/api/logout',{method:'POST',credentials:'same-origin'}).finally(function(){ D=null; showLogin(); });
+  try{ localStorage.removeItem(LS_KEY); localStorage.removeItem(LS_TOKEN); }catch(e){}
+  D=null; showLogin();
 }
 function updStamp(){ $('stamp').textContent=(D?D.generatedAt+' 기준':'')+(syncing?' · 갱신 중…':''); }
 
@@ -466,7 +477,7 @@ $('reload').onclick=function(){ fetchData(true); };
 // 앱으로 다시 돌아오면(백그라운드 → 화면) 최신 데이터 받기
 document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='visible' && D && !syncing) fetchData(false); });
 
-if('serviceWorker' in navigator){ window.addEventListener('load',function(){ navigator.serviceWorker.register('/sw.js').catch(function(){}); }); }
+if('serviceWorker' in navigator){ window.addEventListener('load',function(){ navigator.serviceWorker.register('sw.js').catch(function(){}); }); }
 </script>
 </body>
 </html>

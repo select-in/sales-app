@@ -1,45 +1,32 @@
 # 셀렉트인 매출 앱
 
-셀렉트인 내부용 데일리 매출 앱 (홈 화면에 설치하는 웹앱).
+셀렉트인 내부용 데일리 매출 앱 (폰 홈 화면에 설치하는 웹앱).
 
 ```
-폰 앱 (public/)  ──로그인──▶  Cloudflare Pages Functions (functions/)  ──키──▶  Apps Script (apps-script/)  ──▶  데일리 매출판 시트
+폰 앱 (docs/, GitHub Pages)  ──비밀번호/토큰──▶  Apps Script '일일매출' 웹앱 (매출앱.gs)  ──▶  데일리 매출판 시트
 ```
 
-- **public/** — 앱 화면. 기간 설정·계산은 폰에서 처리, 직전 데이터는 폰에 저장해 즉시 표시
-- **functions/** — 로그인(비밀번호 → 90일 유지 쿠키)과 데이터 중계. 시트 API 키는 여기에만 있음
-- **apps-script/매출앱.gs** — 시트를 읽어 JSON으로 내려주는 데이터 API. Apps Script `일일매출` 프로젝트의 `매출앱.gs` 파일에만 붙여넣는 원본
+- **docs/** — 앱 화면. GitHub Pages가 이 폴더를 그대로 공개. 기간 설정·계산은 폰에서 처리, 직전 데이터는 폰에 저장해 즉시 표시
+  - `config.js` — Apps Script 웹앱 주소(`…/exec`). 비밀번호 없이는 데이터가 나가지 않으므로 공개돼도 됨
+- **apps-script/매출앱.gs** — 로그인 확인 + 시트 데이터 API. Apps Script `일일매출` 프로젝트의 `매출앱.gs` 파일 원본
   - 같은 프로젝트의 Code.gs·월말 메일.gs·월말정산.gs·과거채우기.gs(기존 자동화)는 건드리지 않음
-  - 모든 이름에 `dr` 접두어 사용. 이 프로젝트에서 `doGet`은 매출앱.gs에만 있어야 함
+  - 모든 이름에 `dr` 접두어. 이 프로젝트에서 `doPost`는 매출앱.gs에만 있어야 함
+  - 시트는 읽기만 함
+
+## 보안
+- 앱 비밀번호와 서명키는 Apps Script **스크립트 속성**(`DR_PASSWORD`, `DR_SECRET`)에만 저장. 코드·저장소에는 없음
+- 로그인하면 90일짜리 서명 토큰을 폰에 저장. 비밀번호를 바꾸면 모든 토큰 즉시 무효
+- 비밀번호 10회 연속 오류 시 15분간 로그인 차단
 
 ## 처음 설정 (1회)
-
-### 1. Apps Script (구글)
-1. Apps Script `일일매출` 프로젝트에서 **`매출앱.gs`만** `apps-script/매출앱.gs` 내용으로 교체, `SalesApp.html` 삭제 (Code.gs 등 다른 파일은 그대로)
-2. `drSetupApiKey` 실행 → 실행 로그의 `API_KEY = …` 값 복사
-3. `drInstallWarmTrigger` 1회 실행 (10분마다 캐시 미리 채움)
-4. 배포 → 새 배포 → 웹 앱 / 실행: 나 / 액세스: **모든 사용자** → 웹 앱 URL(`…/exec`) 복사
-   - 키 없는 요청에는 `unauthorized`만 응답합니다.
-
-### 2. Cloudflare Pages
-1. Workers & Pages → Create → Pages → Connect to Git → `select-in/sales-app`
-2. Build command: 비움 / Build output directory: `public`
-3. Settings → Variables and Secrets (Production)에 **Secret**으로 추가
-
-| 이름 | 값 |
-|---|---|
-| `APP_PASSWORD` | 앱 로그인 비밀번호 |
-| `SESSION_SECRET` | 아무 긴 무작위 문자열 |
-| `GAS_URL` | 1-4의 웹 앱 URL |
-| `GAS_KEY` | 1-2의 API_KEY |
-
-4. Deployments → 최신 배포 **Retry deployment** (변수 반영)
-
-### 3. 폰에 설치
-- iPhone: Safari로 접속 → 공유 → **홈 화면에 추가**
-- Android: Chrome으로 접속 → ⋮ → **앱 설치 / 홈 화면에 추가**
+1. Apps Script `일일매출` 프로젝트의 `매출앱.gs`를 `apps-script/매출앱.gs` 내용으로 교체
+2. `drSetup` 실행 → 실행 로그에 **앱 비밀번호** 표시 (10분 캐시 트리거도 함께 설치)
+3. 배포 → 새 배포 → 웹 앱 / 실행: 나 / 액세스: **모든 사용자** → `…/exec` 주소를 `docs/config.js`에 기록
+4. GitHub 저장소 Settings → Pages → Branch `main` / 폴더 `/docs`
+5. 폰에서 `https://select-in.github.io/sales-app/` 접속 → 홈 화면에 추가
 
 ## 운영
-- **수정**: main 브랜치에 push하면 1분 내 자동 배포, 앱은 다시 열면 반영
-- **비밀번호 변경**: `APP_PASSWORD` 변경 후 재배포 → 기존 로그인 전부 해제
-- **데이터 갱신 주기**: 시트 캐시 15분 + 서버 캐시 2분. 앱의 ↻ 버튼은 시트를 즉시 다시 읽음
+- **화면 수정**: main에 push → 1~2분 내 자동 반영
+- **매출앱.gs 수정**: Apps Script에 붙여넣고 저장 → 배포 관리 → 기존 배포 수정 → 새 버전 (주소 유지)
+- **비밀번호 변경**: 프로젝트 설정 → 스크립트 속성 → `DR_PASSWORD` 수정
+- **데이터 갱신**: 시트 캐시 최대 15분(10분마다 자동 갱신). 앱의 ↻ 버튼은 시트를 즉시 다시 읽음
