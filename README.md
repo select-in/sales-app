@@ -8,12 +8,14 @@
 
 - **public/** — 앱 화면. 기간 설정·계산은 폰에서 처리, 직전 데이터는 폰에 저장해 즉시 표시
 - **functions/** — 로그인(비밀번호 → 90일 유지 쿠키)과 데이터 중계. 시트 API 키는 여기에만 있음
-- **apps-script/Code.gs** — 시트를 읽어 JSON으로 내려주는 데이터 API (구글 Apps Script 프로젝트에 붙여넣는 원본)
+- **apps-script/매출앱.gs** — 시트를 읽어 JSON으로 내려주는 데이터 API. Apps Script `일일매출` 프로젝트의 `매출앱.gs` 파일에만 붙여넣는 원본
+  - 같은 프로젝트의 Code.gs·월말 메일.gs·월말정산.gs·과거채우기.gs(기존 자동화)는 건드리지 않음
+  - 모든 이름에 `dr` 접두어 사용. 이 프로젝트에서 `doGet`은 매출앱.gs에만 있어야 함
 
 ## 처음 설정 (1회)
 
 ### 1. Apps Script (구글)
-1. script.google.com의 `셀렉트인 매출앱` 프로젝트에서 `Code.gs`를 `apps-script/Code.gs` 내용으로 교체, `SalesApp` HTML 파일은 삭제
+1. Apps Script `일일매출` 프로젝트에서 **`매출앱.gs`만** `apps-script/매출앱.gs` 내용으로 교체, `SalesApp.html` 삭제 (Code.gs 등 다른 파일은 그대로)
 2. `drSetupApiKey` 실행 → 실행 로그의 `API_KEY = …` 값 복사
 3. `drInstallWarmTrigger` 1회 실행 (10분마다 캐시 미리 채움)
 4. 배포 → 새 배포 → 웹 앱 / 실행: 나 / 액세스: **모든 사용자** → 웹 앱 URL(`…/exec`) 복사
