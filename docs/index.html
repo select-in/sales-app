@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="robots" content="noindex, nofollow">
 <script src="config.js"></script>
-<meta name="theme-color" content="#1f3a5f">
+<meta name="theme-color" content="#0b4a35">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -17,11 +17,11 @@
 <style>
   :root{
     --bg:#f4f5f7; --card:#fff; --ink:#15171a; --sub:#6b7280; --line:#e6e8ec;
-    --brand:#1f3a5f; --accent:#2f6fed; --up:#d93a3a; --down:#2563eb; --soft:#eef3fd; --warn:#b45309; --warnbg:#fff7e6;
+    --brand:#0b4a35; --accent:#178a62; --up:#d93a3a; --down:#2563eb; --soft:#e8f5ef; --warn:#b45309; --warnbg:#fff7e6;
   }
   @media (prefers-color-scheme: dark){
     :root{ --bg:#0f1115; --card:#181b21; --ink:#eef0f3; --sub:#9aa3af; --line:#2a2f37;
-      --brand:#9db8e0; --accent:#6d9bff; --up:#ff6b6b; --down:#6ea8ff; --soft:#1e2633; --warn:#f5b454; --warnbg:#2a2214; }
+      --brand:#7fd1ae; --accent:#3fbf8c; --up:#ff6b6b; --down:#6ea8ff; --soft:#16271f; --warn:#f5b454; --warnbg:#2a2214; }
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Noto Sans KR",sans-serif;font-size:15px;line-height:1.4}
@@ -32,10 +32,22 @@
   .login input{width:100%;height:48px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);padding:0 14px;font-size:16px;font-family:inherit}
   .login button{width:100%;height:48px;margin-top:10px;border:none;border-radius:12px;background:var(--brand);color:#fff;font-size:16px;font-weight:600;font-family:inherit}
   .login .msg{color:var(--up);font-size:13px;min-height:18px;margin-top:10px}
+  .search{position:relative;margin-top:8px}
+  .search input{width:100%;height:38px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);padding:0 38px 0 12px;font-size:14px;font-family:inherit}
+  .search input.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--soft)}
+  .search button{position:absolute;right:4px;top:4px;width:30px;height:30px;border:none;background:none;color:var(--sub);font-size:14px;display:none}
+  .search input.on + button{display:block}
+  .search input::-webkit-search-cancel-button{-webkit-appearance:none;display:none}
+  .search input::-webkit-calendar-picker-indicator{opacity:.4}
+  .filt{display:flex;justify-content:space-between;align-items:center;background:var(--soft);color:var(--accent);border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:12px}
+  .filt button{border:none;background:none;color:var(--accent);font-weight:600;font-family:inherit;font-size:13px}
+  .pl.tap{cursor:pointer}
   .foot{text-align:center;padding:8px 0 calc(8px + env(safe-area-inset-bottom))}
   .foot button{border:none;background:none;color:var(--sub);font-size:12px;font-family:inherit;text-decoration:underline}
   .top{display:flex;justify-content:space-between;align-items:center}
-  h1{margin:0;font-size:18px;color:var(--brand);letter-spacing:-.3px}
+  h1{margin:0;font-size:18px;color:var(--brand);letter-spacing:-.3px;display:flex;align-items:center;gap:8px}
+  .logo{width:28px;height:28px;border-radius:7px}
+  .login .logo{width:72px;height:72px;border-radius:18px;margin-bottom:14px}
   .stamp{font-size:12px;color:var(--sub)}
   .chips{display:flex;gap:6px;margin-top:10px;overflow-x:auto;scrollbar-width:none}
   .chips::-webkit-scrollbar{display:none}
@@ -95,7 +107,7 @@
 </head>
 <body>
 <header id="hdr">
-  <div class="top"><h1>셀렉트인 매출</h1><span class="stamp" id="stamp"></span></div>
+  <div class="top"><h1><img src="icon-192.png" alt="" class="logo">셀렉트인 매출</h1><span class="stamp" id="stamp"></span></div>
   <div class="chips" id="chips">
     <button class="chip" data-p="day">하루</button>
     <button class="chip" data-p="7">최근 7일</button>
@@ -111,6 +123,11 @@
     <input type="date" id="endIn" aria-label="종료일">
     <button id="nextBtn" aria-label="다음">›</button>
     <button id="reload" aria-label="새로고침">↻</button>
+  </div>
+  <div class="search">
+    <input type="search" id="chq" list="chlist" placeholder="채널 검색 (예: 에이블리, 크림, 리셀, 겐더샵, 인플루언서명)" autocomplete="off" enterkeyhint="search">
+    <button id="chx" aria-label="검색 지우기">✕</button>
+    <datalist id="chlist"></datalist>
   </div>
 </header>
 <main id="app"><div id="loading">불러오는 중…</div></main>
@@ -130,7 +147,12 @@ function sumRows(rows){
   return s;
 }
 
-function buildReport(D, start, end){
+// 채널 검색: 띄어쓰기로 여러 단어 → 모두 포함된 행만 (플랫폼·채널그룹·법인 기준)
+function qTokens(q){ return String(q||'').toLowerCase().split(/\s+/).filter(Boolean); }
+function hit(text,toks){ text=String(text).toLowerCase(); for(var i=0;i<toks.length;i++) if(text.indexOf(toks[i])<0) return false; return true; }
+
+function buildReport(D, start, end, q){
+  var toks=qTokens(q);
   var today=D.today, n=days(start,end);
   var pEnd=shift(start,-1), pStart=shift(start,-n);
   var mStart=end.slice(0,8)+'01';
@@ -144,6 +166,11 @@ function buildReport(D, start, end){
     if(inR(r[0],mStart,end)) mtd.push(r);
     if(r[1]==='리셀' && r[0]>lastResell) lastResell=r[0];
   });
+  if(toks.length){
+    var keep=function(r){ return hit(r[3]+' '+r[1]+' '+r[2],toks); };
+    cur=cur.filter(keep); prev=prev.filter(keep); mtd=mtd.filter(keep);
+    for(var k in byDay) byDay[k]=byDay[k].filter(keep);
+  }
   var by=function(rows,i,v){ return rows.filter(function(r){ return r[i]===v; }); };
 
   // 법인별
@@ -177,7 +204,7 @@ function buildReport(D, start, end){
 
   // 입금예정 (오늘부터 7일, 입금확인 제외)
   var payAmt={};
-  D.daily.forEach(function(r){ if(r[9] && !r[10]) payAmt[r[9]]=(payAmt[r[9]]||0)+r[7]; });
+  D.daily.forEach(function(r){ if(r[9] && !r[10] && (!toks.length || hit(r[3]+' '+r[1]+' '+r[2],toks))) payAmt[r[9]]=(payAmt[r[9]]||0)+r[7]; });
   var payments=[];
   for(var j=0;j<7;j++){ var pd=shift(today,j); payments.push({d:pd,wd:wd(pd),amount:payAmt[pd]||0}); }
 
@@ -185,6 +212,7 @@ function buildReport(D, start, end){
   var gmap={};
   D.gonggu.forEach(function(g){
     if(!inR(g[0],start,end)) return;
+    if(toks.length && !hit(g[1]+' '+g[2]+' 공구 스마트스토어',toks)) return;
     var o=gmap[g[1]]||(gmap[g[1]]={who:g[1],items:[],sales:0,cnt:0});
     if(g[2] && o.items.indexOf(g[2])<0) o.items.push(g[2]);
     o.sales+=g[4]; o.cnt+=g[3];
@@ -199,7 +227,7 @@ function buildReport(D, start, end){
     corps:corps, groups:groups, platforms:platforms, trend:trend, payments:payments, gonggu:gonggu,
     gongguSales:gonggu.reduce(function(a,g){ return a+g.sales; },0),
     sabangMissing:n===1 && total.sales>0 && !cur.some(function(r){ return r[1]==='사방넷'; }),
-    lastResell:lastResell,
+    lastResell:lastResell, q:toks.join(' '),
     unknownCorpSales:sumRows(by(cur,2,'확인필요')).sales,
     live:D.live, generatedAt:D.generatedAt
   };
@@ -208,7 +236,7 @@ function buildReport(D, start, end){
 
 <script>
 var R=null, D=null, platMode='range', platAll=false, syncing=false;
-var P={mode:'day', start:'', end:''}, userNav=false;
+var P={mode:'day', start:'', end:''}, userNav=false, Q='';
 var LS_KEY='drData_v2', LS_P='drPeriod_v1';
 var $=function(id){ return document.getElementById(id); };
 var won=function(n){ return Math.round(n||0).toLocaleString('ko-KR'); };
@@ -260,7 +288,8 @@ function syncControls(){
 function show(){
   if(P.start>P.end){ var t=P.start; P.start=P.end; P.end=t; }
   syncControls();
-  R=buildReport(D,P.start,P.end);
+  R=buildReport(D,P.start,P.end,Q);
+  fillChannels();
   render();
   lsSet(LS_P,P);
 }
@@ -307,7 +336,7 @@ function fetchData(force){
 /* ───── 로그인 ───── */
 function showLogin(){
   $('hdr').style.display='none';
-  $('app').innerHTML='<div class="login"><h2>셀렉트인 매출</h2><p>앱 비밀번호를 입력하세요</p>'
+  $('app').innerHTML='<div class="login"><img src="icon-192.png" alt="" class="logo"><h2>셀렉트인 매출</h2><p>앱 비밀번호를 입력하세요</p>'
     +'<form id="lf"><input type="password" id="pw" autocomplete="current-password" placeholder="비밀번호">'
     +'<button type="submit">로그인</button><div class="msg" id="lmsg"></div></form></div>';
   $('lf').onsubmit=function(ev){
@@ -345,8 +374,10 @@ function render(){
   if(R.lastResell && R.end>R.lastResell) h+='<div class="warn">ℹ 리셀(크림·포이즌)은 '+md(R.lastResell)+'까지만 반영돼 있습니다. 이후 매출은 주간보고 반영 후 표시됩니다.</div>';
   if(R.unknownCorpSales) h+='<div class="warn">⚠ 법인 확인필요 매출 '+won(R.unknownCorpSales)+'원 — 설정 탭 확인</div>';
 
+  if(R.q) h='<div class="filt"><span>🔎 \''+esc(Q.trim())+'\' 채널만 집계 중</span><button onclick="setQ(\'\')">전체 보기</button></div>'+h;
+
   var L=R.live;
-  if(L && L.isToday){
+  if(L && L.isToday && !R.q){
     h+='<div class="card live"><div class="label"><span>오늘 실시간 · '+md(R.today)+'</span><span>사방넷 '+esc(L.updSabang)+' · 스토어 '+esc(L.updStore)+'</span></div>'
       +'<div class="big">'+won(L.sales)+'<small>원</small></div>'
       +'<div class="row mini" style="margin-top:10px">'
@@ -443,12 +474,13 @@ function renderPlats(){
   var mx=list.length?list[0][key]:1, showL=platAll?list:list.slice(0,8), h='';
   if(!list.length) h='<div class="empty">매출 없음</div>';
   showL.forEach(function(x){
-    h+='<div class="pl"><div class="t"><span>'+esc(x.plat)+'<span class="c">'+esc(x.corp)+'</span></span><b>'+won(x[key])+'</b></div>'
+    h+='<div class="pl tap" data-q="'+esc(x.plat+' '+x.corp)+'"><div class="t"><span>'+esc(x.plat)+'<span class="c">'+esc(x.corp)+'</span></span><b>'+won(x[key])+'</b></div>'
       +'<div class="track"><i style="width:'+(x[key]/mx*100)+'%"></i></div></div>';
   });
   if(list.length>8) h+='<button class="more" id="moreBtn">'+(platAll?'접기':'전체 '+list.length+'개 보기')+'</button>';
   $('plats').innerHTML=h;
   if($('moreBtn')) $('moreBtn').onclick=function(){ platAll=!platAll; renderPlats(); };
+  Array.prototype.forEach.call(document.querySelectorAll('.pl.tap'),function(el){ el.onclick=function(){ setQ(el.dataset.q); window.scrollTo(0,0); }; });
 }
 
 /* ───── 이벤트 ───── */
@@ -465,6 +497,20 @@ $('endIn').onchange=function(){ if(!D||!this.value) return; userNav=true; P.mode
 $('prevBtn').onclick=function(){ if(D){ userNav=true; stepPeriod(-1); show(); } };
 $('nextBtn').onclick=function(){ if(D){ userNav=true; stepPeriod(1); show(); } };
 $('reload').onclick=function(){ fetchData(true); };
+
+/* ───── 채널 검색 ───── */
+function setQ(v){ Q=v||''; $('chq').value=Q; $('chq').classList.toggle('on',!!Q.trim()); if(D) show(); }
+var qTimer=null;
+$('chq').oninput=function(){ var v=this.value; this.classList.toggle('on',!!v.trim()); clearTimeout(qTimer); qTimer=setTimeout(function(){ Q=v; if(D) show(); },200); };
+$('chx').onclick=function(){ setQ(''); };
+var chFilled='';
+function fillChannels(){
+  if(!D || chFilled===D.generatedAt) return; chFilled=D.generatedAt;
+  var set={};
+  D.daily.forEach(function(r){ if(r[3]) set[r[3]]=1; if(r[1]) set[r[1]]=1; if(r[2]) set[r[2]]=1; });
+  D.gonggu.forEach(function(g){ if(g[1]) set[g[1]]=1; });
+  $('chlist').innerHTML=Object.keys(set).sort().map(function(k){ return '<option value="'+esc(k)+'">'; }).join('');
+}
 
 /* ───── 시작: 폰에 저장된 데이터로 즉시 표시 → 뒤에서 최신 데이터 받기 ───── */
 (function(){
