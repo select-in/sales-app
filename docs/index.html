@@ -118,6 +118,17 @@
   .empty{color:var(--sub);font-size:13px;padding:6px 0}
   #loading{text-align:center;color:var(--sub);padding:60px 0}
   .err{color:var(--up)}
+  main{padding-bottom:calc(84px + env(safe-area-inset-bottom))}
+  .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:6;display:flex;background:var(--card);border-top:1px solid var(--line);padding:6px 8px calc(6px + env(safe-area-inset-bottom))}
+  .tabbar button{flex:1;border:none;background:none;color:var(--sub);font-family:inherit;font-size:11px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 0;border-radius:10px}
+  .tabbar button b{font-size:19px;line-height:1;font-weight:400}
+  .tabbar button.on{color:var(--brand);font-weight:700;background:var(--soft)}
+  .al{display:flex;gap:8px;margin-bottom:12px}
+  .al a{flex:1;background:var(--warnbg);color:var(--warn);border-radius:12px;padding:10px 12px;font-size:13px;text-decoration:none}
+  .al a b{display:block;font-size:17px}
+  .tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 6px;border-radius:6px;background:var(--soft);color:var(--accent);margin-left:4px;vertical-align:1px}
+  .tag.gray{background:var(--bg);color:var(--sub)} .tag.red{background:var(--warnbg);color:var(--up)}
+  .col{margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.25)}
 </style>
 </head>
 <body>
@@ -260,6 +271,9 @@ function buildReport(D, start, end, q){
 var GLABEL={'스마트스토어':'스토어팜','도소매':'도매'}, openGroups={};
 var R=null, D=null, platMode='range', platAll=false, platCorp='', syncing=false;
 var P={mode:'day', start:'', end:''}, userNav=false, Q='';
+var TABS=[['home','🏠','통합'],['sum','📊','요약'],['ch','🏪','채널'],['gb','🤝','공구'],['pay','💰','입금']];
+var TAB=(function(){ try{ return localStorage.getItem('drTab_v1')||'home'; }catch(e){ return 'sum'; } })();
+function setTab(t){ TAB=t; try{ localStorage.setItem('drTab_v1',t); }catch(e){} render(); window.scrollTo(0,0); }
 var LS_KEY='drData_v2', LS_P='drPeriod_v1';
 var $=function(id){ return document.getElementById(id); };
 var won=function(n){ return Math.round(n||0).toLocaleString('ko-KR'); };
@@ -391,7 +405,9 @@ function updStamp(){
 
 /* ───── 화면 ───── */
 function render(){
-  var t=R.total, p=R.prevTotal, m=R.mtd, h='', single=R.n===1;
+  var t=R.total, p=R.prevTotal, m=R.mtd, h='', single=R.n===1, S={home:'',sum:'',ch:'',gb:'',pay:''};
+  var tabs=TABS.filter(function(x){ return x[0]!=='pay' || D.role!=='share'; });
+  if(!tabs.some(function(x){return x[0]===TAB;})) TAB='home';
   var title = single ? md(R.end)+'('+wd(R.end)+') 매출' : md(R.start)+' ~ '+md(R.end)+' 매출 ('+R.n+'일)';
   var cmpLabel = single ? '전일' : '직전 '+R.n+'일';
   updStamp();
@@ -402,17 +418,24 @@ function render(){
   if(R.unknownCorpSales) h+='<div class="warn">⚠ 사업장(법인) 확인필요 매출 '+won(R.unknownCorpSales)+'원 — 설정 탭 확인</div>';
 
   if(R.q) h='<div class="filt"><span>🔎 \''+esc(Q.trim())+'\' 채널만 집계 중</span><button onclick="setQ(\'\')">전체 보기</button></div>'+h;
+  var top=h; h='';
 
   var L=R.live;
   if(L && L.isToday && !R.q){
-    h+='<div class="card live"><div class="label"><span>오늘 실시간 · '+md(R.today)+'</span><span>사방넷 '+esc(L.updSabang)+' · 스토어 '+esc(L.updStore)+'</span></div>'
+    S.home+='<div class="card live"><div class="label"><span>오늘 실시간 · '+md(R.today)+'</span><span>사방넷 '+esc(L.updSabang)+' · 스토어 '+esc(L.updStore)+'</span></div>'
       +'<div class="big">'+won(L.sales)+'<small>원</small></div>'
       +'<div class="row mini" style="margin-top:10px">'
       +'<div><div class="k">겐더샵</div><div class="v">'+man(L.gs)+'</div></div>'
       +'<div><div class="k">셀렉트인</div><div class="v">'+man(L.si)+'</div></div>'
       +'<div><div class="k">주문</div><div class="v">'+won(L.cnt)+'건</div></div>'
-      +'<div><div class="k">발송</div><div class="v">'+man(L.shipSales)+'</div></div></div></div>';
+      +'<div><div class="k">발송</div><div class="v">'+man(L.shipSales)+'</div></div></div>'
+      +(L.colQty!=null?'<div class="row mini col">'
+        +'<div><div class="k">수집 수량 (사방넷)</div><div class="v">'+won(L.colQty)+'개</div></div>'
+        +'<div><div class="k">겐더샵</div><div class="v">'+won(L.colGs)+'개</div></div>'
+        +'<div><div class="k">셀렉트인</div><div class="v">'+won(L.colSi)+'개</div></div></div>':'')
+      +'</div>';
   }
+  S.home+=homeHtml();
 
   h+='<div class="card"><div class="label"><span>'+title+'</span>'+chg(t.sales,p.sales,cmpLabel)+'</div>'
     +'<div class="big">'+won(t.sales)+'<small>원</small></div>'
@@ -432,6 +455,7 @@ function render(){
       +'<div><div class="k">주문</div><div class="v">'+won(m.cnt)+'건</div></div></div></div>';
   }
 
+  S.sum+=h; h='';
   h+='<div class="card"><h2>사업장별 <small>'+cmpLabel+' 대비</small></h2>';
   R.corps.forEach(function(c){
     h+='<div class="item"><div><div class="n">'+esc(c.name)+'</div><div class="s">'+won(c.cnt)+'건 · 이익 '+man(c.profit)+' · '+pct(c.margin)+'</div></div>'
@@ -454,6 +478,7 @@ function render(){
   });
   h+='</div>';
 
+  S.ch+=h; h='';
   var mx=Math.max.apply(null,R.trend.map(function(x){return x.sales;}).concat([1]));
   var every=Math.ceil(R.trend.length/14);
   h+='<div class="card"><h2>일별 매출 <small>막대를 누르면 상세 · 두 번 누르면 그날로</small></h2><div class="chart">';
@@ -463,8 +488,10 @@ function render(){
   });
   h+='</div><div class="tip" id="tip">'+tipText(R.trend[R.trend.length-1])+'</div></div>';
 
+  S.sum+=h; h='';
   h+='<div class="card"><h2>플랫폼별<span class="seg"><button data-m="range" class="'+(platMode==='range'?'on':'')+'">선택 기간</button><button data-m="mtd" class="'+(platMode==='mtd'?'on':'')+'">'+R.end.slice(5,7)+'월 누적</button></span></h2><div class="ptabs" id="ptabs"></div><div id="plats"></div></div>';
 
+  S.ch+=h; h='';
   h+='<div class="card"><h2>공구 · 인플루언서 <small>기간 합계 '+man(R.gongguSales)+'</small></h2>';
   if(!R.gonggu.length) h+='<div class="empty">선택한 기간에 공구 매출 없음</div>';
   R.gonggu.forEach(function(g){
@@ -473,6 +500,7 @@ function render(){
   });
   h+='</div>';
 
+  S.gb+=h; h='';
   if(D.role!=='share'){
   var payTotal=R.payments.reduce(function(a,x){return a+x.amount;},0);
   h+='<div class="card"><h2>입금예정 <small>오늘부터 7일 · 합계 '+man(payTotal)+'</small></h2>';
@@ -481,10 +509,14 @@ function render(){
   });
   h+='</div>';
   }
+  S.pay+=h; h='';
+  h=top+(S[TAB]||'');
   h+='<div class="foot"><button onclick="logout()">로그아웃</button></div>';
+  h+='<nav class="tabbar">'+tabs.map(function(x){ return '<button data-t="'+x[0]+'" class="'+(TAB===x[0]?'on':'')+'"><b>'+x[1]+'</b>'+x[2]+'</button>'; }).join('')+'</nav>';
 
   $('app').innerHTML=h;
-  renderPlats();
+  Array.prototype.forEach.call(document.querySelectorAll('.tabbar button'),function(b){ b.onclick=function(){ setTab(b.dataset.t); }; });
+  if($('ptabs')) renderPlats();
   Array.prototype.forEach.call(document.querySelectorAll('details.grp'),function(d){
     d.ontoggle=function(){ openGroups[d.dataset.g]=d.open; };
   });
@@ -504,6 +536,56 @@ function render(){
   });
 }
 
+function ddiff(a,b){ return days(a,b)-1; }
+function homeHtml(){
+  var h='', T=D.today, adm=D.role!=='share', A=D.alerts;
+  if(adm && A && (A.neg||A.noCost)){
+    h+='<div class="al">';
+    if(A.neg) h+='<a><span>역마진 상품</span><b>'+A.neg+'개</b><small>손해 '+man(-A.negLoss)+'</small></a>';
+    if(A.noCost) h+='<a><span>원가 미등록</span><b>'+A.noCost+'개</b><small>사방넷 원가 입력 필요</small></a>';
+    h+='</div>';
+  }
+  var PL=D.plan, rows=(PL&&PL.rows)||[];
+  if(PL && PL.error) h+='<div class="warn">공구 일정 시트를 읽지 못했습니다 ('+esc(PL.error)+')</div>';
+  var live=rows.filter(function(r){ return r[2].indexOf('취소')<0 && r[1]>=T && r[0]<=shift(T,7); });
+  h+='<div class="card"><h2>이번 주 공구 <small>오늘~7일 · '+live.length+'건</small></h2>';
+  if(!live.length) h+='<div class="empty">예정된 공구 없음</div>';
+  live.forEach(function(r){
+    var on=r[0]<=T, tag=on?'<span class="tag">진행중 · '+(ddiff(T,r[1])?'D-'+ddiff(T,r[1]):'오늘 마감')+'</span>':'<span class="tag gray">D-'+ddiff(T,r[0])+'</span>';
+    if(r[2].indexOf('미확정')>=0) tag+='<span class="tag red">미확정</span>';
+    h+='<div class="item"><div><div class="n">'+esc(r[4]||r[3])+tag+'</div><div class="s">'+esc(r[5])+' · '+md(r[0])+'~'+md(r[1])+'</div></div></div>';
+  });
+  h+='</div>';
+  var ym=T.slice(0,7), mon=rows.filter(function(r){ return r[0].slice(0,7)===ym && r[2].indexOf('확정')>=0 && r[2].indexOf('미확정')<0; });
+  if(adm){
+    var ms=mon.reduce(function(a,r){return a+r[6];},0), mp=mon.reduce(function(a,r){return a+r[7];},0);
+    h+='<div class="card"><div class="label"><span>'+(+T.slice(5,7))+'월 공구 (확정 '+mon.length+'건)</span></div><div class="row mini">'
+      +'<div><div class="k">공구 매출</div><div class="v">'+man(ms)+'</div></div>'
+      +'<div><div class="k">셀렉트인 수익</div><div class="v">'+man(mp)+'</div></div>'
+      +'<div><div class="k">남은 공구</div><div class="v">'+mon.filter(function(r){return r[1]>=T;}).length+'건</div></div></div>'
+      +'<div class="label" style="margin:8px 0 0">매출·수익은 정산 시트에 입력된 것만 합산</div></div>';
+    var due=rows.filter(function(r){ return r[2].indexOf('확정')>=0 && r[2].indexOf('미확정')<0 && r[1]<T && r[8]!=='완료'; });
+    h+='<div class="card"><h2>정산 확인 필요 <small>계산서 미완료 '+due.length+'건</small></h2>';
+    if(!due.length) h+='<div class="empty">없음 👍</div>';
+    due.slice(0,8).forEach(function(r){
+      h+='<div class="item"><div><div class="n">'+esc(r[3])+'</div><div class="s">'+md(r[1])+' 종료 · '+ddiff(r[1],T)+'일 지남'+(r[9]?' · 정산일 '+esc(r[9]):'')+'</div></div><div class="r"><div class="n">'+(r[6]?man(r[6]):'-')+'</div></div></div>';
+    });
+    if(due.length>8) h+='<div class="empty">외 '+(due.length-8)+'건 — 정산 시트 확인</div>';
+    h+='</div>';
+  }
+  var O=D.orders, ors=(O&&O.rows)||[];
+  if(O && O.error) h+='<div class="warn">오더 시트를 읽지 못했습니다 ('+esc(O.error)+')</div>';
+  var soon=ors.filter(function(r){ return r[7] && r[7]<=shift(T,45); });
+  h+='<div class="card"><h2>입고 예정 <small>45일 내·지연 '+soon.length+'건'+(O&&O.reqPending?' · 요청 미처리 '+O.reqPending:'')+'</small></h2>';
+  if(!soon.length) h+='<div class="empty">가까운 입고 예정 없음</div>';
+  soon.slice(0,10).forEach(function(r){
+    var late=r[7]<T;
+    h+='<div class="item"><div><div class="n">'+esc(r[2]||r[3])+(late?'<span class="tag red">쉬핑일 지남</span>':'')+(r[1]?'<span class="tag gray">'+esc(r[1])+'</span>':'')+'</div><div class="s">'+esc(r[3])+'</div></div>'
+      +'<div class="r"><div class="n">'+esc(r[4]||'-')+'</div><div class="s">'+esc(r[6])+'</div></div></div>';
+  });
+  h+='</div>';
+  return h;
+}
 function tipText(x){
   return '<b style="color:var(--ink)">'+md(x.d)+'('+x.wd+')</b> 매출 '+won(x.sales)+'원 · 이익 '+man(x.profit)+' · '+won(x.cnt)+'건';
 }
