@@ -597,11 +597,14 @@ function homeHtml(){
       +'<div><div class="k">셀렉트인 수익</div><div class="v">'+man(mp)+'</div></div>'
       +'<div><div class="k">남은 공구</div><div class="v">'+mon.filter(function(r){return r[1]>=T;}).length+'건</div></div></div>'
       +'<div class="label" style="margin:8px 0 0">매출·수익은 정산 시트에 입력된 것만 합산</div></div>';
-    var due=rows.filter(function(r){ return r[2].indexOf('확정')>=0 && r[2].indexOf('미확정')<0 && r[1]<T && r[8]!=='완료'; });
-    h+='<div class="card"><h2>정산 확인 필요 <small>계산서 미완료 '+due.length+'건</small></h2>';
+    var due=rows.filter(function(r){ return r[2].indexOf('확정')>=0 && r[2].indexOf('미확정')<0 && r[1]<T && r[8]!=='완료'; })
+      .map(function(r){ var dl=shift(r[1],14); return {r:r,dl:dl,left:ddiff(T,dl)}; }).sort(function(a,b){ return a.dl<b.dl?-1:1; });
+    var over=due.filter(function(x){return x.left<0;}).length;
+    h+='<div class="card"><h2>정산서 제작 <small>공구 종료 후 14일 내 · 대기 '+due.length+'건'+(over?' · <b class="up">기한 지남 '+over+'</b>':'')+'</small></h2>';
     if(!due.length) h+='<div class="empty">없음 👍</div>';
-    due.slice(0,8).forEach(function(r){
-      h+='<div class="item"><div><div class="n">'+esc(r[3])+'</div><div class="s">'+md(r[1])+' 종료 · '+ddiff(r[1],T)+'일 지남'+(r[9]?' · 정산일 '+esc(r[9]):'')+'</div></div><div class="r"><div class="n">'+(r[6]?man(r[6]):'-')+'</div></div></div>';
+    due.slice(0,8).forEach(function(x){
+      var r=x.r, tag=x.left<0?'<span class="tag red">'+(-x.left)+'일 지남</span>':x.left<=3?'<span class="tag red">D-'+x.left+'</span>':'<span class="tag gray">D-'+x.left+'</span>';
+      h+='<div class="item"><div><div class="n">'+esc(r[3])+tag+'</div><div class="s">'+md(r[1])+' 종료 · 기한 '+md(x.dl)+(r[9]?' · 정산일 '+esc(r[9]):'')+'</div></div><div class="r"><div class="n">'+(r[6]?man(r[6]):'-')+'</div></div></div>';
     });
     if(due.length>8) h+='<div class="empty">외 '+(due.length-8)+'건 — 정산 시트 확인</div>';
     h+='</div>';
