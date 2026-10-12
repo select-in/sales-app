@@ -1,6 +1,6 @@
 // 앱 화면은 항상 최신본을 먼저 받고(수정 즉시 반영), 오프라인일 때만 저장본 사용.
 // 매출 데이터(Apps Script)는 다른 주소라 여기서 다루지 않습니다.
-const CACHE = 'sales-app-shell-v3';
+const CACHE = 'sales-app-shell-v4';
 const SHELL = ['./', 'index.html', 'config.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
