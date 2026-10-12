@@ -14,7 +14,10 @@ var DR = {
   MAIN_CORPS: ['겐더샵', '셀렉트인'],
   KEEP_DAYS: 120,      // 앱으로 내려보낼 기간(일). 입금 예정이 남은 행은 기간과 상관없이 포함
   CACHE_SEC: 900,      // 서버 캐시 유지 시간(초)
-  CACHE_KEY: 'drData_v2'
+  CACHE_KEY: 'drData_v2',
+  // 통합 탭용 외부 시트 (읽기만)
+  GB_PLAN_ID: '1rHbpjZa12ZDfw2OQXLSdd0QexqqXrv2xxjTo0egYtOs',   // 정산(일정) 공동구매 — '일정' 탭
+  ORDER_ID: '1HdpGTQ_5BXBAPRPYcFuL32xdzfCaQ6MYWf9xyFjwMGU'      // MASTER_오더 — '마스터'·'오더요청' 탭
 };
 
 /* ───────── 앱 API (POST) ─────────
@@ -59,6 +62,8 @@ function drForShare_(json) {
     var x = r.slice(); x[7] = 0; x[9] = ''; x[10] = 0; return x;
   });
   if (d.tax) d.tax = d.tax.map(function (t) { var x = t.slice(); x[1] = ''; return x; });
+  if (d.plan && d.plan.rows) d.plan.rows = d.plan.rows.map(function (r) { var x = r.slice(); x[6] = 0; x[7] = 0; x[8] = ''; x[9] = ''; return x; });
+  delete d.alerts;
   return JSON.stringify(d);
 }
 
@@ -256,8 +261,75 @@ function drCollect_() {
     mainCorps: DR.MAIN_CORPS,
     daily: daily,
     gonggu: gonggu,
-    live: drLive_(ss, today)
+    live: drLive_(ss, today),
+    alerts: drAlerts_(ss),
+    plan: drSafe_(function () { return drGbPlan_(today); }),
+    orders: drSafe_(function () { return drOrders_(today); })
   };
+}
+
+function drSafe_(fn) { try { return fn(); } catch (e) { return { error: String(e.message || e) }; } }
+
+/** 매출판 '역마진상품'·'원가미등록' 개수 */
+function drAlerts_(ss) {
+  var o = { neg: 0, negLoss: 0, noCost: 0 };
+  var a = ss.getSheetByName('역마진상품');
+  if (a && a.getLastRow() >= 4) a.getRange(4, 1, a.getLastRow() - 3, 8).getValues().forEach(function (r) {
+    if (String(r[2]).trim()) { o.neg++; o.negLoss += drNum_(r[7]); }
+  });
+  var b = ss.getSheetByName('원가미등록');
+  if (b && b.getLastRow() >= 4) b.getRange(4, 1, b.getLastRow() - 3, 9).getValues().forEach(function (r) {
+    if (String(r[1]).trim() && r[8] !== true && String(r[8]).toUpperCase() !== 'TRUE') o.noCost++;
+  });
+  return o;
+}
+
+/** 공구 일정: 지난달 1일 이후 시작 ~ 앞으로. [시작, 종료, 구분, 제목, 셀러, 브랜드, 매출, 셀렉트인수익, 계산서발행, 셀러정산일] */
+function drGbPlan_(today) {
+  var sh = SpreadsheetApp.openById(DR.GB_PLAN_ID).getSheetByName('일정');
+  if (!sh || sh.getLastRow() < 4) return { rows: [] };
+  var v = sh.getRange(4, 1, sh.getLastRow() - 3, 27).getValues();
+  var p = today.split('-'), from = drAddDays_(p[0] + '-' + p[1] + '-01', -1).slice(0, 8) + '01';
+  var rows = [];
+  v.forEach(function (r) {
+    var ym = String(r[0]).replace(/\D/g, ''), per = String(r[1]).replace(/\s/g, ''), st = String(r[2]).trim();
+    var m = per.match(/^(\d{2})(\d{2})-(\d{2})(\d{2})$/);
+    if (ym.length !== 6 || !m || !st) return;
+    var y = +ym.slice(0, 4), sm = +m[1], em = +m[3];
+    if (sm < +ym.slice(4) - 6) y++;                       // 12월 행에 1월 일정 등
+    var s = y + '-' + m[1] + '-' + m[2], e = (em < sm ? y + 1 : y) + '-' + m[3] + '-' + m[4];
+    if (s < from) return;
+    rows.push([s, e, st, String(r[3]).trim(), String(r[4]).trim(), String(r[6]).trim(),
+      drNum_(r[13]), drNum_(r[26]), String(r[25]).trim(), r[18] instanceof Date ? Utilities.formatDate(r[18], DR.TZ, 'M/d') : String(r[18]).trim()]);
+  });
+  rows.sort(function (a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0; });
+  return { rows: rows };
+}
+
+/** 쉬핑일 문구 → 비교용 날짜 ('2026년 10월 중순' → 2026-10-15) */
+function drShipKey_(t) {
+  t = String(t || '');
+  var d = drYmd_(t); if (d) return d;
+  var m = t.match(/(\d{4})\s*년\s*(\d{1,2})\s*월/); if (!m) return '';
+  var day = /초/.test(t) ? '05' : /중/.test(t) ? '15' : /말/.test(t) ? '28' : '01';
+  return m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + day;
+}
+
+/** 미입고 오더 + 오더요청 미처리 건수. rows: [오더일, 업체, 브랜드, 파일명, 오더수량, 실입고, 쉬핑일, 쉬핑키] */
+function drOrders_(today) {
+  var ss = SpreadsheetApp.openById(DR.ORDER_ID), out = { rows: [], reqPending: 0 };
+  var sh = ss.getSheetByName('마스터');
+  if (sh && sh.getLastRow() >= 2) sh.getRange(2, 1, sh.getLastRow() - 1, 9).getValues().forEach(function (r) {
+    if (!String(r[0]).trim() || String(r[8]).trim() === '유') return;
+    out.rows.push([drYmd_(r[2]), String(r[1]).trim(), String(r[3]).trim(), String(r[0]).replace(/\.xlsx$/i, '').trim(),
+      String(r[5]).trim(), String(r[6]).trim(), String(r[7]).trim(), drShipKey_(r[7])]);
+  });
+  out.rows.sort(function (a, b) { var x = a[7] || '9999', y = b[7] || '9999'; return x < y ? -1 : x > y ? 1 : 0; });
+  var rq = ss.getSheetByName('오더요청');
+  if (rq && rq.getLastRow() >= 2) rq.getRange(2, 1, rq.getLastRow() - 1, 10).getValues().forEach(function (r) {
+    if (drNum_(r[8]) > 0 && String(r[9]).trim() !== '처리완료' && String(r[9]).trim() !== '완료') out.reqPending++;
+  });
+  return out;
 }
 
 /** '오늘현황' 상단 요약(실시간) */
@@ -278,6 +350,7 @@ function drLive_(ss, today) {
     else if (k === '주문 건수') o.cnt = drNum_(r[3]);
     else if (k.indexOf('발송 매출') === 0) o.shipSales = drNum_(r[3]);
     else if (k === '발송 건수') o.shipCnt = drNum_(r[3]);
+    else if (k.indexOf('수집 수량') === 0) { o.colGs = drNum_(r[1]); o.colSi = drNum_(r[2]); o.colQty = drNum_(r[3]); }
   });
   if (o.sales == null) return null;
   o.isToday = o.date === today;
