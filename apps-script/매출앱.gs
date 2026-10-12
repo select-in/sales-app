@@ -214,12 +214,16 @@ function drCollect_() {
   // 일별입력 → [날짜, 채널그룹, 법인, 플랫폼, 건수, 매출, 수수료, 정산예정, 이익, 입금예정일, 입금확인]
   var t = drTable_(ss, DR.SHEET_DAILY), I = t.idx;
   var col = function (r, k) { return I[k] == null ? '' : r[I[k]]; };
-  var daily = [];
+  var daily = [], mon = {};
   t.rows.forEach(function (r) {
     var d = drYmd_(col(r, '날짜'));
     if (!d) return;
     var corp = String(col(r, '법인')).trim();
     if (DR.EXCLUDE_CORP.indexOf(corp) >= 0) return;
+    if (d >= '2025-01-01') {                       // 월별 합계 (기간 분석용, 전체 기간)
+      var mk = d.slice(0, 7) + '|' + (corp || '확인필요'), mm = mon[mk] || (mon[mk] = [d.slice(0, 7), corp || '확인필요', 0, 0, 0]);
+      mm[2] += drNum_(col(r, '매출액')); mm[3] += drNum_(col(r, '이익')); mm[4] += drNum_(col(r, '주문건수'));
+    }
     var payDay = drYmd_(col(r, '입금예정일'));
     var paid = String(col(r, '입금확인(Y)')).trim().toUpperCase() === 'Y';
     if (d < from && !(payDay >= today && !paid)) return;
@@ -261,6 +265,7 @@ function drCollect_() {
     mainCorps: DR.MAIN_CORPS,
     daily: daily,
     gonggu: gonggu,
+    monthly: Object.keys(mon).sort().map(function (k) { return mon[k]; }),   // [월, 법인, 매출, 이익, 건수]
     live: drLive_(ss, today),
     alerts: drAlerts_(ss),
     plan: drSafe_(function () { return drGbPlan_(today); }),
