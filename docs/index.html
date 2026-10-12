@@ -95,6 +95,14 @@
   .ptabs button{flex:1 0 auto;border:1px solid var(--line);background:var(--card);color:var(--sub);border-radius:10px;padding:6px 10px;font-size:13px;font-family:inherit;display:flex;flex-direction:column;align-items:center;line-height:1.25}
   .ptabs button small{font-size:11px;opacity:.8}
   .ptabs button.on{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+  details.grp{border-top:1px solid var(--line)}
+  details.grp:first-of-type{border-top:none}
+  details.grp summary{list-style:none;cursor:pointer;border-top:none}
+  details.grp summary::-webkit-details-marker{display:none}
+  .caret{display:inline-block;width:14px;color:var(--sub);transition:transform .15s}
+  details.grp[open] .caret{transform:rotate(90deg)}
+  .sites{padding:0 0 8px 14px}
+  .sites .pl:first-child{border-top:1px dashed var(--line)}
   .pl{padding:8px 0;border-top:1px solid var(--line)}
   .pl:first-child{border-top:none}
   .pl .t{display:flex;justify-content:space-between;font-size:14px;gap:8px}
@@ -156,6 +164,8 @@ function sumRows(rows){
 
 // 채널 검색: 띄어쓰기로 여러 단어 → 모두 포함된 행만 (플랫폼·채널그룹·법인 기준)
 function qTokens(q){ return String(q||'').toLowerCase().split(/\s+/).filter(Boolean); }
+var GALIAS={'스마트스토어':'스토어팜','도소매':'도매'};
+function rowText(r){ return r[3]+' '+r[1]+' '+(GALIAS[r[1]]||'')+' '+r[2]; }
 function hit(text,toks){ text=String(text).toLowerCase(); for(var i=0;i<toks.length;i++) if(text.indexOf(toks[i])<0) return false; return true; }
 
 function buildReport(D, start, end, q){
@@ -174,7 +184,7 @@ function buildReport(D, start, end, q){
     if(r[1]==='리셀' && r[0]>lastResell) lastResell=r[0];
   });
   if(toks.length){
-    var keep=function(r){ return hit(r[3]+' '+r[1]+' '+r[2],toks); };
+    var keep=function(r){ return hit(rowText(r),toks); };
     cur=cur.filter(keep); prev=prev.filter(keep); mtd=mtd.filter(keep);
     for(var k in byDay) byDay[k]=byDay[k].filter(keep);
   }
@@ -187,12 +197,17 @@ function buildReport(D, start, end, q){
     var s=sumRows(by(cur,2,c)); s.name=c; s.prevSales=sumRows(by(prev,2,c)).sales; return s;
   }).filter(function(c){ return mains.indexOf(c.name)>=0 || c.sales; });
 
-  // 채널그룹별
-  var gnames=[];
+  // 사이트별: 채널그룹 고정 순서(사방넷/스토어팜/도매/리셀) + 그룹 안 사이트 목록
+  var GORDER=['사방넷','스마트스토어','도소매','리셀'];
+  var gnames=GORDER.slice();
   cur.concat(prev).forEach(function(r){ if(r[1] && gnames.indexOf(r[1])<0) gnames.push(r[1]); });
   var groups=gnames.map(function(g){
-    var s=sumRows(by(cur,1,g)); s.name=g; s.prevSales=sumRows(by(prev,1,g)).sales; return s;
-  }).sort(function(a,b){ return b.sales-a.sales; });
+    var rows=by(cur,1,g), s=sumRows(rows); s.name=g; s.prevSales=sumRows(by(prev,1,g)).sales;
+    var sm={};
+    rows.forEach(function(r){ var k=r[3]+'|'+r[2]; var o=sm[k]||(sm[k]={plat:r[3],corp:r[2],cnt:0,sales:0,profit:0}); o.cnt+=r[4]; o.sales+=r[5]; o.profit+=r[8]; });
+    s.sites=Object.keys(sm).map(function(k){ return sm[k]; }).filter(function(x){ return x.sales; }).sort(function(a,b){ return b.sales-a.sales; });
+    return s;
+  }).filter(function(g){ return GORDER.indexOf(g.name)>=0 || g.sales || g.prevSales; });
 
   // 플랫폼별 (기간 / 월누적)
   var pmap={};
@@ -211,7 +226,7 @@ function buildReport(D, start, end, q){
 
   // 입금예정 (오늘부터 7일, 입금확인 제외)
   var payAmt={};
-  D.daily.forEach(function(r){ if(r[9] && !r[10] && (!toks.length || hit(r[3]+' '+r[1]+' '+r[2],toks))) payAmt[r[9]]=(payAmt[r[9]]||0)+r[7]; });
+  D.daily.forEach(function(r){ if(r[9] && !r[10] && (!toks.length || hit(rowText(r),toks))) payAmt[r[9]]=(payAmt[r[9]]||0)+r[7]; });
   var payments=[];
   for(var j=0;j<7;j++){ var pd=shift(today,j); payments.push({d:pd,wd:wd(pd),amount:payAmt[pd]||0}); }
 
@@ -242,6 +257,7 @@ function buildReport(D, start, end, q){
 </script>
 
 <script>
+var GLABEL={'스마트스토어':'스토어팜','도소매':'도매'}, openGroups={};
 var R=null, D=null, platMode='range', platAll=false, platCorp='', syncing=false;
 var P={mode:'day', start:'', end:''}, userNav=false, Q='';
 var LS_KEY='drData_v2', LS_P='drPeriod_v1';
@@ -383,7 +399,7 @@ function render(){
   if(R.sabangMissing) h+='<div class="warn">⚠ '+md(R.end)+' 사방넷 매출이 아직 반영되지 않았습니다.</div>';
   if(!t.sales) h+='<div class="warn">⚠ 선택한 기간에 확정 매출 데이터가 없습니다.</div>';
   if(R.lastResell && R.end>R.lastResell) h+='<div class="warn">ℹ 리셀(크림·포이즌)은 '+md(R.lastResell)+'까지만 반영돼 있습니다. 이후 매출은 주간보고 반영 후 표시됩니다.</div>';
-  if(R.unknownCorpSales) h+='<div class="warn">⚠ 법인 확인필요 매출 '+won(R.unknownCorpSales)+'원 — 설정 탭 확인</div>';
+  if(R.unknownCorpSales) h+='<div class="warn">⚠ 사업장(법인) 확인필요 매출 '+won(R.unknownCorpSales)+'원 — 설정 탭 확인</div>';
 
   if(R.q) h='<div class="filt"><span>🔎 \''+esc(Q.trim())+'\' 채널만 집계 중</span><button onclick="setQ(\'\')">전체 보기</button></div>'+h;
 
@@ -416,18 +432,25 @@ function render(){
       +'<div><div class="k">주문</div><div class="v">'+won(m.cnt)+'건</div></div></div></div>';
   }
 
-  h+='<div class="card"><h2>법인별 <small>'+cmpLabel+' 대비</small></h2>';
+  h+='<div class="card"><h2>사업장별 <small>'+cmpLabel+' 대비</small></h2>';
   R.corps.forEach(function(c){
     h+='<div class="item"><div><div class="n">'+esc(c.name)+'</div><div class="s">'+won(c.cnt)+'건 · 이익 '+man(c.profit)+' · '+pct(c.margin)+'</div></div>'
       +'<div class="r"><div class="n">'+won(c.sales)+'</div><div class="s">'+chg(c.sales,c.prevSales,cmpLabel)+'</div></div></div>';
   });
   h+='</div>';
 
-  h+='<div class="card"><h2>채널별 <small>'+cmpLabel+' 대비</small></h2>';
-  if(!R.groups.length) h+='<div class="empty">매출 없음</div>';
+  h+='<div class="card"><h2>사이트별 <small>눌러서 사이트 펼치기</small></h2>';
   R.groups.forEach(function(g){
-    h+='<div class="item"><div><div class="n">'+esc(g.name)+'</div><div class="s">'+won(g.cnt)+'건 · 이익율 '+pct(g.margin)+'</div></div>'
-      +'<div class="r"><div class="n">'+won(g.sales)+'</div><div class="s">'+chg(g.sales,g.prevSales,cmpLabel)+'</div></div></div>';
+    var label=GLABEL[g.name]||g.name;
+    h+='<details class="grp"'+(openGroups[g.name]?' open':'')+' data-g="'+esc(g.name)+'"><summary class="item"><div><div class="n"><span class="caret">▸</span>'+esc(label)+'</div><div class="s">'+won(g.cnt)+'건 · 이익율 '+pct(g.margin)+' · 사이트 '+g.sites.length+'개</div></div>'
+      +'<div class="r"><div class="n">'+won(g.sales)+'</div><div class="s">'+chg(g.sales,g.prevSales,cmpLabel)+'</div></div></summary><div class="sites">';
+    if(!g.sites.length) h+='<div class="empty">선택한 기간 매출 없음</div>';
+    var mx=g.sites.length?g.sites[0].sales:1;
+    g.sites.forEach(function(x){
+      h+='<div class="pl tap" data-q="'+esc(x.plat+' '+x.corp)+'"><div class="t"><span>'+esc(x.plat)+'<span class="c">'+esc(x.corp)+' · '+won(x.cnt)+'건</span></span><b>'+won(x.sales)+'</b></div>'
+        +'<div class="track"><i style="width:'+(x.sales/mx*100)+'%"></i></div></div>';
+    });
+    h+='</div></details>';
   });
   h+='</div>';
 
@@ -462,6 +485,10 @@ function render(){
 
   $('app').innerHTML=h;
   renderPlats();
+  Array.prototype.forEach.call(document.querySelectorAll('details.grp'),function(d){
+    d.ontoggle=function(){ openGroups[d.dataset.g]=d.open; };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.sites .pl.tap'),function(el){ el.onclick=function(){ setQ(el.dataset.q); window.scrollTo(0,0); }; });
 
   Array.prototype.forEach.call(document.querySelectorAll('.bar'),function(b){
     b.onclick=function(){
