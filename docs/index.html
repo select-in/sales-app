@@ -128,6 +128,17 @@
   .al a b{display:block;font-size:17px}
   .tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 6px;border-radius:6px;background:var(--soft);color:var(--accent);margin-left:4px;vertical-align:1px}
   .tag.gray{background:var(--bg);color:var(--sub)} .tag.red{background:var(--warnbg);color:var(--up)}
+  .aseg{display:flex;background:var(--bg);border-radius:9px;padding:2px;flex:none}
+  .aseg button{border:none;background:none;color:var(--sub);font-size:12px;padding:4px 10px;border-radius:7px;font-family:inherit}
+  .aseg button.on{background:var(--card);color:var(--ink);font-weight:600}
+  .arow{display:grid;grid-template-columns:52px 1fr auto;gap:8px;align-items:center;padding:6px 0;font-size:13px;border-top:1px solid var(--line)}
+  .arow:first-of-type{border-top:none}
+  .arow .bt{height:8px;background:var(--bg);border-radius:4px;overflow:hidden;display:flex}
+  .arow .bt i{display:block;height:100%}
+  .arow .v{text-align:right;white-space:nowrap}
+  .arow .v small{display:block;font-size:11px;color:var(--sub)}
+  .lg{display:flex;gap:10px;font-size:11px;color:var(--sub);margin-top:8px}
+  .lg i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px}
   .col{margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.25)}
 </style>
 </head>
@@ -488,6 +499,7 @@ function render(){
   });
   h+='</div><div class="tip" id="tip">'+tipText(R.trend[R.trend.length-1])+'</div></div>';
 
+  h+='<div class="card" id="ana"></div>';
   S.sum+=h; h='';
   h+='<div class="card"><h2>플랫폼별<span class="seg"><button data-m="range" class="'+(platMode==='range'?'on':'')+'">선택 기간</button><button data-m="mtd" class="'+(platMode==='mtd'?'on':'')+'">'+R.end.slice(5,7)+'월 누적</button></span></h2><div class="ptabs" id="ptabs"></div><div id="plats"></div></div>';
 
@@ -516,6 +528,7 @@ function render(){
 
   $('app').innerHTML=h;
   Array.prototype.forEach.call(document.querySelectorAll('.tabbar button'),function(b){ b.onclick=function(){ setTab(b.dataset.t); }; });
+  if($('ana')) renderAna();
   if($('ptabs')) renderPlats();
   Array.prototype.forEach.call(document.querySelectorAll('details.grp'),function(d){
     d.ontoggle=function(){ openGroups[d.dataset.g]=d.open; };
@@ -585,6 +598,40 @@ function homeHtml(){
   });
   h+='</div>';
   return h;
+}
+var ANA=(function(){ try{ return localStorage.getItem('drAna_v1')||'m'; }catch(e){ return 'm'; } })();
+var CC={'겐더샵':'var(--accent)','셀렉트인':'#d4a017'};
+function renderAna(){
+  var T=D.today, rows=[], h='';
+  function pc(a,b){ if(!b) return ''; var v=(a-b)/Math.abs(b)*100; return '<span class="'+(v>=0?'up':'down')+'">'+(v>=0?'▲':'▼')+Math.abs(v).toFixed(0)+'%</span>'; }
+  if(ANA==='m'){
+    var by={}; (D.monthly||[]).forEach(function(r){ var o=by[r[0]]||(by[r[0]]={k:r[0],s:0,p:0,c:0,corp:{}}); o.s+=r[2]; o.p+=r[3]; o.c+=r[4]; o.corp[r[1]]=(o.corp[r[1]]||0)+r[2]; });
+    rows=Object.keys(by).sort().slice(-12).map(function(k){ var o=by[k]; o.lab=(+k.slice(5))+'월'+(k===T.slice(0,7)?'*':''); return o; });
+  } else if(ANA==='w'){
+    var wk={}, p=T.split('-'), d0=new Date(Date.UTC(+p[0],p[1]-1,+p[2])), mon=shift(T,-((d0.getUTCDay()+6)%7));
+    D.daily.forEach(function(r){ if(r[0]>=T) return; var dd=new Date(Date.UTC(+r[0].slice(0,4),r[0].slice(5,7)-1,+r[0].slice(8))); var k=shift(r[0],-((dd.getUTCDay()+6)%7));
+      var o=wk[k]||(wk[k]={k:k,s:0,p:0,c:0,corp:{}}); o.s+=r[5]; o.p+=r[8]; o.c+=r[4]; o.corp[r[2]]=(o.corp[r[2]]||0)+r[5]; });
+    rows=Object.keys(wk).sort().slice(-12).map(function(k){ var o=wk[k]; o.lab=md(k)+(k===mon?'*':''); return o; });
+  } else {
+    var from=shift(T,-56), wdS=[0,0,0,0,0,0,0], wdN={};
+    D.daily.forEach(function(r){ if(r[0]<from||r[0]>=T) return; var i=(new Date(Date.UTC(+r[0].slice(0,4),r[0].slice(5,7)-1,+r[0].slice(8))).getUTCDay()+6)%7; wdS[i]+=r[5]; wdN[r[0]]=i; });
+    var cnt=[0,0,0,0,0,0,0]; Object.keys(wdN).forEach(function(k){ cnt[wdN[k]]++; });
+    rows=['월','화','수','목','금','토','일'].map(function(l,i){ return {lab:l,s:cnt[i]?wdS[i]/cnt[i]:0,p:null,c:null,corp:null}; });
+  }
+  var mx=Math.max.apply(null,rows.map(function(r){return r.s;}).concat([1]));
+  h+='<h2>기간 분석<span class="aseg"><button data-a="m" class="'+(ANA==='m'?'on':'')+'">월별</button><button data-a="w" class="'+(ANA==='w'?'on':'')+'">주별</button><button data-a="d" class="'+(ANA==='d'?'on':'')+'">요일별</button></span></h2>';
+  if(!rows.length) h+='<div class="empty">데이터 없음</div>';
+  rows.forEach(function(r,i){
+    var bar='';
+    if(r.corp){ Object.keys(r.corp).forEach(function(c){ bar+='<i style="width:'+(r.corp[c]/mx*100)+'%;background:'+(CC[c]||'var(--sub)')+'"></i>'; }); }
+    else bar='<i style="width:'+(r.s/mx*100)+'%;background:var(--accent)"></i>';
+    var cur=/\*$/.test(r.lab), sub = ANA==='d' ? '일평균' : [cur?'진행 중':pc(r.s,i?rows[i-1].s:0), r.s?'이익률 '+pct(r.p/r.s):''].filter(Boolean).join(' · ');
+    h+='<div class="arow"><span>'+esc(r.lab)+'</span><div class="bt">'+bar+'</div><div class="v">'+man(r.s)+'<small>'+sub+'</small></div></div>';
+  });
+  if(ANA!=='d') h+='<div class="lg"><span><i style="background:var(--accent)"></i>겐더샵</span><span><i style="background:#d4a017"></i>셀렉트인</span><span>* 진행 중 · ▲▼ 직전 대비</span></div>';
+  else h+='<div class="lg"><span>최근 8주 · 확정 매출 기준</span></div>';
+  $('ana').innerHTML=h;
+  Array.prototype.forEach.call(document.querySelectorAll('.aseg button'),function(b){ b.onclick=function(){ ANA=b.dataset.a; try{ localStorage.setItem('drAna_v1',ANA); }catch(e){} renderAna(); }; });
 }
 function tipText(x){
   return '<b style="color:var(--ink)">'+md(x.d)+'('+x.wd+')</b> 매출 '+won(x.sales)+'원 · 이익 '+man(x.profit)+' · '+won(x.cnt)+'건';
