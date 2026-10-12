@@ -49,6 +49,8 @@
   .logo{width:28px;height:28px;border-radius:7px}
   .login .logo{width:72px;height:72px;border-radius:18px;margin-bottom:14px}
   .stamp{font-size:12px;color:var(--sub)}
+  .role{display:inline-block;font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--soft);color:var(--accent);margin-right:2px}
+  .role.adm{background:var(--brand);color:#fff}
   .chips{display:flex;gap:6px;margin-top:10px;overflow-x:auto;scrollbar-width:none}
   .chips::-webkit-scrollbar{display:none}
   .chip{flex:none;border:1px solid var(--line);background:var(--card);color:var(--sub);border-radius:999px;padding:6px 12px;font-size:13px;font-family:inherit}
@@ -315,6 +317,7 @@ function api(body){
 }
 function fetchData(force){
   var token=null; try{ token=localStorage.getItem(LS_TOKEN); }catch(e){}
+  if(token && token.split('.').length!==3){ try{ localStorage.removeItem(LS_TOKEN); localStorage.removeItem(LS_KEY); }catch(e){} token=null; D=null; }
   if(!token){ showLogin(); return; }
   syncing=true; updStamp();
   api({action:'data',token:token,force:!!force})
@@ -360,7 +363,10 @@ function logout(){
   try{ localStorage.removeItem(LS_KEY); localStorage.removeItem(LS_TOKEN); }catch(e){}
   D=null; showLogin();
 }
-function updStamp(){ $('stamp').textContent=(D?D.generatedAt+' 기준':'')+(syncing?' · 갱신 중…':''); }
+function updStamp(){
+  var role=D&&D.role==='share'?'공유':(D&&D.role==='admin'?'관리자':'');
+  $('stamp').innerHTML=(role?'<span class="role'+(D.role==='admin'?' adm':'')+'">'+role+'</span> ':'')+(D?D.generatedAt+' 기준':'')+(syncing?' · 갱신 중…':'');
+}
 
 /* ───── 화면 ───── */
 function render(){
@@ -439,12 +445,14 @@ function render(){
   });
   h+='</div>';
 
+  if(D.role!=='share'){
   var payTotal=R.payments.reduce(function(a,x){return a+x.amount;},0);
   h+='<div class="card"><h2>입금예정 <small>오늘부터 7일 · 합계 '+man(payTotal)+'</small></h2>';
   R.payments.forEach(function(x,i){
     h+='<div class="pay'+(x.amount?'':' zero')+'"><span>'+(i===0?'오늘 ':'')+md(x.d)+'('+x.wd+')</span><b>'+won(x.amount)+'</b></div>';
   });
   h+='</div>';
+  }
   h+='<div class="foot"><button onclick="logout()">로그아웃</button></div>';
 
   $('app').innerHTML=h;

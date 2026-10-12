@@ -21,18 +21,24 @@ var DR = {
  * 앱 화면(GitHub Pages, select-in/sales-app)이 이 웹앱 주소로 요청합니다.
  *  - {action:'login', password}  → 비밀번호가 맞으면 90일짜리 로그인 토큰 발급
  *  - {action:'data', token, force} → 토큰이 유효하면 매출 데이터(JSON)
- * 비밀번호·서명키는 '프로젝트 설정 > 스크립트 속성'에만 저장됩니다. 처음 1회 drSetup() 실행.
+ * 비밀번호 2종 (프로젝트 설정 > 스크립트 속성):
+ *  - DR_PASSWORD        관리자: 전체 데이터
+ *  - DR_SHARE_PASSWORD  공유(직원·외부): 입금예정·거래처명 제외 (서버에서 아예 빼고 보냄)
+ * 각 비밀번호를 바꾸면 그 등급의 기존 로그인만 해제됩니다.
  * (이 프로젝트에서 doPost는 이 파일에만 있어야 합니다)
  */
 var DR_AUTH = { SESSION_DAYS: 90, MAX_FAIL: 10, LOCK_SEC: 900 };
+var DR_ROLES = { admin: 'DR_PASSWORD', share: 'DR_SHARE_PASSWORD' };
 
 function doPost(e) {
   var req = {};
   try { req = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (x) {}
   if (req.action === 'login') return drOut_(JSON.stringify(drLogin_(req.password)));
   if (req.action === 'data') {
-    if (!drVerify_(req.token)) return drOut_(JSON.stringify({ error: 'login' }));
-    return drOut_(drData(req.force === true));
+    var role = drVerify_(req.token);
+    if (!role) return drOut_(JSON.stringify({ error: 'login' }));
+    var json = drData(req.force === true);
+    return drOut_(role === 'admin' ? drWithRole_(json, 'admin') : drForShare_(json));
   }
   return drOut_(JSON.stringify({ error: 'bad request' }));
 }
@@ -41,14 +47,31 @@ function drOut_(text) {
   return ContentService.createTextOutput(text).setMimeType(ContentService.MimeType.JSON);
 }
 
-/** 처음 1회 실행: 서명키·앱 비밀번호 생성 + 10분 캐시 트리거 설치. 비밀번호는 실행 로그에 표시 */
+function drWithRole_(json, role) {
+  var d = JSON.parse(json); d.role = role; return JSON.stringify(d);
+}
+
+/** 공유용: 입금예정(입금예정일·정산예정액)과 거래처명 제거 */
+function drForShare_(json) {
+  var d = JSON.parse(json);
+  d.role = 'share';
+  d.daily = d.daily.map(function (r) {
+    var x = r.slice(); x[7] = 0; x[9] = ''; x[10] = 0; return x;
+  });
+  if (d.tax) d.tax = d.tax.map(function (t) { var x = t.slice(); x[1] = ''; return x; });
+  return JSON.stringify(d);
+}
+
+/** 처음 1회 실행: 서명키·관리자/공유 비밀번호 생성 + 10분 캐시 트리거 설치. 비밀번호는 실행 로그에 표시 */
 function drSetup() {
   var props = PropertiesService.getScriptProperties();
   if (!props.getProperty('DR_SECRET')) props.setProperty('DR_SECRET', drRandom_(48));
   if (!props.getProperty('DR_PASSWORD')) props.setProperty('DR_PASSWORD', drRandom_(10));
+  if (!props.getProperty('DR_SHARE_PASSWORD')) props.setProperty('DR_SHARE_PASSWORD', drRandom_(10));
   drInstallWarmTrigger();
-  Logger.log('앱 비밀번호: ' + props.getProperty('DR_PASSWORD') +
-    '  (바꾸려면 프로젝트 설정 > 스크립트 속성의 DR_PASSWORD 값을 수정. 수정하면 기존 로그인은 모두 해제)');
+  Logger.log('관리자 비밀번호(DR_PASSWORD): ' + props.getProperty('DR_PASSWORD'));
+  Logger.log('공유 비밀번호(DR_SHARE_PASSWORD): ' + props.getProperty('DR_SHARE_PASSWORD'));
+  Logger.log('바꾸려면 프로젝트 설정 > 스크립트 속성에서 값 수정 (그 등급의 기존 로그인만 해제)');
 }
 
 function drRandom_(n) {
@@ -61,9 +84,10 @@ function drRandom_(n) {
   return s;
 }
 
-function drSign_(msg) {
+/** 등급별 서명: 키 = 서명키 + 그 등급 비밀번호 */
+function drSign_(msg, role) {
   var p = PropertiesService.getScriptProperties();
-  var key = (p.getProperty('DR_SECRET') || '') + '|' + (p.getProperty('DR_PASSWORD') || '');
+  var key = (p.getProperty('DR_SECRET') || '') + '|' + role + '|' + (p.getProperty(DR_ROLES[role]) || '');
   return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(msg, key)).replace(/=+$/, '');
 }
 
@@ -71,20 +95,28 @@ function drLogin_(password) {
   var cache = CacheService.getScriptCache();
   var fails = Number(cache.get('drFail') || 0);
   if (fails >= DR_AUTH.MAX_FAIL) return { error: '로그인 시도가 너무 많습니다. 15분 뒤 다시 시도하세요.' };
-  var real = PropertiesService.getScriptProperties().getProperty('DR_PASSWORD');
-  if (!real || typeof password !== 'string' || drSign_('pw:' + password) !== drSign_('pw:' + real)) {
-    cache.put('drFail', String(fails + 1), DR_AUTH.LOCK_SEC);
-    Utilities.sleep(800);
-    return { error: '비밀번호가 맞지 않습니다.' };
+  var props = PropertiesService.getScriptProperties();
+  if (typeof password === 'string' && password) {
+    var order = ['admin', 'share'];
+    for (var i = 0; i < order.length; i++) {
+      var role = order[i], real = props.getProperty(DR_ROLES[role]);
+      if (real && drSign_('pw:' + password, role) === drSign_('pw:' + real, role)) {
+        var exp = String(Date.now() + DR_AUTH.SESSION_DAYS * 864e5);
+        return { token: exp + '.' + role + '.' + drSign_(exp + '.' + role, role), role: role };
+      }
+    }
   }
-  var exp = String(Date.now() + DR_AUTH.SESSION_DAYS * 864e5);
-  return { token: exp + '.' + drSign_(exp) };
+  cache.put('drFail', String(fails + 1), DR_AUTH.LOCK_SEC);
+  Utilities.sleep(800);
+  return { error: '비밀번호가 맞지 않습니다.' };
 }
 
+/** 유효하면 등급('admin'|'share'), 아니면 null */
 function drVerify_(token) {
   var parts = String(token || '').split('.');
-  if (parts.length !== 2 || Number(parts[0]) < Date.now()) return false;
-  return parts[1] === drSign_(parts[0]);
+  if (parts.length !== 3 || !DR_ROLES[parts[1]] || Number(parts[0]) < Date.now()) return null;
+  if (!PropertiesService.getScriptProperties().getProperty(DR_ROLES[parts[1]])) return null;
+  return parts[2] === drSign_(parts[0] + '.' + parts[1], parts[1]) ? parts[1] : null;
 }
 
 /** force=true면 캐시를 무시하고 시트를 새로 읽음 */
