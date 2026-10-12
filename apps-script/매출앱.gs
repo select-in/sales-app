@@ -216,7 +216,7 @@ function drCollect_() {
   // 일별입력 → [날짜, 채널그룹, 법인, 플랫폼, 건수, 매출, 수수료, 정산예정, 이익, 입금예정일, 입금확인]
   var t = drTable_(ss, DR.SHEET_DAILY), I = t.idx;
   var col = function (r, k) { return I[k] == null ? '' : r[I[k]]; };
-  var daily = [], mon = {};
+  var daily = [], mon = {}, gbm = {};
   t.rows.forEach(function (r) {
     var d = drYmd_(col(r, '날짜'));
     if (!d) return;
@@ -225,6 +225,15 @@ function drCollect_() {
     if (d >= '2025-01-01') {                       // 월별 합계 (기간 분석용, 전체 기간)
       var mk = d.slice(0, 7) + '|' + (corp || '확인필요'), mm = mon[mk] || (mon[mk] = [d.slice(0, 7), corp || '확인필요', 0, 0, 0]);
       mm[2] += drNum_(col(r, '매출액')); mm[3] += drNum_(col(r, '이익')); mm[4] += drNum_(col(r, '주문건수'));
+      // 공구 매출 합산: 국세청 공동구매 세금계산서 + 스토어팜 2곳 '공구'
+      var ch = String(col(r, '채널')).trim(), mall = String(col(r, '쇼핑몰')).trim(), gi = -1;
+      if (ch === '공동구매(셀렉트인)') gi = 1;
+      else if (ch === '셀렉트인하우스' && mall.indexOf('공구') >= 0) gi = 3;
+      else if (ch === '모아하우스' && mall.indexOf('공구') >= 0) gi = 5;
+      if (gi > 0) {
+        var gm = gbm[d.slice(0, 7)] || (gbm[d.slice(0, 7)] = [d.slice(0, 7), 0, 0, 0, 0, 0, 0]);
+        gm[gi] += drNum_(col(r, '매출액')); gm[gi + 1] += gi === 1 ? 1 : drNum_(col(r, '주문건수'));
+      }
     }
     var payDay = drYmd_(col(r, '입금예정일'));
     var paid = String(col(r, '입금확인(Y)')).trim().toUpperCase() === 'Y';
@@ -268,6 +277,7 @@ function drCollect_() {
     daily: daily,
     gonggu: gonggu,
     monthly: Object.keys(mon).sort().map(function (k) { return mon[k]; }),   // [월, 법인, 매출, 이익, 건수]
+    gbm: Object.keys(gbm).sort().map(function (k) { return gbm[k]; }),       // [월, 국세청공구, 계산서수, 셀하우스공구, 건수, 모아공구, 건수]
     live: drLive_(ss, today),
     alerts: drAlerts_(ss),
     plan: drSafe_(function () { return drGbPlan_(today); }),
