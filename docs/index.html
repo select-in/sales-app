@@ -90,6 +90,11 @@
   .seg{display:flex;background:var(--bg);border-radius:9px;padding:2px;flex:none}
   .seg button{border:none;background:none;color:var(--sub);font-size:12px;padding:4px 10px;border-radius:7px;font-family:inherit}
   .seg button.on{background:var(--card);color:var(--ink);font-weight:600}
+  .ptabs{display:flex;gap:6px;margin:-2px 0 8px;overflow-x:auto;scrollbar-width:none}
+  .ptabs::-webkit-scrollbar{display:none}
+  .ptabs button{flex:1 0 auto;border:1px solid var(--line);background:var(--card);color:var(--sub);border-radius:10px;padding:6px 10px;font-size:13px;font-family:inherit;display:flex;flex-direction:column;align-items:center;line-height:1.25}
+  .ptabs button small{font-size:11px;opacity:.8}
+  .ptabs button.on{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
   .pl{padding:8px 0;border-top:1px solid var(--line)}
   .pl:first-child{border-top:none}
   .pl .t{display:flex;justify-content:space-between;font-size:14px;gap:8px}
@@ -237,7 +242,7 @@ function buildReport(D, start, end, q){
 </script>
 
 <script>
-var R=null, D=null, platMode='range', platAll=false, syncing=false;
+var R=null, D=null, platMode='range', platAll=false, platCorp='', syncing=false;
 var P={mode:'day', start:'', end:''}, userNav=false, Q='';
 var LS_KEY='drData_v2', LS_P='drPeriod_v1';
 var $=function(id){ return document.getElementById(id); };
@@ -435,7 +440,7 @@ function render(){
   });
   h+='</div><div class="tip" id="tip">'+tipText(R.trend[R.trend.length-1])+'</div></div>';
 
-  h+='<div class="card"><h2>플랫폼별<span class="seg"><button data-m="range" class="'+(platMode==='range'?'on':'')+'">선택 기간</button><button data-m="mtd" class="'+(platMode==='mtd'?'on':'')+'">'+R.end.slice(5,7)+'월 누적</button></span></h2><div id="plats"></div></div>';
+  h+='<div class="card"><h2>플랫폼별<span class="seg"><button data-m="range" class="'+(platMode==='range'?'on':'')+'">선택 기간</button><button data-m="mtd" class="'+(platMode==='mtd'?'on':'')+'">'+R.end.slice(5,7)+'월 누적</button></span></h2><div class="ptabs" id="ptabs"></div><div id="plats"></div></div>';
 
   h+='<div class="card"><h2>공구 · 인플루언서 <small>기간 합계 '+man(R.gongguSales)+'</small></h2>';
   if(!R.gonggu.length) h+='<div class="empty">선택한 기간에 공구 매출 없음</div>';
@@ -478,7 +483,18 @@ function tipText(x){
 
 function renderPlats(){
   var key=platMode==='range'?'sales':'mtdSales';
-  var list=R.platforms.filter(function(x){return x[key]>0;}).sort(function(a,b){return b[key]-a[key];});
+  // 법인 탭: 전체 / 겐더샵 / 셀렉트인 (+기타 법인이 있으면 추가)
+  var corps=(D.mainCorps||['겐더샵','셀렉트인']).slice();
+  R.platforms.forEach(function(x){ if(x[key]>0 && corps.indexOf(x.corp)<0) corps.push(x.corp); });
+  if(platCorp && corps.indexOf(platCorp)<0) platCorp='';
+  var tot=function(c){ return R.platforms.reduce(function(a,x){ return a+((!c||x.corp===c)?x[key]:0); },0); };
+  $('ptabs').innerHTML=[''].concat(corps).map(function(c){
+    return '<button data-c="'+esc(c)+'" class="'+(platCorp===c?'on':'')+'">'+(c?esc(c):'전체')+'<small>'+man(tot(c))+'</small></button>';
+  }).join('');
+  Array.prototype.forEach.call(document.querySelectorAll('#ptabs button'),function(b){
+    b.onclick=function(){ platCorp=b.dataset.c; platAll=false; renderPlats(); };
+  });
+  var list=R.platforms.filter(function(x){return x[key]>0 && (!platCorp || x.corp===platCorp);}).sort(function(a,b){return b[key]-a[key];});
   var mx=list.length?list[0][key]:1, showL=platAll?list:list.slice(0,8), h='';
   if(!list.length) h='<div class="empty">매출 없음</div>';
   showL.forEach(function(x){
