@@ -139,6 +139,19 @@
   .arow .v small{display:block;font-size:11px;color:var(--sub)}
   .lg{display:flex;gap:10px;font-size:11px;color:var(--sub);margin-top:8px}
   .lg i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px}
+  .cg{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+  .cg .wh{font-size:11px;color:var(--sub);text-align:center;padding:2px 0}
+  .cd{min-height:58px;border-radius:6px;padding:2px;background:var(--bg);cursor:pointer;overflow:hidden}
+  .cd.out{opacity:.35}
+  .cd.td{box-shadow:inset 0 0 0 2px var(--accent)}
+  .cd.sel{background:var(--soft)}
+  .cd b{display:block;font-size:11px;font-weight:600;margin-bottom:1px}
+  .cd .sun{color:var(--up)} .cd .sat{color:var(--down)}
+  .ev{display:block;font-size:9.5px;line-height:13px;height:13px;border-radius:3px;padding:0 2px;margin-top:1px;white-space:nowrap;overflow:hidden;color:#fff;background:var(--accent)}
+  .ev.un{background:var(--warn)}
+  .ev.more{background:none;color:var(--sub);padding:0}
+  .calnav{display:flex;align-items:center;gap:6px}
+  .calnav button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;width:30px;height:28px;font-size:14px}
   .col{margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.25)}
 </style>
 </head>
@@ -504,6 +517,7 @@ function render(){
   h+='<div class="card"><h2>플랫폼별<span class="seg"><button data-m="range" class="'+(platMode==='range'?'on':'')+'">선택 기간</button><button data-m="mtd" class="'+(platMode==='mtd'?'on':'')+'">'+R.end.slice(5,7)+'월 누적</button></span></h2><div class="ptabs" id="ptabs"></div><div id="plats"></div></div>';
 
   S.ch+=h; h='';
+  h+='<div class="card" id="cal"></div>';
   h+='<div class="card"><h2>공구 · 인플루언서 <small>기간 합계 '+man(R.gongguSales)+'</small></h2>';
   if(!R.gonggu.length) h+='<div class="empty">선택한 기간에 공구 매출 없음</div>';
   R.gonggu.forEach(function(g){
@@ -529,6 +543,7 @@ function render(){
   $('app').innerHTML=h;
   Array.prototype.forEach.call(document.querySelectorAll('.tabbar button'),function(b){ b.onclick=function(){ setTab(b.dataset.t); }; });
   if($('ana')) renderAna();
+  if($('cal')) renderCal();
   if($('ptabs')) renderPlats();
   Array.prototype.forEach.call(document.querySelectorAll('details.grp'),function(d){
     d.ontoggle=function(){ openGroups[d.dataset.g]=d.open; };
@@ -655,6 +670,38 @@ function renderAna(){
   else h+='<div class="lg"><span>최근 8주 · 확정 매출 기준</span></div>';
   $('ana').innerHTML=h;
   Array.prototype.forEach.call(document.querySelectorAll('.aseg button'),function(b){ b.onclick=function(){ ANA=b.dataset.a; try{ localStorage.setItem('drAna_v1',ANA); }catch(e){} renderAna(); }; });
+}
+var CALM=null, CALSEL=null;
+function renderCal(){
+  var T=D.today, rows=((D.plan&&D.plan.rows)||[]).filter(function(r){ return r[2].indexOf('취소')<0; });
+  if(!CALM) CALM=T.slice(0,7); if(!CALSEL) CALSEL=T;
+  var y=+CALM.slice(0,4), m=+CALM.slice(5,7), first=CALM+'-01', dim=new Date(Date.UTC(y,m,0)).getUTCDate();
+  var startW=new Date(Date.UTC(y,m-1,1)).getUTCDay(), start=shift(first,-startW), cells=Math.ceil((startW+dim)/7)*7;
+  var minM=rows.length?rows[0][0].slice(0,7):T.slice(0,7), maxM=rows.reduce(function(a,r){ return r[1].slice(0,7)>a?r[1].slice(0,7):a; },T.slice(0,7));
+  var on=function(d){ return rows.filter(function(r){ return r[0]<=d && r[1]>=d; }); };
+  var monCnt=rows.filter(function(r){ return r[0].slice(0,7)<=CALM && r[1].slice(0,7)>=CALM; }).length;
+  var h='<h2>공구 달력 <small>'+monCnt+'건</small><span class="calnav"><button id="cprev"'+(CALM<=minM?' disabled':'')+'>‹</button><b>'+y+'.'+m+'</b><button id="cnext"'+(CALM>=maxM?' disabled':'')+'>›</button></span></h2><div class="cg">';
+  ['일','월','화','수','목','금','토'].forEach(function(w){ h+='<div class="wh">'+w+'</div>'; });
+  for(var i=0;i<cells;i++){
+    var d=shift(start,i), ev=on(d), wdI=i%7;
+    h+='<div class="cd'+(d.slice(0,7)!==CALM?' out':'')+(d===T?' td':'')+(d===CALSEL?' sel':'')+'" data-d="'+d+'"><b class="'+(wdI===0?'sun':wdI===6?'sat':'')+'">'+(+d.slice(8))+'</b>';
+    ev.slice(0,3).forEach(function(r){ h+='<span class="ev'+(r[2].indexOf('미확정')>=0?' un':'')+'">'+esc(r[4]||r[3])+'</span>'; });
+    if(ev.length>3) h+='<span class="ev more">+'+(ev.length-3)+'</span>';
+    h+='</div>';
+  }
+  h+='</div><div class="lg"><span><i style="background:var(--accent)"></i>확정</span><span><i style="background:var(--warn)"></i>미확정</span><span>날짜를 누르면 상세</span></div>';
+  var sel=on(CALSEL);
+  h+='<div style="margin-top:10px"><div class="label"><span>'+md(CALSEL)+'('+wd(CALSEL)+') 진행 공구 '+sel.length+'건</span></div>';
+  if(!sel.length) h+='<div class="empty">없음</div>';
+  sel.forEach(function(r){
+    var tag=r[2].indexOf('미확정')>=0?'<span class="tag red">미확정</span>':'';
+    h+='<div class="item"><div><div class="n">'+esc(r[4]||r[3])+tag+'</div><div class="s">'+esc(r[5])+' · '+md(r[0])+'~'+md(r[1])+'</div></div>'+(r[6]?'<div class="r"><div class="n">'+man(r[6])+'</div></div>':'')+'</div>';
+  });
+  h+='</div>';
+  $('cal').innerHTML=h;
+  var mv=function(n){ var dt=new Date(Date.UTC(y,m-1+n,1)); CALM=dt.toISOString().slice(0,7); renderCal(); };
+  $('cprev').onclick=function(){ mv(-1); }; $('cnext').onclick=function(){ mv(1); };
+  Array.prototype.forEach.call(document.querySelectorAll('.cd'),function(c){ c.onclick=function(){ CALSEL=c.dataset.d; if(CALSEL.slice(0,7)!==CALM) CALM=CALSEL.slice(0,7); renderCal(); }; });
 }
 function tipText(x){
   return '<b style="color:var(--ink)">'+md(x.d)+'('+x.wd+')</b> 매출 '+won(x.sales)+'원 · 이익 '+man(x.profit)+' · '+won(x.cnt)+'건';
