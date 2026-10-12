@@ -550,8 +550,28 @@ function render(){
 }
 
 function ddiff(a,b){ return days(a,b)-1; }
+var GOAL=5e8, GOAL_PART=3e8;   // 월 목표 5억 · 3억 이상 부분완료
+function goalHtml(){
+  var T=D.today, ym=T.slice(0,7), p=T.split('-'), dim=new Date(Date.UTC(+p[0],+p[1],0)).getUTCDate(), day=+p[2];
+  var conf=D.daily.reduce(function(a,r){ return a+(r[0].slice(0,7)===ym && r[0]<T ? r[5] : 0); },0);
+  var L=D.live, todayS=(L&&L.isToday)?(L.sales||0):0, cur=conf+todayS;
+  var st=cur>=GOAL?['달성','tag']:cur>=GOAL_PART?['부분완료','tag']:['진행중','tag gray'];
+  var left=dim-day+1, need=Math.max(0,GOAL-cur)/left, needP=Math.max(0,GOAL_PART-cur)/left, proj=day>1?conf/(day-1)*dim:0;
+  var w=Math.min(100,cur/GOAL*100);
+  var h='<div class="card"><div class="label"><span>'+(+p[1])+'월 목표 '+man(GOAL)+' <span class="'+st[1]+'">'+(cur>=GOAL_PART?'✓ ':'')+st[0]+'</span></span><span>'+(cur/GOAL*100).toFixed(0)+'%</span></div>'
+    +'<div class="big">'+man(cur)+'</div>'
+    +'<div class="track" style="height:10px;position:relative;margin-top:8px"><i style="width:'+w+'%"></i><b style="position:absolute;left:60%;top:-3px;width:2px;height:16px;background:var(--warn)"></b></div>'
+    +'<div class="label" style="margin:4px 0 0"><span>부분완료 3억 ▲</span><span>남은 '+left+'일</span></div>'
+    +'<div class="row mini" style="margin-top:8px">'
+    +'<div><div class="k">목표까지 하루</div><div class="v">'+(cur>=GOAL?'-':man(need))+'</div></div>'
+    +'<div><div class="k">3억까지 하루</div><div class="v">'+(cur>=GOAL_PART?'✓':man(needP))+'</div></div>'
+    +'<div><div class="k">이 속도면 월말</div><div class="v">'+(proj?man(proj):'-')+'</div></div></div>';
+  var pm=shift(ym+'-01',-1).slice(0,7), pv=(D.monthly||[]).reduce(function(a,r){ return a+(r[0]===pm?r[2]:0); },0);
+  if(pv) h+='<div class="label" style="margin:10px 0 0">지난달('+(+pm.slice(5))+'월) '+man(pv)+' · '+(pv>=GOAL?'✓ 달성':pv>=GOAL_PART?'✓ 부분완료':'미달')+'</div>';
+  return h+'</div>';
+}
 function homeHtml(){
-  var h='', T=D.today, adm=D.role!=='share', A=D.alerts;
+  var h=goalHtml(), T=D.today, adm=D.role!=='share', A=D.alerts;
   if(adm && A && (A.neg||A.noCost)){
     h+='<div class="al">';
     if(A.neg) h+='<a><span>역마진 상품</span><b>'+A.neg+'개</b><small>손해 '+man(-A.negLoss)+'</small></a>';
