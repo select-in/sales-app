@@ -17,7 +17,9 @@ var DR = {
   CACHE_KEY: 'drData_v2',
   // 통합 탭용 외부 시트 (읽기만)
   GB_PLAN_ID: '1rHbpjZa12ZDfw2OQXLSdd0QexqqXrv2xxjTo0egYtOs',   // 정산(일정) 공동구매 — '일정' 탭
-  ORDER_ID: '1HdpGTQ_5BXBAPRPYcFuL32xdzfCaQ6MYWf9xyFjwMGU'      // MASTER_오더 — '마스터'·'오더요청' 탭
+  ORDER_ID: '1HdpGTQ_5BXBAPRPYcFuL32xdzfCaQ6MYWf9xyFjwMGU',     // MASTER_오더 — '마스터'·'오더요청' 탭
+  EVENT_ID: '1Vaor2PUoVdXILJJLQ2l9pnEnZNVcHbn0SqKeLdLTMDw',     // 공통) B2C 행사/관리 — '겐)행사 리스트'·'셀)행사 리스트'
+  OWNER_SHORT: { '엄지희': '엄', '김혜린': '린', '김승현': '승' }
 };
 
 /* ───────── 앱 API (POST) ─────────
@@ -172,7 +174,7 @@ function drCacheGet_(cache) {
 /* ───────── 유틸 ───────── */
 function drYmd_(v) {
   if (v instanceof Date) return Utilities.formatDate(v, DR.TZ, 'yyyy-MM-dd');
-  var m = String(v || '').trim().match(/^(\d{4})[-.\/](\d{1,2})[-.\/](\d{1,2})/);
+  var m = String(v || '').trim().match(/^(\d{4})\s*[-.\/]\s*(\d{1,2})\s*[-.\/]\s*(\d{1,2})/);
   return m ? m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2) : '';
 }
 
@@ -269,7 +271,8 @@ function drCollect_() {
     live: drLive_(ss, today),
     alerts: drAlerts_(ss),
     plan: drSafe_(function () { return drGbPlan_(today); }),
-    orders: drSafe_(function () { return drOrders_(today); })
+    orders: drSafe_(function () { return drOrders_(today); }),
+    events: drSafe_(function () { return drEvents_(today); })
   };
 }
 
@@ -306,6 +309,24 @@ function drGbPlan_(today) {
     if (s < from) return;
     rows.push([s, e, st, String(r[3]).trim(), String(r[4]).trim(), String(r[6]).trim(),
       drNum_(r[13]), drNum_(r[26]), String(r[25]).trim(), r[18] instanceof Date ? Utilities.formatDate(r[18], DR.TZ, 'M/d') : String(r[18]).trim()]);
+  });
+  rows.sort(function (a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0; });
+  return { rows: rows };
+}
+
+/** 플랫폼 행사: 지난달 1일 이후 끝나는 것. rows: [시작, 종료, 법인(겐/셀), 담당약칭, 채널, 행사명, 상태] */
+function drEvents_(today) {
+  var ss = SpreadsheetApp.openById(DR.EVENT_ID), rows = [];
+  var p = today.split('-'), from = drAddDays_(p[0] + '-' + p[1] + '-01', -1).slice(0, 8) + '01';
+  [['겐)행사 리스트', '겐'], ['셀)행사 리스트', '셀']].forEach(function (t) {
+    var sh = ss.getSheetByName(t[0]);
+    if (!sh || sh.getLastRow() < 3) return;
+    sh.getRange(3, 1, sh.getLastRow() - 2, 7).getValues().forEach(function (r) {
+      var s = drYmd_(r[5]), e = drYmd_(r[6]) || s;
+      if (!s || e < from || !String(r[3]).trim()) return;
+      var ow = String(r[1]).trim();
+      rows.push([s, e, t[1], DR.OWNER_SHORT[ow] || ow, String(r[2]).trim(), String(r[3]).trim(), String(r[4]).trim()]);
+    });
   });
   rows.sort(function (a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0; });
   return { rows: rows };
