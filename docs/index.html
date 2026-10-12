@@ -523,6 +523,21 @@ function render(){
 
   S.ch+=h; h='';
   h+='<div class="card" id="cal"></div>';
+  if(D.role!=='share' && D.gbm && D.gbm.length){
+    var gy=D.today.slice(0,4), gl=D.gbm.filter(function(r){return r[0].slice(0,4)===gy;}), gt=[0,0,0,0,0,0];
+    gl.forEach(function(r){ for(var i=1;i<7;i++) gt[i-1]+=r[i]; });
+    var gmx=Math.max.apply(null,gl.map(function(r){return r[1]+r[3]+r[5];}).concat([1]));
+    h+='<div class="card"><h2>공구 매출 합산 <small>국세청 공동구매 + 스토어팜 2곳 공구</small></h2>'
+      +'<div class="row mini"><div><div class="k">'+gy+'년 합계</div><div class="v">'+man(gt[0]+gt[2]+gt[4])+'</div></div>'
+      +'<div><div class="k">국세청</div><div class="v">'+man(gt[0])+'</div></div>'
+      +'<div><div class="k">셀렉트인하우스</div><div class="v">'+man(gt[2])+'</div></div>'
+      +'<div><div class="k">모아하우스</div><div class="v">'+man(gt[4])+'</div></div></div><div style="margin-top:8px">';
+    gl.slice().reverse().forEach(function(r){
+      var t=r[1]+r[3]+r[5];
+      h+='<div class="arow"><span>'+(+r[0].slice(5))+'월</span><div class="bt"><i style="width:'+(r[1]/gmx*100)+'%;background:#7c3aed"></i><i style="width:'+(r[3]/gmx*100)+'%;background:var(--accent)"></i><i style="width:'+(r[5]/gmx*100)+'%;background:#d4a017"></i></div><div class="v">'+man(t)+'<small>계산서 '+r[2]+'건 · 주문 '+won(r[4]+r[6])+'건</small></div></div>';
+    });
+    h+='</div><div class="lg"><span><i style="background:#7c3aed"></i>국세청 공동구매</span><span><i style="background:var(--accent)"></i>셀렉트인하우스</span><span><i style="background:#d4a017"></i>모아하우스</span></div></div>';
+  }
   h+='<div class="card"><h2>공구 · 인플루언서 <small>기간 합계 '+man(R.gongguSales)+'</small></h2>';
   if(!R.gonggu.length) h+='<div class="empty">선택한 기간에 공구 매출 없음</div>';
   R.gonggu.forEach(function(g){
@@ -591,7 +606,7 @@ function goalHtml(){
   return h+'</div>';
 }
 function homeHtml(){
-  var h=goalHtml(), T=D.today, adm=D.role!=='share', A=D.alerts;
+  var h=goalHtml()+'<div class="card" id="cal"></div>', T=D.today, adm=D.role!=='share', A=D.alerts;
   if(adm && A && (A.neg||A.noCost)){
     h+='<div class="al">';
     if(A.neg) h+='<a><span>역마진 상품</span><b>'+A.neg+'개</b><small>손해 '+man(-A.negLoss)+'</small></a>';
@@ -791,7 +806,7 @@ $('startIn').onchange=function(){
 $('endIn').onchange=function(){ if(!D||!this.value) return; userNav=true; P.mode='custom'; P.end=this.value; show(); };
 $('prevBtn').onclick=function(){ if(D){ userNav=true; stepPeriod(-1); show(); } };
 $('nextBtn').onclick=function(){ if(D){ userNav=true; stepPeriod(1); show(); } };
-$('reload').onclick=function(){ fetchData(true); };
+$('reload').onclick=function(){ checkUpdate(); fetchData(true); };
 
 /* ───── 채널 검색 ───── */
 function setQ(v){ Q=v||''; $('chq').value=Q; $('chq').classList.toggle('on',!!Q.trim()); if(D) show(); }
@@ -818,6 +833,10 @@ function fillChannels(){
 // 앱으로 다시 돌아오면(백그라운드 → 화면) 최신 데이터 받기
 document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='visible' && D && !syncing) fetchData(false); });
 
+var APP_BUILD='b20261012c';
+function checkUpdate(){ fetch('index.html?v='+Date.now(),{cache:'no-store'}).then(function(r){return r.text();}).then(function(t){ var m=t.match(/APP_BUILD='([^']+)'/); if(m && m[1]!==APP_BUILD) location.reload(); }).catch(function(){}); }
+document.addEventListener('visibilitychange',function(){ if(!document.hidden) checkUpdate(); });
+setTimeout(checkUpdate,1500);
 if('serviceWorker' in navigator){ window.addEventListener('load',function(){ navigator.serviceWorker.register('sw.js').catch(function(){}); }); }
 </script>
 </body>
