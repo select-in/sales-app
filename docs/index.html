@@ -157,6 +157,21 @@
   .ev.dl{background:var(--up)} .ev.pay{background:var(--down)} .ev.done{background:var(--line);color:var(--sub);text-decoration:line-through}
   .calnav{display:flex;align-items:center;gap:6px}
   .calnav button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;width:30px;height:28px;font-size:14px}
+  .ev.mo{background:#64748b}
+  .mm{background:var(--bg);border-radius:10px;padding:8px 10px;margin-top:6px;font-size:13px}
+  .mm .mt{white-space:pre-wrap;word-break:break-word;line-height:1.45}
+  .mm .mh{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:11px;color:var(--sub);margin-bottom:3px}
+  .mm .mh b{color:var(--brand);font-weight:700}
+  .mm .mh button{border:none;background:none;color:var(--sub);font-size:11px;font-family:inherit;padding:2px 4px}
+  .mm .mh button.cf{color:var(--up);font-weight:700}
+  .mform{margin-top:10px;display:grid;grid-template-columns:auto 1fr;gap:6px}
+  .mform input,.mform textarea{font:inherit;font-size:14px;border:1px solid var(--line);border-radius:9px;padding:7px 9px;background:var(--card);color:var(--ink);min-width:0}
+  .mform textarea{grid-column:1/-1;min-height:60px;resize:vertical}
+  .mform .mb{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .mform .mb span{font-size:12px;color:var(--up)}
+  .mform button{border:none;background:var(--brand);color:#fff;border-radius:9px;padding:8px 16px;font:inherit;font-size:14px;font-weight:600}
+  .mform button:disabled{opacity:.5}
+  .mbadge{font-size:11px;margin-left:5px;color:var(--warn);font-weight:600}
   .col{margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.25)}
 </style>
 </head>
@@ -484,6 +499,7 @@ function render(){
       +'<div><div class="k">주문</div><div class="v">'+won(m.cnt)+'건</div></div></div></div>';
   }
 
+  h+='<div class="card" id="memoSum"></div>';
   S.sum+=h; h='';
   h+='<div class="card"><h2>사업장별 <small>'+cmpLabel+' 대비</small></h2>';
   R.corps.forEach(function(c){
@@ -500,7 +516,7 @@ function render(){
     if(!g.sites.length) h+='<div class="empty">선택한 기간 매출 없음</div>';
     var mx=g.sites.length?g.sites[0].sales:1;
     g.sites.forEach(function(x){
-      h+='<div class="pl tap" data-q="'+esc(x.plat+' '+x.corp)+'"><div class="t"><span>'+esc(x.plat)+'<span class="c">'+esc(x.corp)+' · '+won(x.cnt)+'건</span></span><b>'+won(x.sales)+'</b></div>'
+      h+='<div class="pl tap" data-q="'+esc(x.plat+' '+x.corp)+'"><div class="t"><span>'+esc(x.plat)+'<span class="c">'+esc(x.corp)+' · '+won(x.cnt)+'건</span>'+memoBadge(x.plat,R.start,R.end)+'</span><b>'+won(x.sales)+'</b></div>'
         +'<div class="track"><i style="width:'+(x.sales/mx*100)+'%"></i></div></div>';
     });
     h+='</div></details>';
@@ -541,7 +557,7 @@ function render(){
   h+='<div class="card"><h2>공구 · 인플루언서 <small>기간 합계 '+man(R.gongguSales)+'</small></h2>';
   if(!R.gonggu.length) h+='<div class="empty">선택한 기간에 공구 매출 없음</div>';
   R.gonggu.forEach(function(g){
-    h+='<div class="item"><div><div class="n">'+esc(g.who)+'</div><div class="s">'+esc(g.items.join(', '))+'</div></div>'
+    h+='<div class="item"><div><div class="n">'+esc(g.who)+memoBadge(g.who,R.start,R.end)+'</div><div class="s">'+esc(g.items.join(', '))+'</div></div>'
       +'<div class="r"><div class="n">'+man(g.sales)+'</div><div class="s">'+won(g.cnt)+'건</div></div></div>';
   });
   h+='</div>';
@@ -565,6 +581,7 @@ function render(){
   if($('ana')) renderAna();
   if($('cal')) renderCal();
   if($('ptabs')) renderPlats();
+  if($('memoSum')) renderMemoSum();
   Array.prototype.forEach.call(document.querySelectorAll('details.grp'),function(d){
     d.ontoggle=function(){ openGroups[d.dataset.g]=d.open; };
   });
@@ -729,12 +746,13 @@ function renderCal(){
     h+='<div class="cd'+(d.slice(0,7)!==CALM?' out':'')+(d===T?' td':'')+(d===CALSEL?' sel':'')+'" data-d="'+d+'"><b class="'+(wdI===0?'sun':wdI===6?'sat':'')+'"><span>'+(+d.slice(8))+'</span>'+(sd[d]&&sd[d].t?'<em class="'+(sd[d].live?'lv':'')+'">'+sm2(sd[d].t)+'</em>':'')+'</b>';
     var mk=marks[d]||[], lab=mk.map(function(x){ return '<span class="ev '+x.k+'">'+esc(x.t)+'</span>'; })
       .concat(ev.map(function(r){ return '<span class="ev'+(r[2].indexOf('미확정')>=0?' un':'')+'">'+esc(r[4]||r[3])+'</span>'; }))
-      .concat(onE(d).map(function(r){ return '<span class="ev pe">'+esc(evLab(r))+'</span>'; }));
+      .concat(onE(d).map(function(r){ return '<span class="ev pe">'+esc(evLab(r))+'</span>'; }))
+      .concat(memosOn(d).map(function(x){ return '<span class="ev mo">📝'+esc(x[2]||x[3])+'</span>'; }));
     h+=lab.slice(0,3).join('');
     if(lab.length>3) h+='<span class="ev more">+'+(lab.length-3)+'</span>';
     h+='</div>';
   }
-  h+='</div><div class="lg"><span><b style="color:var(--brand)">59만</b> 일매출</span><span><i style="background:var(--accent)"></i>확정</span><span><i style="background:var(--warn)"></i>미확정</span><span><i style="background:var(--up)"></i>정산서 기한</span><span><i style="background:var(--down)"></i>셀러 지급</span><span><i style="background:#7c3aed"></i>플랫폼 행사</span></div>';
+  h+='</div><div class="lg"><span><b style="color:var(--brand)">59만</b> 일매출</span><span><i style="background:var(--accent)"></i>확정</span><span><i style="background:var(--warn)"></i>미확정</span><span><i style="background:var(--up)"></i>정산서 기한</span><span><i style="background:var(--down)"></i>셀러 지급</span><span><i style="background:#7c3aed"></i>플랫폼 행사</span><span><i style="background:#64748b"></i>메모</span></div>';
   var sel=on(CALSEL), sm=marks[CALSEL]||[], sdd=sd[CALSEL];
   h+='<div style="margin-top:10px">';
   h+='<div class="item" style="border-top:none"><div><div class="n">'+md(CALSEL)+'('+wd(CALSEL)+') 매출'+(sdd&&sdd.live?'<span class="tag">실시간</span>':'')+'</div><div class="s">'+(sdd?Object.keys(sdd.c).map(function(c){ return esc(c)+' '+man(sdd.c[c]); }).join(' · '):(CALSEL>T?'예정일':'매출 없음'))+'</div></div><div class="r"><div class="n">'+(sdd?won(sdd.t)+'원':'-')+'</div></div></div>';
@@ -756,13 +774,79 @@ function renderCal(){
     h+='<div class="label" style="margin-top:8px"><span>'+md(CALSEL)+'('+wd(CALSEL)+') 플랫폼 행사 '+se.length+'건</span></div>';
     se.forEach(function(r){ h+='<div class="item"><div><div class="n">'+esc(evLab(r))+'<span class="tag gray">'+(r[2]==='겐'?'겐더샵':'셀렉트인')+'</span>'+(r[6]?'<span class="tag">'+esc(r[6])+'</span>':'')+'</div><div class="s">'+esc(r[5])+' · '+md(r[0])+'~'+md(r[1])+'</div></div></div>'; });
   }
+  var smo=memosOn(CALSEL);
+  h+='<div class="label" style="margin-top:10px"><span>'+md(CALSEL)+'('+wd(CALSEL)+') 메모 '+smo.length+'건</span></div>';
+  h+=memoList(smo,false)+memoForm('cal-'+CALSEL,CALSEL,'');
   h+='</div>';
   $('cal').innerHTML=h;
+  bindMemo($('cal'));
   Array.prototype.forEach.call(document.querySelectorAll('#cal .aseg button'),function(b){ b.onclick=function(){ CALF=b.dataset.f; try{ localStorage.setItem('drCalF_v1',CALF); }catch(e){} renderCal(); }; });
   var mv=function(n){ var dt=new Date(Date.UTC(y,m-1+n,1)); CALM=dt.toISOString().slice(0,7); renderCal(); };
   $('cprev').onclick=function(){ mv(-1); }; $('cnext').onclick=function(){ mv(1); };
   Array.prototype.forEach.call(document.querySelectorAll('.cd'),function(c){ c.onclick=function(){ CALSEL=c.dataset.d; if(CALSEL.slice(0,7)!==CALM) CALM=CALSEL.slice(0,7); renderCal(); }; });
 }
+/* ───── 메모 (시트 '앱메모' 탭에 저장 · 관리자/공유 모두 보기·쓰기) ───── */
+var MDRAFT={};
+function memos(){ return (D&&D.memos)||[]; }
+function memosOn(d){ return memos().filter(function(x){ return x[1]===d; }); }
+function memoMatch(x,name){ var t=String(x[2]||'').toLowerCase(), n=String(name||'').toLowerCase(); return !!t && !!n && (t===n || t.indexOf(n)>=0 || n.indexOf(t)>=0); }
+function memoBadge(name,a,b){ var n=memos().filter(function(x){ return x[1]>=a && x[1]<=b && memoMatch(x,name); }).length; return n?'<span class="mbadge">📝'+n+'</span>':''; }
+function memoList(list,showDate){
+  if(!list.length) return '<div class="empty">메모 없음</div>';
+  return list.map(function(x){
+    var canDel = D.role==='admin' || x[4]==='공유';
+    return '<div class="mm"><div class="mh"><span>'+(showDate?'<b>'+md(x[1])+'('+wd(x[1])+')</b> ':'')+(x[2]?'<span class="tag">'+esc(x[2])+'</span> ':'<span class="tag gray">전체</span> ')+esc(x[4])+(x[5]?' · '+esc(x[5].slice(5)):'')+'</span>'
+      +(canDel?'<button data-del="'+esc(x[0])+'">삭제</button>':'')+'</div><div class="mt">'+esc(x[3])+'</div></div>';
+  }).join('');
+}
+function memoForm(key,date,target){
+  var dr=MDRAFT[key]||{};
+  return '<form class="mform" data-k="'+key+'"><input type="date" name="d" value="'+esc(dr.d||date)+'" max="'+shift(D.today,365)+'" required>'
+    +'<input name="t" list="chlist" placeholder="대상 (비우면 전체)" value="'+esc(dr.t!=null?dr.t:target)+'" maxlength="40" autocomplete="off">'
+    +'<textarea name="x" placeholder="메모 입력" maxlength="500">'+esc(dr.x||'')+'</textarea>'
+    +'<div class="mb"><span class="mmsg"></span><button type="submit">메모 저장</button></div></form>';
+}
+function renderMemoSum(){
+  var toks=qTokens(Q), list=memos().filter(function(x){ return x[1]>=R.start && x[1]<=R.end && (!toks.length || hit(x[2]+' '+x[3],toks)); }).slice().reverse();
+  var h='<h2>메모 <small>'+(R.n===1?md(R.end):md(R.start)+'~'+md(R.end))+(toks.length?' · \''+esc(Q.trim())+'\'':'')+' · '+list.length+'건</small></h2>';
+  h+=memoList(list,R.n>1)+memoForm('sum',R.end,Q.trim());
+  $('memoSum').innerHTML=h; bindMemo($('memoSum'));
+}
+function memoSave(j){
+  if(j.memos){ D.memos=j.memos; lsSet(LS_KEY,JSON.stringify(D)); }
+}
+function memoCall(body,done){
+  var token=null; try{ token=localStorage.getItem(LS_TOKEN); }catch(e){}
+  body.token=token;
+  api(body).then(function(t){ return JSON.parse(t); }).then(function(j){
+    if(j.error==='login'){ showLogin(); return; }
+    memoSave(j); done(j.error||null);
+  }).catch(function(){ done('연결 실패. 다시 시도하세요.'); });
+}
+function bindMemo(root){
+  Array.prototype.forEach.call(root.querySelectorAll('form.mform'),function(f){
+    var k=f.dataset.k, keep=function(){ MDRAFT[k]={d:f.d.value,t:f.t.value,x:f.x.value}; };
+    f.oninput=keep;
+    f.onsubmit=function(ev){
+      ev.preventDefault();
+      var btn=f.querySelector('button'), msg=f.querySelector('.mmsg');
+      if(!f.x.value.trim()){ msg.textContent='내용을 입력하세요'; return; }
+      btn.disabled=true; btn.textContent='저장 중…'; msg.textContent='';
+      memoCall({action:'memo_add',date:f.d.value,target:f.t.value.trim(),text:f.x.value},function(err){
+        if(err){ btn.disabled=false; btn.textContent='메모 저장'; msg.textContent=err; return; }
+        delete MDRAFT[k]; show();
+      });
+    };
+  });
+  Array.prototype.forEach.call(root.querySelectorAll('button[data-del]'),function(b){
+    b.onclick=function(){
+      if(!b.classList.contains('cf')){ b.classList.add('cf'); b.textContent='한 번 더 누르면 삭제'; setTimeout(function(){ b.classList.remove('cf'); b.textContent='삭제'; },3000); return; }
+      b.disabled=true; b.textContent='삭제 중…';
+      memoCall({action:'memo_del',id:b.dataset.del},function(err){ if(err){ b.disabled=false; b.classList.remove('cf'); b.textContent='삭제'; alertMsg(b,err); return; } show(); });
+    };
+  });
+}
+function alertMsg(el,t){ var m=el.closest('.mm'); if(m) m.insertAdjacentHTML('beforeend','<div class="mmsg" style="color:var(--up);font-size:12px">'+esc(t)+'</div>'); }
 function tipText(x){
   return '<b style="color:var(--ink)">'+md(x.d)+'('+x.wd+')</b> 매출 '+won(x.sales)+'원 · 이익 '+man(x.profit)+' · '+won(x.cnt)+'건';
 }
@@ -833,7 +917,7 @@ function fillChannels(){
 // 앱으로 다시 돌아오면(백그라운드 → 화면) 최신 데이터 받기
 document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='visible' && D && !syncing) fetchData(false); });
 
-var APP_BUILD='b20261012c';
+var APP_BUILD='b20261013m';
 function checkUpdate(){ fetch('index.html?v='+Date.now(),{cache:'no-store'}).then(function(r){return r.text();}).then(function(t){ var m=t.match(/APP_BUILD='([^']+)'/); if(m && m[1]!==APP_BUILD) location.reload(); }).catch(function(){}); }
 document.addEventListener('visibilitychange',function(){ if(!document.hidden) checkUpdate(); });
 setTimeout(checkUpdate,1500);

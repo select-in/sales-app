@@ -25,7 +25,8 @@ var DR = {
 /* ───────── 앱 API (POST) ─────────
  * 앱 화면(GitHub Pages, select-in/sales-app)이 이 웹앱 주소로 요청합니다.
  *  - {action:'login', password}  → 비밀번호가 맞으면 90일짜리 로그인 토큰 발급
- *  - {action:'data', token, force} → 토큰이 유효하면 매출 데이터(JSON)
+ *  - {action:'data', token, force} → 토큰이 유효하면 매출 데이터(JSON) + 메모
+ *  - {action:'memo_add', token, date, target, text} / {action:'memo_del', token, id} → 앱 메모 (관리자·공유 모두)
  * 비밀번호 2종 (프로젝트 설정 > 스크립트 속성):
  *  - DR_PASSWORD        관리자: 전체 데이터
  *  - DR_SHARE_PASSWORD  공유(직원·외부): 입금예정·거래처명 제외 (서버에서 아예 빼고 보냄)
@@ -45,6 +46,11 @@ function doPost(e) {
     var json = drData(req.force === true);
     return drOut_(role === 'admin' ? drWithRole_(json, 'admin') : drForShare_(json));
   }
+  if (req.action === 'memo_add' || req.action === 'memo_del') {
+    var mrole = drVerify_(req.token);
+    if (!mrole) return drOut_(JSON.stringify({ error: 'login' }));
+    return drOut_(JSON.stringify(req.action === 'memo_add' ? drMemoAdd_(req, mrole) : drMemoDel_(req, mrole)));
+  }
   return drOut_(JSON.stringify({ error: 'bad request' }));
 }
 
@@ -53,7 +59,7 @@ function drOut_(text) {
 }
 
 function drWithRole_(json, role) {
-  var d = JSON.parse(json); d.role = role; return JSON.stringify(d);
+  var d = JSON.parse(json); d.role = role; d.memos = drMemos_(); return JSON.stringify(d);
 }
 
 /** 공유용: 입금예정(입금예정일·정산예정액)과 거래처명 제거 */
@@ -66,6 +72,7 @@ function drForShare_(json) {
   if (d.tax) d.tax = d.tax.map(function (t) { var x = t.slice(); x[1] = ''; return x; });
   if (d.plan && d.plan.rows) d.plan.rows = d.plan.rows.map(function (r) { var x = r.slice(); x[6] = 0; x[7] = 0; x[8] = ''; x[9] = ''; return x; });
   delete d.alerts;
+  d.memos = drMemos_();
   return JSON.stringify(d);
 }
 
@@ -391,4 +398,81 @@ function drLive_(ss, today) {
   if (o.sales == null) return null;
   o.isToday = o.date === today;
   return o;
+}
+
+/* ───────── 앱 메모 ('앱메모' 탭) ─────────
+ * A 날짜(yyyy-MM-dd) · B 대상(빈칸=전체, 사이트명·인플루언서명 등) · C 내용 · D 작성(관리자/공유) · E 작성시각 · F ID
+ * 메모는 캐시하지 않고 매번 시트에서 읽음 (작고 바로 보여야 하므로)
+ * 공유 등급은 공유 등급이 쓴 메모만 지울 수 있음. 시트에서 직접 고치거나 지워도 됨.
+ */
+var DR_MEMO = { SHEET: '앱메모', MAX_LEN: 500, MAX_TARGET: 40, KEEP: 1500 };
+var DR_ROLE_LABEL = { admin: '관리자', share: '공유' };
+
+function drMemoSheet_(create) {
+  var ss = SpreadsheetApp.openById(DR.SPREADSHEET_ID);
+  var sh = ss.getSheetByName(DR_MEMO.SHEET);
+  if (!sh && create) {
+    sh = ss.insertSheet(DR_MEMO.SHEET);
+    sh.getRange(1, 1, 1, 6).setValues([['날짜', '대상', '내용', '작성', '작성시각', 'ID']]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+    sh.getRange('A:F').setNumberFormat('@');
+    sh.setColumnWidth(3, 420);
+  }
+  return sh;
+}
+
+/** [[id, 날짜, 대상, 내용, 작성, 작성시각], …] 날짜순 */
+function drMemos_() {
+  try {
+    var sh = drMemoSheet_(false);
+    if (!sh || sh.getLastRow() < 2) return [];
+    var v = sh.getRange(2, 1, sh.getLastRow() - 1, 6).getValues(), out = [];
+    v.forEach(function (r, i) {
+      var d = drYmd_(r[0]), t = String(r[2] || '').replace(/^'/, '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || !t) return;
+      var ts = r[4] instanceof Date ? Utilities.formatDate(r[4], DR.TZ, 'yyyy-MM-dd HH:mm') : String(r[4] || '');
+      out.push([String(r[5] || ('row' + (i + 2))), d, String(r[1] || '').trim(), t, String(r[3] || ''), ts]);
+    });
+    out.sort(function (a, b) { return a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : (a[5] < b[5] ? -1 : 1); });
+    return out.slice(-DR_MEMO.KEEP);
+  } catch (e) { return []; }
+}
+
+function drMemoText_(s, max) {
+  s = String(s == null ? '' : s).replace(/\r/g, '').trim().slice(0, max);
+  return /^[=+\-@]/.test(s) ? "'" + s : s;   // 수식으로 해석되지 않게
+}
+
+function drMemoAdd_(req, role) {
+  var d = String(req.date || ''), text = drMemoText_(req.text, DR_MEMO.MAX_LEN), target = drMemoText_(req.target, DR_MEMO.MAX_TARGET);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return { error: '날짜가 올바르지 않습니다' };
+  if (!text) return { error: '내용을 입력하세요' };
+  var lock = LockService.getScriptLock(); lock.waitLock(15000);
+  try {
+    var sh = drMemoSheet_(true);
+    var id = Date.now().toString(36) + Utilities.getUuid().slice(0, 4);
+    var now = Utilities.formatDate(new Date(), DR.TZ, 'yyyy-MM-dd HH:mm');
+    sh.getRange(sh.getLastRow() + 1, 1, 1, 6).setNumberFormat('@').setValues([[d, target, text, DR_ROLE_LABEL[role] || role, now, id]]);
+    SpreadsheetApp.flush();
+  } finally { lock.releaseLock(); }
+  return { ok: true, memos: drMemos_() };
+}
+
+function drMemoDel_(req, role) {
+  var id = String(req.id || '');
+  if (!id) return { error: '메모를 찾을 수 없습니다' };
+  var lock = LockService.getScriptLock(); lock.waitLock(15000);
+  try {
+    var sh = drMemoSheet_(false);
+    if (!sh || sh.getLastRow() < 2) return { error: '메모를 찾을 수 없습니다' };
+    var v = sh.getRange(2, 1, sh.getLastRow() - 1, 6).getValues();
+    for (var i = v.length - 1; i >= 0; i--) {
+      if (String(v[i][5] || ('row' + (i + 2))) !== id) continue;
+      if (role !== 'admin' && String(v[i][3]) !== DR_ROLE_LABEL[role]) return { error: '관리자가 쓴 메모는 지울 수 없습니다' };
+      sh.deleteRow(i + 2);
+      SpreadsheetApp.flush();
+      return { ok: true, memos: drMemos_() };
+    }
+  } finally { lock.releaseLock(); }
+  return { error: '이미 지워진 메모입니다', memos: drMemos_() };
 }
