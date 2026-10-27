@@ -17,13 +17,13 @@
  */
 
 var HUB_TABS = {
-  상품: ['id', 'SKU', '바코드', '상품명', '브랜드', '옵션', '법인', '구분', '원가', '판매가', '재고', '안전재고', '위치', '메모', '수정일', '수정자', '사방넷상품코드', '단품코드', '이미지', '사방넷상태', '카테고리'],
+  상품: ['id', 'SKU', '바코드', '상품명', '브랜드', '옵션', '법인', '구분', '원가', '판매가', '재고', '안전재고', '위치', '메모', '수정일', '수정자', '사방넷상품코드', '단품코드', '이미지', '사방넷상태', '카테고리', '등록상태', '등록정보'],
   재고이력: ['일시', '상품id', 'SKU', '상품명', '구분', '수량', '변경후재고', '메모', '작업자'],
   원가이력: ['일시', '상품id', 'SKU', '상품명', '이전원가', '새원가', '작업자'],
   직원: ['이름', '권한', 'PIN', '사용', '등록일'],
   설정: ['키', '값', '수정일', '수정자']
 };
-var HUB_P_FIELDS = ['id', 'sku', 'barcode', 'name', 'brand', 'option', 'corp', 'type', 'cost', 'price', 'stock', 'safety', 'loc', 'memo', 'updatedAt', 'updatedBy', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat'];
+var HUB_P_FIELDS = ['id', 'sku', 'barcode', 'name', 'brand', 'option', 'corp', 'type', 'cost', 'price', 'stock', 'safety', 'loc', 'memo', 'updatedAt', 'updatedBy', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg'];
 var HUB_TOKEN_DAYS = 90;
 
 /* ===================== 진입점 ===================== */
@@ -43,6 +43,9 @@ function doPost(e) {
       case 'products_import': return hubOut_(hubLocked_(function () { return hubImport_(req.rows, me); }));
       case 'sbn_sync': if (!admin) return hubOut_({ error: '관리자만 사방넷 동기화를 할 수 있습니다' });
         return hubOut_(hubLocked_(function () { return hubSbnSync_(req.rows, me, req.final); }));
+      case 'photo_upload': return hubOut_(hubPhotoUpload_(req, me));
+      case 'ai_fill': return hubOut_(hubAiFill_(req));
+      case 'reg_save': return hubOut_(hubLocked_(function () { return hubRegSave_(req, me); }));
       case 'stock_move': return hubOut_(hubLocked_(function () { return hubStockMove_(req, me); }));
       case 'history': return hubOut_({ history: hubHistory_(req.id, 300) });
       case 'cost_history': return hubOut_({ costs: hubCostHistory_(req.id) });
@@ -194,7 +197,7 @@ function hubProductObj_(v) {
   var o = {};
   HUB_P_FIELDS.forEach(function (f, i) { o[f] = v[i] instanceof Date ? Utilities.formatDate(v[i], 'Asia/Seoul', 'yyyy-MM-dd HH:mm') : v[i]; });
   ['cost', 'price', 'stock', 'safety'].forEach(function (f) { o[f] = hubNum_(o[f]); });
-  ['id', 'sku', 'barcode', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat'].forEach(function (f) { o[f] = String(o[f] == null ? '' : o[f]); });
+  ['id', 'sku', 'barcode', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg'].forEach(function (f) { o[f] = String(o[f] == null ? '' : o[f]); });
   return o;
 }
 function hubProducts_() {
@@ -379,6 +382,91 @@ function hubCostHistory_(id) {
   return hubRows_('원가이력').vals.filter(function (v) { return String(v[1]) === String(id); }).reverse().map(function (v) {
     return { at: v[0] instanceof Date ? Utilities.formatDate(v[0], 'Asia/Seoul', 'yyyy-MM-dd HH:mm') : String(v[0]), before: v[4] === '' ? null : hubNum_(v[4]), after: hubNum_(v[5]), by: String(v[6]) };
   });
+}
+
+/* ===================== 사방넷 등록서 (사진 → AI 정리 → 등록 요청) ===================== */
+var HUB_MYCATS = ['셀렉트인전용', '의류', '남성화', '여성화', '모자/비니', '가방', '목도리', '속옷', '아동화', '벨트,지갑,귀마개', '텀블러'];
+function hubPhotoFolder_() {
+  var p = PropertiesService.getScriptProperties(), id = p.getProperty('HUB_PHOTO_FOLDER');
+  if (id) { try { return DriveApp.getFolderById(id); } catch (e) {} }
+  var f = DriveApp.createFolder('셀렉트인 OPS 상품사진');
+  p.setProperty('HUB_PHOTO_FOLDER', f.getId());
+  return f;
+}
+/** 사진 저장 → 링크가 있는 사람 보기 → 앱·사방넷 등록에 쓰는 주소 반환 */
+function hubPhotoUpload_(req, me) {
+  var b64 = String(req.b64 || ''); if (!b64) return { error: '사진이 없습니다' };
+  if (b64.length > 8e6) return { error: '사진이 너무 큽니다' };
+  var mime = /^image\/(jpeg|png|webp)$/.test(req.mime) ? req.mime : 'image/jpeg';
+  var name = hubStr_(req.name, 80) || ('photo_' + Date.now());
+  var blob = Utilities.newBlob(Utilities.base64Decode(b64), mime, name + (mime === 'image/png' ? '.png' : '.jpg'));
+  var file = hubPhotoFolder_().createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  file.setDescription('업로드: ' + me.name + ' ' + hubNow_());
+  return { ok: true, id: file.getId(), url: 'https://lh3.googleusercontent.com/d/' + file.getId() };
+}
+/** 사진(들)을 보고 사방넷 등록에 필요한 정보를 채움 — 스크립트 속성 ANTHROPIC_API_KEY 필요 */
+function hubAiFill_(req) {
+  var key = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY');
+  if (!key) return { error: 'AI 키가 없습니다. Apps Script 스크립트 속성에 ANTHROPIC_API_KEY를 넣어주세요' };
+  var ids = (req.photoIds || []).slice(0, 4);
+  if (!ids.length) return { error: '사진을 먼저 찍어주세요' };
+  var content = ids.map(function (id) {
+    var blob = DriveApp.getFileById(id).getBlob();
+    return { type: 'image', source: { type: 'base64', media_type: blob.getContentType() || 'image/jpeg', data: Utilities.base64Encode(blob.getBytes()) } };
+  });
+  var prompt = [
+    '너는 한국 패션 커머스 회사(셀렉트인/겐더샵)의 상품 등록 담당자다. 사진(상품, 태그, 라벨)을 보고 사방넷 상품 등록용 정보를 채워라.',
+    '사진에서 확인되지 않는 정보는 지어내지 말고 빈 문자열("")로 둬라. 추정한 값은 notes에 "추정"이라고 적어라.',
+    '상품명 규칙: "브랜드 + 성별/대상(있으면) + 핵심 아이템명 + 색상 + 모델번호(있으면)" 형태의 한국어, 60자 이내.',
+    '마이카테고리는 다음 중 하나: ' + HUB_MYCATS.join(' / ') + ' (셀렉트인 법인 상품이면 "셀렉트인전용").',
+    '사이즈·색상이 여러 개로 보이면 options에 나열하고, 하나면 그 값만 넣어라.',
+    '상세설명(detail)은 쇼핑몰 상세페이지에 들어갈 짧은 소개 3~5문장 (과장·최상급 표현 금지).',
+    '태그에 가격이 보이면 tagPrice에 숫자만 넣어라.',
+    '반드시 아래 JSON만 출력:',
+    '{"name":"","brand":"","modelNo":"","myCategory":"","stdCategory":"대분류>중분류>소분류","gender":"남성|여성|공용|아동|","season":"","color":"","optionTitle":"색상:사이즈 등","options":[""],"material":"","maker":"","origin":"","tagPrice":0,"keywords":"쉼표로 구분","detail":"","notes":""}'
+  ].join('\n');
+  if (req.hint) prompt += '\n담당자 메모: ' + hubStr_(req.hint, 300);
+  content.push({ type: 'text', text: prompt });
+  var model = PropertiesService.getScriptProperties().getProperty('HUB_AI_MODEL') || 'claude-sonnet-5-5';
+  var res = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    payload: JSON.stringify({ model: model, max_tokens: 1500, messages: [{ role: 'user', content: content }] })
+  });
+  var code = res.getResponseCode(), body = res.getContentText();
+  if (code !== 200) return { error: 'AI 호출 실패(' + code + '): ' + body.slice(0, 200) };
+  var text = (JSON.parse(body).content || []).map(function (c) { return c.text || ''; }).join('');
+  var m = text.match(/\{[\s\S]*\}/);
+  if (!m) return { error: 'AI 응답을 읽지 못했습니다' };
+  try { return { ok: true, fill: JSON.parse(m[0]) }; } catch (e) { return { error: 'AI 응답 형식 오류' }; }
+}
+/** 등록서 저장 — 상품 행에 등록정보(JSON)와 등록상태를 함께 저장 */
+function hubRegSave_(req, me) {
+  var p = req.p || {}, reg = req.reg || {};
+  var status = { draft: '작성중', request: '등록요청' }[req.status] || '작성중';
+  if (status === '등록요청') {
+    var miss = [];
+    if (!p.name) miss.push('상품명'); if (!hubNum_(p.price)) miss.push('판매가'); if (!(reg.photos || []).length) miss.push('대표이미지');
+    if (!reg.myCategory) miss.push('마이카테고리');   // 상세설명·고시정보 등은 등록할 때 Claude가 정리 (B 방식)
+    if (miss.length) return { error: '사방넷 등록에 필요한 항목이 비어 있어요: ' + miss.join(', ') };
+  }
+  p.corp = reg.myCategory === '셀렉트인전용' ? '셀렉트인' : (p.corp || '겐더샵');
+  var r = hubProductSave_(p, me);
+  if (r.error) return r;
+  var hit = hubFindProduct_(r.product.id);
+  var row = hubRow_(Object.assign({}, hit.p, {
+    img: (reg.photos && reg.photos[0] && reg.photos[0].url) || hit.p.img, cat: reg.myCategory || hit.p.cat,
+    regStatus: status, reg: JSON.stringify(reg).slice(0, 45000)
+  }));
+  hit.sh.getRange(hit.row, 1, 1, row.length).setNumberFormats([hubFormats_()]).setValues([row]);
+  return { ok: true, product: hubProductObj_(row) };
+}
+/** 처음 한 번: 드라이브·외부 호출 권한 승인용 (실행만 하면 됨) */
+function hubAuthorize() {
+  hubPhotoFolder_();
+  UrlFetchApp.fetch('https://api.anthropic.com', { muteHttpExceptions: true });
+  Logger.log('권한 승인 완료. 사진 폴더: ' + hubPhotoFolder_().getUrl());
 }
 
 /* ===================== 설정 ===================== */

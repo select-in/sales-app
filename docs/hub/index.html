@@ -257,6 +257,19 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 .more-menu a .ti{color:var(--sub)}
 .more-menu a .soon{margin-left:auto;font-size:12px;color:var(--mute)}
 .hide{display:none!important}
+.photos{display:flex;gap:10px;flex-wrap:wrap}
+.photos .ph1{position:relative;width:88px;height:88px;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:var(--bg)}
+.photos .ph1 img{width:100%;height:100%;object-fit:cover}
+.photos .ph1 b{position:absolute;left:4px;top:4px;font-size:11px;background:var(--brand);color:var(--brand-ink);border-radius:6px;padding:1px 6px}
+.photos .ph1 button{position:absolute;right:4px;top:4px;width:24px;height:24px;border-radius:50%;border:0;background:rgba(0,0,0,.55);color:#fff;cursor:pointer;font-size:14px;line-height:1}
+.photos .add{width:88px;height:88px;border-radius:12px;border:2px dashed var(--line2);background:var(--card);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:var(--sub);font-size:12px;cursor:pointer}
+.photos .add .ti{font-size:26px}
+.sec{font-size:14px;font-weight:700;margin:20px 0 10px;padding-top:16px;border-top:1px solid var(--line);display:flex;align-items:center;gap:6px}
+.sec:first-child{margin-top:0;padding-top:0;border-top:0}
+.sec{flex-wrap:wrap}
+.sec small{flex-basis:100%;font-weight:500;color:var(--mute);font-size:12.5px;margin-top:2px}
+.g3k{grid-template-columns:repeat(3,1fr)!important}
+@media (max-width:900px){.g3k .kpi .v{font-size:22px}.g3k .kpi .k{font-size:12px}}
 .scanov{position:fixed;inset:0;z-index:80;background:#0b0d10;display:flex;flex-direction:column;color:#fff}
 .scanov .sh{display:flex;align-items:center;gap:10px;padding:calc(12px + env(safe-area-inset-top)) 16px 12px}
 .scanov .sh b{flex:1;font-size:17px}
@@ -287,7 +300,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-27i';
+var APP_BUILD = '2026-10-27j';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -468,7 +481,8 @@ var MENU = [
   {grp:'상품 · 재고', items:[
     {k:'products',t:'상품 관리',ic:'package'},
     {k:'stock',t:'재고 입출고',ic:'barcode'},
-    {k:'cost',t:'원가 · 마진',ic:'calculator'}]},
+    {k:'cost',t:'원가 · 마진',ic:'calculator'},
+    {k:'register',t:'사방넷 등록',ic:'cloud-upload'}]},
   {grp:'업무', items:[
     {k:'orders',t:'주문 · 발주 · 송장',ic:'truck-delivery',soon:1},
     {k:'gonggu',t:'공동구매',ic:'users-group',soon:1},
@@ -687,7 +701,8 @@ function openProduct(id){
   drawer(esc(p.name),
     '<div class="tabs2" id="dtabs"><button data-t="info" class="on">기본 정보</button><button data-t="hist">재고 이력</button><button data-t="costh">원가 변동</button></div>'+
     '<div id="dtab"></div>',
-    '<button class="btn dng'+(isAdmin()?'':' hide')+'" id="pdel" style="margin-right:auto"><i class="ti ti-trash"></i>삭제</button><a class="btn" href="#stock?id='+esc(p.id)+'" onclick="closeDrawer()"><i class="ti ti-barcode"></i>입출고</a><button class="btn pri" id="psave">저장</button>');
+    '<button class="btn dng'+(isAdmin()?'':' hide')+'" id="pdel" style="margin-right:auto"><i class="ti ti-trash"></i>삭제</button>'+(p.sbnPrd?'':'<button class="btn" id="preg"><i class="ti ti-cloud-upload"></i>사방넷 등록</button>')+'<a class="btn" href="#stock?id='+esc(p.id)+'" onclick="closeDrawer()"><i class="ti ti-barcode"></i>입출고</a><button class="btn pri" id="psave">저장</button>');
+  if ($('preg')) $('preg').onclick = function(){ openReg(p.id); };
   var tab = function(t){
     document.querySelectorAll('#dtabs button').forEach(function(b){ b.classList.toggle('on', b.dataset.t===t); });
     $('dft').classList.toggle('hide', t!=='info');
@@ -933,6 +948,123 @@ function stopCam(){
   if (CAM.raf){ clearTimeout(CAM.raf); CAM.raf=null; }
   if (CAM.stream){ CAM.stream.getTracks().forEach(function(t){ t.stop(); }); CAM.stream=null; }
   if (CAM.zx){ try{ CAM.zx.reset(); }catch(e){} CAM.zx=null; }
+}
+
+/* ---------- 사방넷 등록 (사진 + 필수 정보 → 등록 요청 → Claude가 사방넷 등록) ---------- */
+var MYCATS = ['셀렉트인전용','의류','남성화','여성화','모자/비니','가방','목도리','속옷','아동화','벨트,지갑,귀마개','텀블러'];
+var RF = {f:'all'};
+function regOf(p){ try{ return JSON.parse(p.reg||'{}'); }catch(e){ return {}; } }
+VIEWS.register = {
+  html: function(){
+    var L = S.products.filter(function(p){ return p.regStatus; });
+    var cnt = function(st){ return L.filter(function(p){ return p.regStatus===st; }).length; };
+    return '<div class="ph"><div><h1>사방넷 등록</h1><p>사진 찍고 필수 정보만 넣으면, 나머지는 Claude가 정리해서 사방넷에 등록해요</p></div>'+
+      '<div class="acts"><button class="btn pri" id="radd"><i class="ti ti-camera-plus"></i>새 상품 등록서</button></div></div>'+
+      '<div class="grid g3 g3k">'+
+        '<div class="kpi"><div class="k"><i class="ti ti-pencil"></i>작성 중</div><div class="v num">'+cnt('작성중')+'<small>개</small></div></div>'+
+        '<div class="kpi amber"><div class="k"><i class="ti ti-send"></i>등록 요청</div><div class="v num">'+cnt('등록요청')+'<small>개</small></div></div>'+
+        '<div class="kpi"><div class="k"><i class="ti ti-circle-check"></i>등록 완료</div><div class="v num">'+cnt('등록완료')+'<small>개</small></div></div>'+
+      '</div>'+
+      '<div class="card" style="margin-top:16px"><h2>등록서 목록</h2><p style="margin:-6px 0 10px;font-size:13px;color:var(--mute)">「등록 요청」이 되면 Claude에게 「사방넷 등록해줘」라고만 말하면 돼요</p>'+
+      (L.length ? '<div class="list">'+L.slice().reverse().map(function(p){
+        var r=regOf(p), pill = p.regStatus==='등록요청'?'a':p.regStatus==='등록완료'?'g':'';
+        return '<div class="li" data-id="'+esc(p.id)+'" style="cursor:pointer">'+thumb(p)+'<div class="m"><div class="t">'+esc(p.name)+'</div><div class="s">'+esc([p.brand, r.myCategory, p.price?won(p.price)+'원':'판매가 없음', (r.photos||[]).length+'장'].filter(Boolean).join(' · '))+'</div></div><div class="e"><span class="pill '+pill+'">'+esc(p.regStatus)+'</span></div></div>';
+      }).join('')+'</div>' : '<div class="empty">아직 등록서가 없어요. [새 상품 등록서]로 사진부터 찍어보세요.</div>')+'</div>';
+  },
+  bind: function(){
+    $('radd').onclick = function(){ openReg(null); };
+    document.querySelectorAll('#view [data-id]').forEach(function(r){ r.onclick=function(){ openReg(r.dataset.id); }; });
+  }
+};
+function resizeImage(file, max){
+  return new Promise(function(ok,no){
+    var img = new Image(), url = URL.createObjectURL(file);
+    img.onload = function(){
+      var w=img.naturalWidth, h=img.naturalHeight, k=Math.min(1, max/Math.max(w,h));
+      var c=document.createElement('canvas'); c.width=Math.round(w*k); c.height=Math.round(h*k);
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(url);
+      ok(c.toDataURL('image/jpeg',0.86).split(',')[1]);
+    };
+    img.onerror = function(){ no({message:'사진을 읽을 수 없어요'}); };
+    img.src = url;
+  });
+}
+function openReg(id){
+  var p = id ? S.products.filter(function(x){ return x.id===id; })[0] : null;
+  var r = p ? regOf(p) : {};
+  var photos = (r.photos||[]).slice();
+  var v = function(k){ return esc(p && p[k]!=null && p[k]!=='' ? (/^(cost|price)$/.test(k)&&p[k]?won(p[k]):p[k]) : ''); };
+  var rv = function(k){ return esc(r[k]||''); };
+  var corp = p ? p.corp : '셀렉트인';
+  var myc = r.myCategory || (corp==='셀렉트인'?'셀렉트인전용':'');
+  var opt = function(list, cur){ return list.map(function(x){ return '<option'+(x===cur?' selected':'')+'>'+esc(x)+'</option>'; }).join(''); };
+  drawer(p ? '사방넷 등록서 · '+esc(p.name) : '새 상품 등록서',
+    '<form id="rform" autocomplete="off">'+
+    '<div class="sec"><i class="ti ti-camera"></i>사진 <small>첫 번째 사진이 대표이미지 · 태그·라벨 사진도 같이 찍어두면 정리가 정확해져요</small></div>'+
+    '<div class="photos" id="rph"></div><input type="file" id="rfile" accept="image/*" capture="environment" multiple class="hide">'+
+    '<div class="sec"><i class="ti ti-forms"></i>필수 정보</div>'+
+    '<label class="fld"><span>상품명 <em>*</em></span><input class="inp" name="name" value="'+v('name')+'" placeholder="대충 적어도 돼요 — 등록할 때 정리해요"></label>'+
+    '<div class="row2"><label class="fld"><span>법인 · 마이카테고리 <em>*</em></span><select class="inp" name="myCategory">'+opt(MYCATS,myc)+'</select></label>'+
+    '<label class="fld"><span>판매가 (원) <em>*</em></span><input class="inp r num" name="price" inputmode="numeric" value="'+v('price')+'"></label></div>'+
+    '<div class="row2"><label class="fld"><span>원가 (원)</span><input class="inp r num" name="cost" inputmode="numeric" value="'+v('cost')+'"></label>'+
+    '<label class="fld"><span>TAG가 · 소비자가 (원)</span><input class="inp r num" name="tagPrice" inputmode="numeric" value="'+(r.tagPrice?won(r.tagPrice):'')+'"></label></div>'+
+    '<div class="sec"><i class="ti ti-list-details"></i>있으면 입력 <small>비워두면 사진 보고 Claude가 채워요</small></div>'+
+    '<div class="row2"><label class="fld"><span>브랜드</span><input class="inp" name="brand" value="'+v('brand')+'"></label><label class="fld"><span>모델번호 · 품번</span><input class="inp" name="modelNo" value="'+rv('modelNo')+'"></label></div>'+
+    '<label class="fld"><span>옵션 <small style="font-weight:400;color:var(--mute)">쉼표로 구분 · 예) 블랙:M, 블랙:L, 네이비:M</small></span><input class="inp" name="options" value="'+esc((r.options||[]).join(', ')||(p&&p.option)||'')+'"></label>'+
+    '<label class="fld"><span>바코드</span><div class="scanrow"><input class="inp num" name="barcode" value="'+v('barcode')+'" inputmode="numeric"><button type="button" class="btn pri" id="rscan"><i class="ti ti-scan"></i>스캔</button></div></label>'+
+    '<div class="row3"><label class="fld"><span>재고</span><input class="inp r num" name="stock" inputmode="numeric" value="'+(p?'':'')+'"'+(p?' disabled placeholder="입출고에서"':'')+'></label><label class="fld"><span>성별</span><select class="inp" name="gender">'+opt(['','남성','여성','공용','아동'],r.gender||'')+'</select></label><label class="fld"><span>원산지</span><input class="inp" name="origin" value="'+rv('origin')+'" placeholder="예) 베트남"></label></div>'+
+    '<label class="fld"><span>Claude에게 메모</span><textarea class="inp" name="note" rows="2" placeholder="예) 상세는 공식몰 문구 참고, 배송비 3,000원, 스마트스토어만 송신">'+rv('note')+'</textarea></label>'+
+    (r.detail?'<label class="fld"><span>상세설명 (Claude 정리본)</span><textarea class="inp" name="detail" rows="4">'+rv('detail')+'</textarea></label>':'')+
+    '</form>',
+    '<button class="btn" id="rdraft">임시저장</button><button class="btn pri" id="rreq"><i class="ti ti-send"></i>사방넷 등록 요청</button>');
+  var F = $('rform');
+  var drawPh = function(){
+    $('rph').innerHTML = photos.map(function(ph,i){ return '<div class="ph1"><img src="'+esc(ph.url)+'" alt="">'+(i===0?'<b>대표</b>':'')+'<button type="button" data-rm="'+i+'" aria-label="사진 빼기">×</button></div>'; }).join('')+
+      (photos.length<8?'<button type="button" class="add" id="radd2"><i class="ti ti-camera-plus"></i>사진 추가</button>':'');
+    $('rph').querySelectorAll('[data-rm]').forEach(function(b){ b.onclick=function(){ photos.splice(+b.dataset.rm,1); drawPh(); }; });
+    if ($('radd2')) $('radd2').onclick=function(){ $('rfile').click(); };
+  };
+  drawPh();
+  $('rfile').onchange = function(){
+    var files = Array.prototype.slice.call(this.files||[]).slice(0, 8-photos.length); this.value='';
+    var chain = Promise.resolve();
+    files.forEach(function(f,i){
+      chain = chain.then(function(){
+        toast('사진 올리는 중… '+(i+1)+'/'+files.length);
+        return resizeImage(f, 1200).then(function(b64){
+          if (DEMO) return {url:'data:image/jpeg;base64,'+b64, id:'demo'+Date.now()};
+          return api('photo_upload',{b64:b64,mime:'image/jpeg',name:(F.name.value||'photo').slice(0,30)+'_'+Date.now()});
+        }).then(function(j){ photos.push({id:j.id,url:j.url}); drawPh(); });
+      });
+    });
+    chain.then(function(){ if(files.length) toast('사진 '+files.length+'장 저장했어요'); }).catch(fail);
+  };
+  ['price','cost','tagPrice','stock'].forEach(function(k){ if(F[k]) F[k].addEventListener('input',function(){ var x=this.value.replace(/[^\d]/g,''); this.value=x?won(+x):''; }); });
+  $('rscan').onclick = function(){ openScanner('바코드 스캔', function(code){ F.barcode.value=code; if(navigator.vibrate) navigator.vibrate(40); toast('바코드를 읽었어요: '+code); }); };
+  var send = function(status, btn){
+    var num = function(x){ return String(x||'').replace(/[^\d]/g,''); };
+    var pd = {id:p?p.id:undefined, name:F.name.value.trim(), brand:F.brand.value.trim(), barcode:F.barcode.value.trim(),
+      option:F.options.value.trim(), price:num(F.price.value), cost:num(F.cost.value), stock:F.stock&&!F.stock.disabled?num(F.stock.value):undefined,
+      corp:F.myCategory.value==='셀렉트인전용'?'셀렉트인':'겐더샵', type:'사입', sku:p?p.sku:'', safety:p?p.safety:0, loc:p?p.loc:'', memo:p?p.memo:''};
+    if (!pd.name) return toast('상품명을 입력하세요',true);
+    var reg = Object.assign({}, r, {photos:photos, myCategory:F.myCategory.value, tagPrice:+num(F.tagPrice.value)||0, modelNo:F.modelNo.value.trim(),
+      options:F.options.value.split(',').map(function(x){ return x.trim(); }).filter(Boolean), gender:F.gender.value, origin:F.origin.value.trim(),
+      note:F.note.value.trim(), detail:F.detail?F.detail.value.trim():(r.detail||''), requestedBy:S.me.name, requestedAt:nowStr()});
+    btn.disabled = true;
+    if (DEMO){ var dp = Object.assign({}, p||{id:'D'+Date.now(),stock:+pd.stock||0,safety:0}, pd, {img:(photos[0]||{}).url||'', cat:reg.myCategory, regStatus:status==='request'?'등록요청':'작성중', reg:JSON.stringify(reg)});
+      var di=S.products.findIndex(function(x){ return x.id===dp.id; }); if(di>=0) S.products[di]=dp; else S.products.push(dp); closeDrawer(); toast('저장했어요 (체험 모드)'); route(); return; }
+    api('reg_save',{p:pd, reg:reg, status:status}).then(function(j){
+      var i = S.products.findIndex(function(x){ return x.id===j.product.id; }); if (i>=0) S.products[i]=j.product; else S.products.push(j.product);
+      persist(); closeDrawer(); toast(status==='request'?'사방넷 등록 요청했어요 — Claude에게 「사방넷 등록해줘」라고 말해주세요':'임시저장했어요');
+      if (location.hash!=='#register') location.hash='#register'; else route();
+    }).catch(function(e){ btn.disabled=false; fail(e); });
+  };
+  $('rdraft').onclick = function(){ send('draft', this); };
+  $('rreq').onclick = function(){
+    if (!photos.length) return toast('대표 사진을 1장 이상 찍어주세요',true);
+    if (!String(F.price.value).replace(/[^\d]/g,'')) return toast('판매가를 입력하세요',true);
+    send('request', this);
+  };
 }
 
 /* ---------- 원가 · 마진 ---------- */
