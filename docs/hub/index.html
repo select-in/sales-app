@@ -331,7 +331,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-28u';
+var APP_BUILD = '2026-10-28v';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -596,11 +596,38 @@ function route(){
   var k = (location.hash||'#home').slice(1).split('?')[0] || 'home';
   var V = VIEWS[k] || VIEWS.home;
   setActive(k);
+  XL_CUR = null;
   $('view').innerHTML = (DEMO?'<div class="demo"><i class="ti ti-flask"></i><span><b>체험 모드</b> — 입력한 내용은 이 기기에만 저장됩니다.</span></div>':'') + V.html();
   if (V.bind) V.bind();
   window.scrollTo(0,0);
 }
 window.addEventListener('hashchange', route);
+
+/* ===================== 엑셀 다운로드 =====================
+ * 각 화면이 그릴 때 XL_CUR(지금 보이는 조건의 데이터)을 정해두고, 머리말의 [엑셀] 버튼이 .xlsx로 받음 */
+var XL_CUR = null, _xlLib = null;
+function xlLib(){
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (_xlLib) return _xlLib;
+  return (_xlLib = new Promise(function(ok,no){ var sc=document.createElement('script'); sc.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; sc.onload=function(){ ok(window.XLSX); }; sc.onerror=function(){ _xlLib=null; no({message:'엑셀 도구를 불러오지 못했어요'}); }; document.head.appendChild(sc); }));
+}
+function xlDownload(){
+  if (!XL_CUR) return toast('이 화면은 아직 엑셀 받기가 없어요', true);
+  var spec = XL_CUR();
+  if (!spec || !spec.sheets || !spec.sheets.some(function(x){ return x.rows.length; })) return toast('받을 데이터가 없어요', true);
+  xlLib().then(function(X){
+    var wb = X.utils.book_new();
+    spec.sheets.forEach(function(sh){
+      var ws = X.utils.aoa_to_sheet([sh.head].concat(sh.rows));
+      ws['!cols'] = sh.head.map(function(h,i){ var w=String(h).length*2+2; sh.rows.slice(0,200).forEach(function(r){ var v=r[i]==null?'':String(r[i]); w=Math.max(w, Math.min(50, v.replace(/[^\x00-\xff]/g,'xx').length+2)); }); return {wch:w}; });
+      ws['!autofilter'] = {ref: X.utils.encode_range({s:{r:0,c:0}, e:{r:sh.rows.length, c:sh.head.length-1}})};
+      X.utils.book_append_sheet(wb, ws, sh.name.slice(0,31));
+    });
+    X.writeFile(wb, spec.file + '_' + today().replace(/-/g,'') + '.xlsx');
+    toast('엑셀 받기 · '+spec.sheets.map(function(x){ return x.name+' '+won(x.rows.length)+'행'; }).join(', '));
+  }).catch(fail);
+}
+document.addEventListener('click', function(e){ var b=e.target.closest && e.target.closest('[data-xl]'); if (b){ e.preventDefault(); xlDownload(); } });
 
 /* ===================== 화면들 ===================== */
 var VIEWS = {};
@@ -641,6 +668,9 @@ function salesDraw(){
   var P={}; cur.forEach(function(r){ var k=r[3]+'|'+(SF.corp==='전체'?r[1]:''); var o=P[k]||(P[k]={pf:r[3], corp:r[1], grp:r[2], cnt:0, amt:0, st:0, profit:0}); o.cnt+=+r[4]||0; o.amt+=+r[5]||0; o.st+=+r[6]||0; o.profit+=+r[7]||0; });
   var PL=Object.keys(P).map(function(k){ return P[k]; }).filter(function(o){ return o.amt||o.cnt; }).sort(function(a,b){ return b.amt-a.amt; });
   var mx=PL.length?PL[0].amt:1;
+  XL_CUR = function(){ return {file:'매출_'+SF.corp+'_'+rg.a+'_'+rg.b, sheets:[
+    {name:'플랫폼별', head:['플랫폼','채널그룹','법인','주문건수','매출','정산예정','이익'], rows:PL.map(function(o){ return [o.pf, o.grp, o.corp, o.cnt, o.amt, o.st, o.profit]; })},
+    {name:'일별상세', head:['날짜','법인','채널그룹','플랫폼','주문건수','매출','정산예정','이익','원가'], rows:cur.slice().sort(function(a,b){ return a[0].localeCompare(b[0]); })}]}; };
   // 그룹별 (사방넷/스마트스토어/리셀/도소매…)
   var GR={}; cur.forEach(function(r){ GR[r[2]]=(GR[r[2]]||0)+(+r[5]||0); });
   var grs=Object.keys(GR).sort(function(a,b){ return GR[b]-GR[a]; });
@@ -683,7 +713,7 @@ VIEWS.home = {
     var lowM = P.filter(function(p){ var m=margin(p); return m!==null && m<marginMin(); });
     var d = new Date(Date.now()+9*36e5), wd='일월화수목금토'.charAt(d.getUTCDay());
     return '<div class="ph"><div><h1>'+esc(S.me.name)+'님, 안녕하세요</h1><p>'+td.replace(/-/g,'.')+' ('+wd+') · 오늘 확인할 것부터 정리했어요</p></div>'+
-      '<div class="acts"><a class="btn pri" href="#stock"><i class="ti ti-barcode"></i>입출고 시작</a></div></div>'+
+      '<div class="acts"><button class="btn" data-xl="1" title="지금 보이는 조건 그대로 엑셀로 받기"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button><a class="btn pri" href="#stock"><i class="ti ti-barcode"></i>입출고 시작</a></div></div>'+
       salesHtml()+
       '<div class="grid g4">'+
         '<a class="kpi" href="#products"><div class="k"><i class="ti ti-package"></i>등록 상품</div><div class="v num">'+won(P.length)+'<small>개</small></div></a>'+
@@ -733,11 +763,13 @@ var PF = {q:'', corp:'all', f:'all', page:1, owner:'', open:{}, st:(function(){ 
 var PF_STS = ['판매','품절','대기중','미사용','기타'];
 function pfActive(){ var n=0; if(PF.corp!=='all') n++; if(PF.owner) n++; if(PF.f!=='all') n++; if(!PF.st['판매']||!PF.st['품절']||!PF.st['대기중']||PF.st['미사용']||!PF.st['기타']) n++; return n; }
 function pfStKey(p){ var k=p.sbnStatus||''; return PF_STS.indexOf(k)>=0 ? k : '기타'; }
+function xlProdRow(p){ var m=margin(p); return [p.corp, p.sbnPrd, p.sbnSku, p.name, p.brand, p.option, p.barcode, stockMode(p), p.stock, p.vstock===''||p.vstock==null?'':+p.vstock, p.cost, p.price, m==null?'':Math.round(m*10)/10, Math.max(0,effStock(p))*p.cost, p.owner, p.sbnStatus, p.cat, p.loc, p.link, p.updatedAt]; }
+var XL_PROD_HEAD=['법인','사방넷상품코드','단품코드','상품명','브랜드','옵션','바코드','재고방식','재고','가상재고','원가','판매가','마진율(%)','재고원가','담당','사방넷상태','카테고리','위치','연결원본','수정일'];
 VIEWS.products = {
   html: function(){
     var m = location.hash.match(/f=(\w+)/); if (m) PF.f = m[1];
     return '<div class="ph"><div><h1>상품 관리</h1><p>모든 메뉴가 이 상품 정보를 함께 씁니다 · 바코드·상품코드로 찾기</p></div>'+
-      '<div class="acts"><button class="btn" id="pimp"><i class="ti ti-table-import"></i>엑셀 붙여넣기</button><button class="btn pri" id="padd" title="사진·필수 정보 → 사방넷 등록서"><i class="ti ti-plus"></i>상품 등록</button></div></div>'+
+      '<div class="acts"><button class="btn" data-xl="1" title="지금 보이는 조건 그대로 엑셀로 받기"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button><button class="btn" id="pimp"><i class="ti ti-table-import"></i>엑셀 붙여넣기</button><button class="btn pri" id="padd" title="사진·필수 정보 → 사방넷 등록서"><i class="ti ti-plus"></i>상품 등록</button></div></div>'+
       '<div class="card">'+
         '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">'+
           '<div class="scanrow" style="flex:1;min-width:240px"><div class="search"><i class="ti ti-search"></i><input class="inp" id="pq" placeholder="상품명, 브랜드, 바코드, 상품코드, 담당자" value="'+esc(PF.q)+'"></div><button class="btn pri" id="pscan" title="카메라로 바코드 찍어서 찾기"><i class="ti ti-scan"></i><span>스캔</span></button><button class="btn pfbtn" id="pfbtn"><i class="ti ti-adjustments-horizontal"></i><span>필터</span>'+(pfActive()?'<b class="pfn">'+pfActive()+'</b>':'')+'</button></div>'+
@@ -767,6 +799,7 @@ VIEWS.products = {
         var hay = [p.name,p.brand,p.option,p.sku,p.barcode,p.loc,p.cat,p.owner,p.sbnPrd,p.sbnPrd&&p.sbnPrd+'-'+p.sbnSku].join(' ').toLowerCase();
         return toks.every(function(t){ return hay.indexOf(t)>=0; });
       }).sort(function(a,b){ return (a.brand+a.name+a.option).localeCompare(b.brand+b.name+b.option,'ko'); });
+      XL_CUR = function(){ return {file:'상품관리', sheets:[{name:'상품', head:XL_PROD_HEAD, rows:L.map(xlProdRow)}]}; };
       if (!S.products.length && S.loading){ $('plist').innerHTML = '<div class="empty"><i class="ti ti-loader-2"></i> 상품 불러오는 중… (처음엔 10~20초 걸릴 수 있어요)</div>'; return; }
       if (!S.products.length){ $('plist').innerHTML = '<div class="empty">아직 등록한 상품이 없어요.<br>[상품 등록] 또는 [엑셀 붙여넣기]로 시작하세요.</div>'; return; }
       if (!L.length){ $('plist').innerHTML = '<div class="empty">조건에 맞는 상품이 없어요 · 위의 상태 체크를 확인해 보세요</div>'; return; }
@@ -1374,7 +1407,7 @@ var KR_MOBILE = function(){ return window.matchMedia && matchMedia('(max-width:9
 VIEWS.kream = {
   html: function(){
     return '<div class="ph"><div><h1>크림 판매 관리</h1><p>입찰 · 발송 · 정산 · 내 입찰가와 크림 최저가 비교</p></div>'+
-      '<div class="acts">'+(KR_MOBILE()?'':'<button class="btn" id="krhow"><i class="ti ti-bookmark"></i>PC 동기화 설정</button>')+'<button class="btn pri" id="krsync"><i class="ti ti-refresh"></i>지금 동기화</button></div></div>'+
+      '<div class="acts"><button class="btn" data-xl="1" title="지금 보이는 조건 그대로 엑셀로 받기"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button>'+(KR_MOBILE()?'':'<button class="btn" id="krhow"><i class="ti ti-bookmark"></i>PC 동기화 설정</button>')+'<button class="btn pri" id="krsync"><i class="ti ti-refresh"></i>지금 동기화</button></div></div>'+
       '<div id="krbody"><div class="empty">크림 데이터를 불러오는 중…</div></div>';
   },
   bind: function(){
@@ -1471,6 +1504,14 @@ function krList(){
   var el=$('krlist'); if(!el) return;
   var toks=KF.q.toLowerCase().split(/\s+/).filter(Boolean);
   var L=krTabRows().filter(function(r){ var h=[r.style,r.name,r.brand,r.option,r.oid,r.account,r.status,r.kind].join(' ').toLowerCase(); return toks.every(function(t){ return h.indexOf(t)>=0; }); });
+  var tabNm={live:'입찰중',prog:'진행중',settle:'정산',cancel:'취소'}[KF.tab];
+  XL_CUR = function(){
+    var SMx=krSoldMap();
+    if (KF.tab==='live') return {file:'크림_입찰중', sheets:[{name:'입찰중', head:['계정','구분','품번','상품명','브랜드','사이즈','입찰가','내순위','정산예정','크림최저가(일반)','크림최저가(보관)','크림최근체결가(일반)','크림최근체결가(보관)','내 30일 체결수량','내 최근 체결가','내 최근 체결일','앱 재고','입찰ID','주문번호','등록일','만료일'],
+      rows:L.slice().sort(function(a,b){ return String(a.account+a.style).localeCompare(String(b.account+b.style)) || sizeCmp(a.option,b.option); }).map(function(r){ var sd=SMx[r.account+'|'+r.style+'|'+r.option+'|'+krKind(r)]||{}, ps=krAppMatch(r.style), st=ps.length?krOptStock(ps,r.option):null; return [r.account, krKind(r), r.style, r.name, r.brand, r.option, +r.price||'', +r.rank||'', +r.payout||'', +r.lowN||'', +r.lowI||'', +r.lastN||'', +r.lastI||'', sd.n30||0, sd.price||'', sd.at||'', st==null?'':st, r.askId, r.oid, r.createdAt, r.expiresAt]; })}]};
+    return {file:'크림_'+tabNm, sheets:[{name:tabNm, head:['계정','구분','상태','품번','상품명','사이즈','판매가','수수료','정산액','주문일','정산일','지급예정일','주문번호','입찰ID'],
+      rows:L.map(function(r){ return [r.account, krKind(r), r.status, r.style, r.name, r.option, +r.price||'', +r.fee||'', +r.payout||'', r.orderedAt, r.settledAt, r.payoutDate, r.oid, r.askId]; })}]};
+  };
   if(!L.length){ el.innerHTML='<div class="empty">해당하는 건이 없어요</div>'; return; }
   var live=KF.tab==='live', SM=krSoldMap();
   var G=[], gi={};
@@ -1861,7 +1902,7 @@ VIEWS.cost = {
     var value = sa.reduce(function(a,p){ return a+Math.max(0,p.stock)*p.cost; },0);
     var sell = sa.reduce(function(a,p){ return a+Math.max(0,p.stock)*p.price; },0);
     var qty = sa.reduce(function(a,p){ return a+Math.max(0,p.stock); },0);
-    return '<div class="ph"><div><h1>원가 · 마진</h1><p>원가를 바꾸면 변동 기록이 자동으로 남아요 · 마진 기준 '+marginMin()+'%</p></div></div>'+
+    return '<div class="ph"><div><h1>원가 · 마진</h1><p>원가를 바꾸면 변동 기록이 자동으로 남아요 · 마진 기준 '+marginMin()+'%</p></div><div class="acts"><button class="btn" data-xl="1" title="지금 보이는 조건 그대로 엑셀로 받기"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button></div></div>'+
       '<div class="grid g4">'+
         '<div class="kpi"><div class="k">평균 마진율</div><div class="v num">'+avg.toFixed(1)+'<small>%</small></div></div>'+
         '<div class="kpi '+(low.length?'red':'')+'"><div class="k">기준 미만</div><div class="v num">'+won(low.length)+'<small>개</small></div></div>'+
@@ -1878,6 +1919,7 @@ VIEWS.cost = {
     var draw = function(){
       var toks = CF.q.toLowerCase().split(/\s+/).filter(Boolean);
       var L = S.products.filter(costBasis).filter(function(p){ var h=[p.name,p.brand,p.option,p.sku,p.sbnPrd].join(' ').toLowerCase(); return toks.every(function(t){ return h.indexOf(t)>=0; }); });
+      XL_CUR = function(){ return {file:'원가마진_'+CF.basis, sheets:[{name:'원가·마진', head:XL_PROD_HEAD, rows:L.map(xlProdRow)}]}; };
       if (!L.length){ $('clist').innerHTML='<div class="empty">상품이 없어요</div>'; return; }
       // 메인 품번(사방넷 상품코드) 단위로 묶고, 옵션(상세 품번)은 펼쳐서 보기
       var G=[], gi={};
