@@ -111,7 +111,8 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 .inp:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--soft)}
 .inp.r{text-align:right}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
-.optrow{display:grid;grid-template-columns:1fr 1fr 80px 36px;gap:6px;align-items:center;margin-bottom:6px}.optrow .inp{padding:10px}.opthd span{font-size:12px;color:var(--mute);padding-left:4px}.optrow .x{width:36px;height:36px;border:0;background:var(--bg);border-radius:8px;cursor:pointer}
+.optrow{display:grid;grid-template-columns:1fr 1fr 64px 1.5fr 32px;gap:6px;align-items:center;margin-bottom:6px}.obc{display:flex;gap:4px;min-width:0}.obc .inp{min-width:0;flex:1}.oscan{width:38px;flex:none;border:0;border-radius:8px;background:var(--brand);color:#fff;cursor:pointer}
+@media (max-width:560px){.optrow{grid-template-columns:1fr 1fr 56px 32px}.optrow .obc{grid-column:1 / span 3;order:5}.optrow .x{order:4}.opthd span:nth-child(4){display:none}}.optrow .inp{padding:10px}.opthd span{font-size:12px;color:var(--mute);padding-left:4px}.optrow .x{width:36px;height:36px;border:0;background:var(--bg);border-radius:8px;cursor:pointer}
 .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 12px}
 
 .seg{display:inline-flex;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px}
@@ -315,7 +316,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-28a';
+var APP_BUILD = '2026-10-28b';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -1183,7 +1184,7 @@ function openReg(id){
     '<div class="sec"><i class="ti ti-list-details"></i>있으면 입력 <small>비워도 등록돼요</small></div>'+
     '<div class="row2"><label class="fld"><span>브랜드</span><input class="inp" name="brand" value="'+v('brand')+'"></label><label class="fld"><span>모델번호 · 품번</span><input class="inp" name="modelNo" value="'+rv('modelNo')+'"></label></div>'+
     '<div class="fld"><span style="display:block;font-size:13px;font-weight:600;color:var(--sub);margin-bottom:6px">옵션 <small style="font-weight:400;color:var(--mute)">없으면 비워두세요 (단품)</small></span>'+
-      '<div class="optrow opthd"><span>컬러</span><span>사이즈</span><span>재고</span><span></span></div><div id="ropts"></div>'+
+      '<div class="optrow opthd"><span>컬러</span><span>사이즈</span><span>재고</span><span>바코드</span><span></span></div><div id="ropts"></div>'+
       '<button type="button" class="btn sm" id="roptadd" style="margin-top:6px"><i class="ti ti-plus"></i>옵션 추가</button></div>'+
     '<label class="fld"><span>바코드</span><div class="scanrow"><input class="inp num" name="barcode" value="'+v('barcode')+'" inputmode="numeric"><button type="button" class="btn pri" id="rscan"><i class="ti ti-scan"></i>스캔</button></div></label>'+
     '<div class="row3"><label class="fld"><span>재고</span><input class="inp r num" name="stock" inputmode="numeric" value="'+(p?'':'')+'"'+(p?' disabled placeholder="입출고에서"':'')+'></label><label class="fld"><span>성별</span><select class="inp" name="gender">'+opt(['','남성','여성','공용','아동'],r.gender||'')+'</select></label><label class="fld"><span>원산지 (제조국)</span><input class="inp" name="origin" value="'+rv('origin')+'" placeholder="비우면 상세페이지 참조"></label></div>'+
@@ -1196,18 +1197,20 @@ function openReg(id){
     '</form>',
     '<button class="btn" id="rdraft">임시저장</button><button class="btn pri" id="rreq"><i class="ti ti-cloud-upload"></i>'+(r.sbnProductCode?'사방넷 수정 반영':'사방넷에 바로 등록')+'</button>');
   var F = $('rform');
-  var OPTS = (r.options||[]).map(function(o){ if (typeof o==='object') return {color:o.color||'',size:o.size||'',qty:o.qty||''}; var a=String(o).split(':'); return {color:a[0]||'',size:a[1]||'',qty:''}; });
+  var OPTS = (r.options||[]).map(function(o){ if (typeof o==='object') return {color:o.color||'',size:o.size||'',qty:o.qty||'',barcode:o.barcode||''}; var a=String(o).split(':'); return {color:a[0]||'',size:a[1]||'',qty:'',barcode:''}; });
   var drawOpts = function(){
-    $('ropts').innerHTML = OPTS.map(function(o,i){ return '<div class="optrow" data-i="'+i+'"><input class="inp" data-k="color" placeholder="블랙" value="'+esc(o.color)+'"><input class="inp" data-k="size" placeholder="M" value="'+esc(o.size)+'"><input class="inp r num" data-k="qty" inputmode="numeric" placeholder="0" value="'+esc(o.qty)+'"><button type="button" class="x" data-rm="1" aria-label="옵션 빼기"><i class="ti ti-x"></i></button></div>'; }).join('');
+    $('ropts').innerHTML = OPTS.map(function(o,i){ return '<div class="optrow" data-i="'+i+'"><input class="inp" data-k="color" placeholder="블랙" value="'+esc(o.color)+'"><input class="inp" data-k="size" placeholder="M" value="'+esc(o.size)+'"><input class="inp r num" data-k="qty" inputmode="numeric" placeholder="0" value="'+esc(o.qty)+'"><div class="obc"><input class="inp num" data-k="barcode" inputmode="numeric" placeholder="스캔" value="'+esc(o.barcode)+'"><button type="button" class="oscan" data-scan="1" aria-label="바코드 스캔"><i class="ti ti-scan"></i></button></div><button type="button" class="x" data-rm="1" aria-label="옵션 빼기"><i class="ti ti-x"></i></button></div>'; }).join('');
     document.querySelectorAll('#ropts .optrow').forEach(function(row){ var i=+row.dataset.i;
       row.querySelectorAll('input').forEach(function(inp){ inp.oninput=function(){ OPTS[i][inp.dataset.k] = inp.dataset.k==='qty' ? inp.value.replace(/[^\d]/g,'') : inp.value; if(inp.dataset.k==='qty') inp.value=OPTS[i].qty; }; });
       row.querySelector('[data-rm]').onclick=function(){ OPTS.splice(i,1); drawOpts(); };
+      row.querySelector('[data-scan]').onclick=function(){ openScanner('바코드 스캔 · '+[OPTS[i].color,OPTS[i].size].filter(Boolean).join(' / '), function(code){ OPTS[i].barcode=code; if(navigator.vibrate) navigator.vibrate(40); drawOpts(); toast('바코드를 읽었어요: '+code); }); };
     });
     document.querySelector('#rform .opthd').style.display = OPTS.length ? '' : 'none';
     if (F.stock) F.stock.closest('label').style.opacity = OPTS.length ? .45 : 1;
+    F.barcode.closest('label').style.display = OPTS.length ? 'none' : '';
   };
-  var optRows = function(){ return OPTS.map(function(o){ return {color:String(o.color).trim(), size:String(o.size).trim(), qty:+o.qty||0}; }).filter(function(o){ return o.color||o.size; }); };
-  $('roptadd').onclick = function(){ var last=OPTS[OPTS.length-1]; OPTS.push({color:last?last.color:'', size:'', qty:''}); drawOpts(); var rows=$('ropts').querySelectorAll('.optrow'); var lr=rows[rows.length-1]; if(lr) lr.querySelector(last?'[data-k=size]':'[data-k=color]').focus(); };
+  var optRows = function(){ return OPTS.map(function(o){ return {color:String(o.color).trim(), size:String(o.size).trim(), qty:+o.qty||0, barcode:String(o.barcode||'').trim()}; }).filter(function(o){ return o.color||o.size; }); };
+  $('roptadd').onclick = function(){ var last=OPTS[OPTS.length-1]; OPTS.push({color:last?last.color:'', size:'', qty:'', barcode:''}); drawOpts(); var rows=$('ropts').querySelectorAll('.optrow'); var lr=rows[rows.length-1]; if(lr) lr.querySelector(last?'[data-k=size]':'[data-k=color]').focus(); };
   drawOpts();
   var drawPh = function(){
     $('rph').innerHTML = photos.map(function(ph,i){ return '<div class="ph1"><img src="'+esc(ph.url)+'" alt="">'+(i===0?'<b>대표</b>':'')+'<button type="button" data-rm="'+i+'" aria-label="사진 빼기">×</button></div>'; }).join('')+
@@ -1234,7 +1237,7 @@ function openReg(id){
   $('rscan').onclick = function(){ openScanner('바코드 스캔', function(code){ F.barcode.value=code; if(navigator.vibrate) navigator.vibrate(40); toast('바코드를 읽었어요: '+code); }); };
   var send = function(status, btn){
     var num = function(x){ return String(x||'').replace(/[^\d]/g,''); };
-    var pd = {id:p?p.id:undefined, name:F.name.value.trim(), brand:F.brand.value.trim(), barcode:F.barcode.value.trim(),
+    var pd = {id:p?p.id:undefined, name:F.name.value.trim(), brand:F.brand.value.trim(), barcode:(optRows().length?((optRows().filter(function(o){ return o.barcode; })[0]||{}).barcode||''):F.barcode.value.trim()),
       option:optRows().map(function(o){ return [o.color,o.size].filter(Boolean).join(':'); }).join(', '), price:num(F.price.value), cost:num(F.cost.value), stock:F.stock&&!F.stock.disabled?(optRows().length?String(optRows().reduce(function(t,o){ return t+o.qty; },0)):num(F.stock.value)):undefined,
       corp:F.myCategory.value==='셀렉트인전용'?'셀렉트인':'겐더샵', type:'사입', sku:p?p.sku:'', safety:p?p.safety:0, loc:p?p.loc:'', memo:p?p.memo:''};
     if (!pd.name) return toast('상품명을 입력하세요',true);

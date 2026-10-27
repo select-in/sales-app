@@ -763,14 +763,14 @@ function hubRegPayload_(p, reg) {
   if (!cat) throw new Error('사방넷 마이카테고리를 찾을 수 없어요: ' + reg.myCategory);
   // 옵션: [{color, size, qty}] (예전 형식 '블랙:M' 문자열도 허용)
   var opts = (reg.options || []).map(function (o) {
-    if (o && typeof o === 'object') return { color: hubStr_(o.color, 40), size: hubStr_(o.size, 40), qty: Math.max(0, Math.round(hubNum_(o.qty))) };
-    var a = String(o || '').split(':'); return { color: hubStr_(a[0], 40), size: hubStr_(a[1], 40), qty: 0 };
+    if (o && typeof o === 'object') return { color: hubStr_(o.color, 40), size: hubStr_(o.size, 40), qty: Math.max(0, Math.round(hubNum_(o.qty))), barcode: o.barcode ? hubCorpBar_(p.corp, o.barcode) : '' };
+    var a = String(o || '').split(':'); return { color: hubStr_(a[0], 40), size: hubStr_(a[1], 40), qty: 0, barcode: '' };
   }).filter(function (o) { return o.color || o.size; });
   var hasC = opts.some(function (o) { return o.color; }), hasS = opts.some(function (o) { return o.size; });
   var oname = hasC && hasS ? '컬러:사이즈' : hasC ? '컬러' : '사이즈';
   var stock = Math.max(0, Math.round(hubNum_(reg.stock != null ? reg.stock : p.stock)));
   var options = opts.length ? opts.map(function (o, i) {
-    return { optionName: oname, optionDetailName: hasC && hasS ? (o.color || '-') + ':' + (o.size || '-') : (o.color || o.size), stockQuantity: o.qty, additionalAmount: 0, optionSupplyStatusCode: 'SALE', barcode: opts.length === 1 ? (p.barcode || '') : '', safetyStockQuantity: 0 };
+    return { optionName: oname, optionDetailName: hasC && hasS ? (o.color || '-') + ':' + (o.size || '-') : (o.color || o.size), stockQuantity: o.qty, additionalAmount: 0, optionSupplyStatusCode: 'SALE', barcode: o.barcode || (opts.length === 1 ? (p.barcode || '') : ''), safetyStockQuantity: 0 };
   }) : [{ optionName: '단품', optionDetailName: '단품', stockQuantity: stock, additionalAmount: 0, optionSupplyStatusCode: 'SALE', barcode: p.barcode || '', safetyStockQuantity: 0 }];
   var photos = (reg.photos || []).filter(function (x) { return x && x.url; }).slice(0, 10);
   var esc = function (t) { return String(t || '').replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); };
