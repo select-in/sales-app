@@ -257,6 +257,16 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 .more-menu a .ti{color:var(--sub)}
 .more-menu a .soon{margin-left:auto;font-size:12px;color:var(--mute)}
 .hide{display:none!important}
+.scanov{position:fixed;inset:0;z-index:80;background:#0b0d10;display:flex;flex-direction:column;color:#fff}
+.scanov .sh{display:flex;align-items:center;gap:10px;padding:calc(12px + env(safe-area-inset-top)) 16px 12px}
+.scanov .sh b{flex:1;font-size:17px}
+.scanov .sh button{width:40px;height:40px;border-radius:10px;border:0;background:rgba(255,255,255,.12);color:#fff;display:grid;place-items:center;cursor:pointer}
+.scanov .sb{flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 16px}
+.scanov .cam{aspect-ratio:3/4;max-height:62vh;width:100%;max-width:560px;margin:0 auto}
+.scanov .cammsg{color:rgba(255,255,255,.75)}
+.scanov .sf{display:flex;gap:8px;padding:12px 16px calc(16px + env(safe-area-inset-bottom));max-width:592px;width:100%;margin:0 auto}
+.scanov .sf input{flex:1;min-width:0;height:48px;border-radius:12px;border:0;padding:0 14px;font-size:16px;background:#fff;color:#111}
+.scanov .sf button{white-space:nowrap;flex:none;height:48px;border-radius:12px;border:0;padding:0 18px;font-size:15px;font-weight:700;background:var(--accent);color:#fff;cursor:pointer}
 .pager{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
 .pager .cnt{font-size:13px;color:var(--sub)}
 .pager .pg{display:flex;gap:4px;align-items:center}
@@ -277,7 +287,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-27h';
+var APP_BUILD = '2026-10-27i';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -499,7 +509,7 @@ function setActive(k){
 }
 function route(){
   if (!S.me) return;
-  stopCam();
+  closeScanner();
   var k = (location.hash||'#home').slice(1).split('?')[0] || 'home';
   var V = VIEWS[k] || VIEWS.home;
   setActive(k);
@@ -628,22 +638,21 @@ function drawer(title, body, foot){
   document.addEventListener('keydown', escClose);
 }
 function escClose(e){ if(e.key==='Escape') closeDrawer(); }
-function closeDrawer(){ stopCam(); var o=$('ov'); if(o) o.remove(); document.removeEventListener('keydown', escClose); }
+function closeDrawer(){ closeScanner(); var o=$('ov'); if(o) o.remove(); document.removeEventListener('keydown', escClose); }
 
 function productForm(p){
   p = p || {corp:'셀렉트인',type:'사입'};
   function f(k,label,opt){ opt=opt||{}; return '<label class="fld"><span>'+label+(opt.req?' <em>*</em>':'')+'</span><input class="inp'+(opt.num?' r num':'')+'" name="'+k+'" value="'+esc(p[k]==null?'':(opt.num&&p[k]!==''?won(p[k]):p[k]))+'"'+(opt.num?' inputmode="numeric"':'')+(opt.ph?' placeholder="'+opt.ph+'"':'')+'></label>'; }
-  return '<form id="pform" autocomplete="off">'+
+  return '<form id="pform" autocomplete="off" data-id="'+esc(p.id||'')+'">'+
     f('name','상품명',{req:1,ph:'예) 폴로 케이블 니트'})+
     '<div class="row2">'+f('brand','브랜드')+f('option','옵션',{ph:'색상 / 사이즈'})+'</div>'+
-    '<div class="row2 rowb"><label class="fld"><span>바코드</span><div class="scanrow"><input class="inp num" name="barcode" value="'+esc(p.barcode||'')+'" inputmode="numeric"><button type="button" class="btn" id="fscan" title="카메라로 찍기"><i class="ti ti-camera"></i></button></div></label>'+f('sku','상품코드(SKU)')+'</div>'+
+    '<div class="row2 rowb"><label class="fld"><span>바코드</span><div class="scanrow"><input class="inp num" name="barcode" value="'+esc(p.barcode||'')+'" inputmode="numeric"><button type="button" class="btn pri" id="fscan" title="카메라로 바코드 찍기"><i class="ti ti-scan"></i>스캔</button></div></label>'+f('sku','상품코드(SKU)')+'</div>'+
     '<div class="row2"><label class="fld"><span>법인</span><select class="inp" name="corp"><option'+(p.corp!=='겐더샵'?' selected':'')+'>셀렉트인</option><option'+(p.corp==='겐더샵'?' selected':'')+'>겐더샵</option></select></label>'+
     '<label class="fld"><span>구분</span><select class="inp" name="type"><option'+(p.type!=='위탁'?' selected':'')+'>사입</option><option'+(p.type==='위탁'?' selected':'')+'>위탁</option></select></label></div>'+
     '<div class="row2">'+f('cost','원가 (원)',{num:1})+f('price','판매가 (원)',{num:1})+'</div>'+
     '<div class="preview" id="fmargin"></div>'+
     '<div class="row3" style="margin-top:12px">'+(p.id?'':f('stock','시작 재고',{num:1}))+f('safety','안전재고',{num:1,ph:'이하면 부족 표시'})+f('loc','보관 위치',{ph:'예) A-01'})+'</div>'+
     '<label class="fld"><span>메모</span><textarea class="inp" name="memo" rows="2">'+esc(p.memo||'')+'</textarea></label>'+
-    '<div id="fcam"></div>'+
   '</form>';
 }
 function bindProductForm(){
@@ -654,7 +663,12 @@ function bindProductForm(){
   };
   ['cost','price','stock','safety'].forEach(function(k){ if(!F[k]) return; F[k].addEventListener('input', function(){ var v=this.value.replace(/[^\d]/g,''); this.value = v?won(+v):''; calc(); }); });
   calc();
-  $('fscan').onclick = function(){ startScan($('fcam'), function(code){ F.barcode.value = code; stopCam(); $('fcam').innerHTML=''; toast('바코드를 읽었어요: '+code); }); };
+  $('fscan').onclick = function(){ openScanner('바코드 스캔', function(code){
+    var dup = findByCode(code);
+    F.barcode.value = code; if (navigator.vibrate) navigator.vibrate(40);
+    toast(dup && dup.id!==F.dataset.id ? '이미 등록된 바코드예요: '+dup.name : '바코드를 읽었어요: '+code, !!(dup && dup.id!==F.dataset.id));
+  }); };
+  if (!F.barcode.value && 'ontouchstart' in window) F.barcode.setAttribute('placeholder','[스캔]으로 바로 찍기');
 }
 function formData(F){
   var o = {}; ['name','brand','option','barcode','sku','corp','type','cost','price','stock','safety','loc','memo'].forEach(function(k){ if(F[k]) o[k] = F[k].value; });
@@ -789,12 +803,12 @@ VIEWS.stock = {
       var L = searchProducts(v); if (L.length===1) choose(L[0].id);
     };
     $('scam').onclick = function(){
-      if (CAM.on){ stopCam(); $('scamv').innerHTML=''; return; }
-      startScan($('scamv'), function(code){
+      openScanner(MV.cont ? '연속 스캔 — '+({in:'입고',out:'출고',adjust:'실사'}[MV.type]) : '바코드 스캔', function(code){
         var p = findByCode(code);
         if (!p){ toast('등록되지 않은 바코드예요: '+code, true); return 'continue'; }
+        if (navigator.vibrate) navigator.vibrate(40);
         choose(p.id, true);
-        return MV.cont ? 'continue' : 'stop';
+        return MV.cont && MV.type!=='adjust' ? 'continue' : 'stop';
       });
     };
     if (MV.id && S.products.some(function(p){ return p.id===MV.id; })) drawSel(); else { MV.id=null; setTimeout(function(){ if($('sq') && window.innerWidth>900) $('sq').focus(); },50); }
@@ -864,15 +878,15 @@ function commitMove(qty, memo){
 
 /* ---------- 바코드 카메라 ---------- */
 var CAM = {on:false, stream:null, raf:null, zx:null, last:'', lastAt:0};
-function startScan(box, onCode){
+function startScan(box, onCode, onEnd){
   stopCam();
-  box.innerHTML = '<div class="cam" style="margin-top:12px"><video id="cv" playsinline muted></video><div class="aim"></div></div><div class="cammsg" id="cmsg">바코드를 네모 안에 맞춰주세요</div>';
+  box.innerHTML = '<div class="cam"><video id="cv" playsinline muted></video><div class="aim"></div></div><div class="cammsg" id="cmsg">바코드를 네모 안에 맞춰주세요</div>';
   CAM.on = true;
   var video = $('cv');
   var handle = function(code){
     var t = Date.now(); if (code===CAM.last && t-CAM.lastAt<1800) return; CAM.last=code; CAM.lastAt=t;
     var r = onCode(code);
-    if (r!=='continue'){ stopCam(); box.innerHTML=''; }
+    if (r!=='continue'){ stopCam(); box.innerHTML=''; if (onEnd) onEnd(); }
   };
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ $('cmsg').textContent='이 브라우저에서는 카메라를 쓸 수 없어요. 바코드 번호를 직접 입력하세요'; CAM.on=false; return; }
   if ('BarcodeDetector' in window){
@@ -895,6 +909,20 @@ function startScan(box, onCode){
     }).catch(function(){ if($('cmsg')) $('cmsg').textContent='바코드 인식 기능을 불러오지 못했어요. 번호를 직접 입력하세요'; });
   }
 }
+/* 전체 화면 스캐너 — 바코드 칸·입출고 어디서나 같은 화면 */
+function openScanner(title, onCode){
+  closeScanner();
+  var ov = document.createElement('div'); ov.className='scanov'; ov.id='scanov';
+  ov.innerHTML = '<div class="sh"><b>'+esc(title)+'</b><button id="scx" aria-label="닫기"><i class="ti ti-x"></i></button></div>'+
+    '<div class="sb" id="scbox"></div>'+
+    '<div class="sf"><input id="scin" inputmode="numeric" placeholder="안 읽히면 번호 직접 입력"><button id="scok">확인</button></div>';
+  document.body.appendChild(ov);
+  $('scx').onclick = closeScanner;
+  var manual = function(){ var v=$('scin').value.trim(); if(!v) return; $('scin').value=''; var r=onCode(v); if(r!=='continue') closeScanner(); };
+  $('scok').onclick = manual; $('scin').onkeydown = function(e){ if(e.key==='Enter') manual(); };
+  startScan($('scbox'), onCode, closeScanner);
+}
+function closeScanner(){ stopCam(); var o=$('scanov'); if(o) o.remove(); }
 function camErr(){ if ($('cmsg')) $('cmsg').textContent = '카메라를 열 수 없어요. 브라우저 설정에서 카메라 권한을 허용해 주세요'; CAM.on=false; }
 function loadZX(){
   if (window.ZXing) return Promise.resolve();
