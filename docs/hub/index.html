@@ -67,6 +67,7 @@ main{margin-left:var(--side);min-height:100vh;padding:28px 32px 60px}
 .hopt{font-size:12.5px;color:var(--sub);margin-top:1px}
 .pfilters{display:contents}.pfilters .stchk{flex-basis:100%;margin:0}.pfbtn,.pfdone{display:none}.pfn{display:inline-grid;place-items:center;min-width:18px;height:18px;border-radius:9px;background:var(--brand);color:#fff;font-size:11px;margin-left:4px}
 @media (max-width:900px){#pscan span,.pfbtn span{display:none}#pscan,.pfbtn{padding-left:12px;padding-right:12px}.pfbtn{display:inline-flex}.pfilters{display:none;width:100%;flex-direction:column;align-items:stretch;gap:10px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--bg)}.pfilters.open{display:flex}.pfilters .seg{align-self:flex-start}.pfilters .stchk{margin:0}.pfdone{display:inline-flex;align-self:flex-end}.pfilters #powner{width:100%!important}}
+.grpbar{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin:0 0 8px;font-size:13px;color:var(--mute)}.grpbar span{margin-right:auto}
 .tabbar{display:none}
 
 .ph{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:20px;flex-wrap:wrap}
@@ -323,7 +324,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-28l';
+var APP_BUILD = '2026-10-28n';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -637,6 +638,8 @@ VIEWS.home = {
   }
 };
 var _HP=null,_HPsrc=null;
+function grpBar(G){ var multi=G.filter(function(g){ return g.items.length>1; }).length; if(!multi) return ''; return '<div class="grpbar"><span>옵션 있는 품번 '+won(multi)+'개</span><button class="btn sm" data-all="1"><i class="ti ti-chevrons-down"></i>전체 펼치기</button><button class="btn sm" data-all="0"><i class="ti ti-chevrons-up"></i>전체 닫기</button></div>'; }
+function bindGrpBar(root, F, draw){ root.querySelectorAll('[data-all]').forEach(function(b){ b.onclick=function(){ F.allOpen = b.dataset.all==='1'; F.open = {}; draw(); }; }); }
 function histProd(id){ if(_HPsrc!==S.products){ _HP={}; S.products.forEach(function(p){ _HP[p.id]=p; }); _HPsrc=S.products; } return _HP[id]; }
 function histList(list, emptyMsg){
   if (!list.length) return '<div class="empty">'+emptyMsg+'</div>';
@@ -703,10 +706,10 @@ VIEWS.products = {
           return '<tr class="click sub" data-id="'+esc(p.id)+'"><td><div class="subnm"><span class="sku">'+esc(p.sbnPrd?p.sbnPrd+'-'+p.sbnSku:(p.sku||''))+'</span> '+esc(p.option||'단품')+'</div></td>'+
             '<td class="c">'+stPills({items:[p]})+'</td><td class="sm num c">'+esc(p.barcode||'—')+'</td>'+
             '<td class="c num">'+won(p.cost)+'</td><td class="c num">'+won(p.price)+'</td><td class="c num">'+stockCell(p)+'</td></tr>'; }).join(''); };
-      $('plist').innerHTML =
+      $('plist').innerHTML = grpBar(G) +
         '<div class="dtable tblwrap"><table class="tbl ptbl"><thead><tr><th>상품 (품번)</th><th>상태 · 법인 · 담당</th><th>사방넷 · 바코드</th><th class="r">원가</th><th class="r">판매가</th><th class="r">재고</th></tr></thead><tbody>'+
         shown.map(function(g){
-          var p=g.p, multi=g.items.length>1, open=!!PF.open[g.k];
+          var p=g.p, multi=g.items.length>1, open=(!!PF.allOpen)!==(!!PF.open[g.k]);
           var head = '<tr class="click grp'+(open?' open':'')+'" data-g="'+esc(g.k)+'"><td><div class="pcell">'+thumb(p)+'<div><div class="nm">'+esc(p.name)+'</div><div class="sm">'+esc(p.brand)+(multi?' · <b class="optc"><i class="ti ti-chevron-'+(open?'up':'down')+'"></i>옵션 '+g.items.length+'개</b>':' · '+esc(p.option||'단품'))+'</div></div></div></td>'+
             '<td class="c">'+stPills(g)+'<div style="margin-top:4px"><span class="pill '+(p.corp==='겐더샵'?'b':'g')+'">'+esc(p.corp)+'</span> <span class="sm">'+(p.owner?'담당 '+esc(p.owner):'담당 미지정')+'</span></div></td>'+
             '<td class="sm num c">'+(p.sbnPrd?'<b>'+esc(p.sbnPrd)+'</b>':esc(p.sku||'—'))+(multi?'':'<br>'+esc(p.barcode||'—'))+'</td>'+
@@ -715,7 +718,7 @@ VIEWS.products = {
           return head + (multi&&open ? childRows(g) : '');
         }).join('')+'</tbody></table></div>'+
         '<div class="mcards">'+shown.map(function(g){
-          var p=g.p, multi=g.items.length>1, open=!!PF.open[g.k];
+          var p=g.p, multi=g.items.length>1, open=(!!PF.allOpen)!==(!!PF.open[g.k]);
           return '<div class="mc grp" data-g="'+esc(g.k)+'">'+thumb(p)+'<div class="m"><div class="t">'+esc(p.name)+'</div><div class="s">'+esc([p.corp,p.sbnPrd].filter(Boolean).join(' · '))+(multi?' · <b class="optc">옵션 '+g.items.length+'개 '+(open?'▲':'▼')+'</b>':' · '+esc(p.option||'단품'))+'</div><div class="s">'+stPills(g)+'</div></div>'+
             '<div class="e">'+(multi?'<div class="stk2"><b>'+sumStock(g)+'</b><span class="lk">합계</span></div>':stockCell(p))+'</div></div>'+
             (multi&&open ? '<div class="mcsub">'+g.items.map(function(x){ return '<div class="mc" data-id="'+esc(x.id)+'"><div class="m"><div class="t" style="font-size:14px">'+esc(x.option||'단품')+'</div><div class="s">'+esc((x.sbnPrd?x.sbnPrd+'-'+x.sbnSku:'')+' · '+(x.barcode||'바코드 없음'))+'</div><div class="s">'+stPills({items:[x]})+'</div></div><div class="e">'+stockCell(x)+'</div></div>'; }).join('')+'</div>' : '');
@@ -723,6 +726,7 @@ VIEWS.products = {
         pagerHtml(G.length, PF.page, PG.size).replace('개 ·', '개 품번 · ');
       document.querySelectorAll('#plist [data-g]').forEach(function(r){ r.onclick = function(){ var g=gi[r.dataset.g]; if (g.items.length>1){ PF.open[g.k]=!PF.open[g.k]; draw(); } else openProduct(g.p.id); }; });
       document.querySelectorAll('#plist [data-id]').forEach(function(r){ r.onclick = function(e){ e.stopPropagation(); openProduct(r.dataset.id); }; });
+      bindGrpBar($('plist'), PF, draw);
       bindPager($('plist'), function(n){ PF.page=n; draw(); });
     };
     $('pq').oninput = function(){ PF.q = this.value; PF.page=1; draw(); };
@@ -1464,7 +1468,7 @@ function scanFix(id, after){
 }
 
 /* ---------- 원가 · 마진 ---------- */
-var CF = {sort:'margin', q:'', page:1, basis:'현재고'};
+var CF = {sort:'margin', q:'', page:1, basis:'현재고', open:{}};
 function costBasis(p){ return CF.basis==='전체' || stockMode(p)===CF.basis; }
 function effStock(p){ var m=stockMode(p); return m==='현재고' ? p.stock : m==='가상재고' ? (p.vstock||0) : m==='모음전' ? ((originOf(p)||{}).stock||0) : 0; }
 VIEWS.cost = {
@@ -1493,24 +1497,48 @@ VIEWS.cost = {
     var draw = function(){
       var toks = CF.q.toLowerCase().split(/\s+/).filter(Boolean);
       var L = S.products.filter(costBasis).filter(function(p){ var h=[p.name,p.brand,p.option,p.sku,p.sbnPrd].join(' ').toLowerCase(); return toks.every(function(t){ return h.indexOf(t)>=0; }); });
-      L.sort(function(a,b){
-        if (CF.sort==='margin'){ var x=margin(a), y=margin(b); return (x==null?999:x)-(y==null?999:y); }
-        if (CF.sort==='value') return Math.max(0,effStock(b))*b.cost - Math.max(0,effStock(a))*a.cost;
-        return a.name.localeCompare(b.name,'ko');
-      });
       if (!L.length){ $('clist').innerHTML='<div class="empty">상품이 없어요</div>'; return; }
-      var cpages=Math.max(1,Math.ceil(L.length/PG.size)); if(CF.page>cpages) CF.page=cpages; var CS=L.slice((CF.page-1)*PG.size, CF.page*PG.size);
-      var mm = function(p){ var m=margin(p); return m==null?'<span class="sm">판매가 없음</span>':'<b style="color:'+(m<marginMin()?'var(--red)':'var(--accent)')+'">'+m.toFixed(1)+'%</b>'; };
-      $('clist').innerHTML =
-        '<div class="dtable tblwrap"><table class="tbl"><thead><tr><th>상품</th><th>법인</th><th class="r">원가</th><th class="r">판매가</th><th class="r">마진</th><th class="r">마진율</th><th class="r">재고</th><th class="r">재고 원가</th></tr></thead><tbody>'+
-        CS.map(function(p){
-          return '<tr class="click" data-id="'+esc(p.id)+'"><td><div class="pcell">'+thumb(p)+'<div><div class="nm">'+esc(p.name)+'</div><div class="sm">'+esc([p.brand,p.option].filter(Boolean).join(' · '))+'</div></div></div></td><td><span class="pill">'+esc(p.corp)+'</span></td>'+
-            '<td class="r num">'+won(p.cost)+'</td><td class="r num">'+won(p.price)+'</td><td class="r num">'+(p.price?won(p.price-p.cost):'—')+'</td><td class="r num">'+mm(p)+'</td><td class="c num">'+stockCell(p)+'</td><td class="r num">'+(stockMode(p)==='위탁'?'—':won(Math.max(0,effStock(p))*p.cost))+(stockMode(p)!=='현재고'&&stockMode(p)!=='위탁'?'<div class="sm">참고용</div>':'')+'</td></tr>';
+      // 메인 품번(사방넷 상품코드) 단위로 묶고, 옵션(상세 품번)은 펼쳐서 보기
+      var G=[], gi={};
+      L.forEach(function(p){ var k=p.sbnPrd?'P'+p.sbnPrd:'I'+p.id; if(!gi[k]){ gi[k]={k:k,items:[]}; G.push(gi[k]); } gi[k].items.push(p); });
+      G.forEach(function(g){
+        g.items.sort(function(a,b){ return String(a.sbnSku).localeCompare(String(b.sbnSku)); }); g.p=g.items[0];
+        var ms=g.items.map(margin).filter(function(m){ return m!=null; });
+        g.mMin = ms.length?Math.min.apply(null,ms):null; g.mMax = ms.length?Math.max.apply(null,ms):null;
+        g.qty = g.items.reduce(function(t,x){ return t+Math.max(0,effStock(x)); },0);
+        g.value = g.items.reduce(function(t,x){ return t+Math.max(0,effStock(x))*x.cost; },0);
+      });
+      G.sort(function(a,b){
+        if (CF.sort==='margin') return (a.mMin==null?999:a.mMin)-(b.mMin==null?999:b.mMin);
+        if (CF.sort==='value') return b.value-a.value;
+        return a.p.name.localeCompare(b.p.name,'ko');
+      });
+      var cpages=Math.max(1,Math.ceil(G.length/PG.size)); if(CF.page>cpages) CF.page=cpages; var CS=G.slice((CF.page-1)*PG.size, CF.page*PG.size);
+      var mcol = function(m){ return m==null?'<span class="sm">판매가 없음</span>':'<b style="color:'+(m<marginMin()?'var(--red)':'var(--accent)')+'">'+m.toFixed(1)+'%</b>'; };
+      var mm = function(p){ return mcol(margin(p)); };
+      var rng = function(g,f){ var v=g.items.map(function(x){ return f(x); }), mn=Math.min.apply(null,v), mx=Math.max.apply(null,v); return mn===mx?won(mn):won(mn)+'~'+won(mx); };
+      var mRange = function(g){ if(g.mMin==null) return mcol(null); return g.mMin===g.mMax ? mcol(g.mMin) : mcol(g.mMin)+'<span class="sm">~'+g.mMax.toFixed(1)+'%</span>'; };
+      var ref = function(p){ return stockMode(p)!=='현재고'&&stockMode(p)!=='위탁'?'<div class="sm">참고용</div>':''; };
+      $('clist').innerHTML = grpBar(G) +
+        '<div class="dtable tblwrap"><table class="tbl ptbl"><thead><tr><th>상품 (품번)</th><th>법인</th><th class="r">원가</th><th class="r">판매가</th><th class="r">마진</th><th class="r">마진율</th><th class="r">재고</th><th class="r">재고 원가</th></tr></thead><tbody>'+
+        CS.map(function(g){
+          var p=g.p, multi=g.items.length>1, open=(!!CF.allOpen)!==(!!CF.open[g.k]);
+          var head='<tr class="click grp'+(open?' open':'')+'" data-g="'+esc(g.k)+'"><td><div class="pcell">'+thumb(p)+'<div><div class="nm">'+esc(p.name)+'</div><div class="sm">'+esc([p.brand,p.sbnPrd].filter(Boolean).join(' · '))+(multi?' · <b class="optc"><i class="ti ti-chevron-'+(open?'up':'down')+'"></i>옵션 '+g.items.length+'개</b>':' · '+esc(p.option||'단품'))+'</div></div></div></td><td><span class="pill">'+esc(p.corp)+'</span></td>'+
+            '<td class="r num">'+rng(g,function(x){ return x.cost; })+'</td><td class="r num">'+rng(g,function(x){ return x.price; })+'</td><td class="r num">'+(p.price?rng(g,function(x){ return x.price-x.cost; }):'—')+'</td><td class="r num">'+mRange(g)+'</td>'+
+            '<td class="c num">'+(multi?'<div class="stk2"><b>'+won(g.qty)+'</b><span class="lk">'+stockMode(p)+' 합계</span></div>':stockCell(p))+'</td><td class="r num">'+(stockMode(p)==='위탁'?'—':won(g.value))+ref(p)+'</td></tr>';
+          var kids = multi&&open ? g.items.map(function(x){
+            return '<tr class="click sub" data-id="'+esc(x.id)+'"><td><div class="subnm"><span class="sku">'+esc(x.sbnPrd?x.sbnPrd+'-'+x.sbnSku:'')+'</span> '+esc(x.option||'단품')+'</div></td><td></td>'+
+              '<td class="r num">'+won(x.cost)+'</td><td class="r num">'+won(x.price)+'</td><td class="r num">'+(x.price?won(x.price-x.cost):'—')+'</td><td class="r num">'+mm(x)+'</td><td class="c num">'+stockCell(x)+'</td><td class="r num">'+(stockMode(x)==='위탁'?'—':won(Math.max(0,effStock(x))*x.cost))+'</td></tr>'; }).join('') : '';
+          return head+kids;
         }).join('')+'</tbody></table></div>'+
-        '<div class="mcards">'+CS.map(function(p){
-          return '<div class="mc" data-id="'+esc(p.id)+'">'+thumb(p)+'<div class="m"><div class="t">'+esc(p.name)+'</div><div class="s">'+esc(p.option||p.brand)+'</div><div class="s num">원가 '+won(p.cost)+' · 판매가 '+won(p.price)+' · '+stockMode(p)+' '+won(effStock(p))+'개</div></div><div class="e num">'+mm(p)+'<div class="s">'+(p.price?won(p.price-p.cost)+'원':'')+'</div></div></div>';
-        }).join('')+'</div>'+pagerHtml(L.length, CF.page, PG.size);
-      document.querySelectorAll('#clist [data-id]').forEach(function(r){ r.onclick = function(){ openProduct(r.dataset.id); }; });
+        '<div class="mcards">'+CS.map(function(g){
+          var p=g.p, multi=g.items.length>1, open=(!!CF.allOpen)!==(!!CF.open[g.k]);
+          return '<div class="mc grp" data-g="'+esc(g.k)+'">'+thumb(p)+'<div class="m"><div class="t">'+esc(p.name)+'</div><div class="s">'+esc([p.corp,p.sbnPrd].filter(Boolean).join(' · '))+(multi?' · <b class="optc">옵션 '+g.items.length+'개 '+(open?'▲':'▼')+'</b>':'')+'</div><div class="s num">원가 '+rng(g,function(x){ return x.cost; })+' · 판매가 '+rng(g,function(x){ return x.price; })+' · 재고 '+won(g.qty)+'</div></div><div class="e num">'+mRange(g)+'<div class="s">'+won(Math.round(g.value/1e4))+'만원</div></div></div>'+
+            (multi&&open?'<div class="mcsub">'+g.items.map(function(x){ return '<div class="mc" data-id="'+esc(x.id)+'"><div class="m"><div class="t" style="font-size:14px">'+esc(x.option||'단품')+'</div><div class="s num">원가 '+won(x.cost)+' · 판매가 '+won(x.price)+' · 재고 '+won(effStock(x))+'</div></div><div class="e num">'+mm(x)+'</div></div>'; }).join('')+'</div>':'');
+        }).join('')+'</div>'+pagerHtml(G.length, CF.page, PG.size).replace('개 ·','개 품번 ·');
+      document.querySelectorAll('#clist [data-g]').forEach(function(r){ r.onclick=function(){ var g=gi[r.dataset.g]; if(g.items.length>1){ CF.open[g.k]=!CF.open[g.k]; draw(); } else openProduct(g.p.id); }; });
+      document.querySelectorAll('#clist [data-id]').forEach(function(r){ r.onclick = function(e){ e.stopPropagation(); openProduct(r.dataset.id); }; });
+      bindGrpBar($('clist'), CF, draw);
       bindPager($('clist'), function(n){ CF.page=n; draw(); });
     };
     $('cq').oninput = function(){ CF.q=this.value; CF.page=1; draw(); };
