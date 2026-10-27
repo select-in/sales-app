@@ -53,6 +53,7 @@ a{color:var(--accent)}
 main{margin-left:var(--side);min-height:100vh;padding:28px 32px 60px}
 .wrap{max-width:1120px;margin:0 auto}
 .topbar{display:none}
+.seg.segwrap{display:flex;flex-wrap:wrap;overflow:visible;max-width:100%}.seg.segwrap button{flex:none}
 .otabs{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;position:sticky;top:0;z-index:14;background:var(--bg);padding:10px 0 0;border-bottom:1px solid var(--line);max-width:1120px;margin:0 auto 12px}.otabs::-webkit-scrollbar{display:none}.otabs:empty{display:none}
 .otab{display:inline-flex;align-items:center;gap:6px;flex:none;padding:8px 10px 8px 12px;border:1px solid var(--line);border-bottom:0;border-radius:9px 9px 0 0;background:var(--bg);font-size:13px;color:var(--sub);text-decoration:none;white-space:nowrap;margin-bottom:-1px}
 .otab:hover{background:var(--card)}.otab.on{background:var(--card);color:var(--ink);font-weight:700;box-shadow:0 -1px 0 var(--accent) inset}.otab i{font-size:15px}.otab .cx{font-weight:400;opacity:.45;padding:0 2px;margin-left:2px;border-radius:4px}.otab .cx:hover{opacity:1;background:var(--line)}
@@ -336,7 +337,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-29y';
+var APP_BUILD = '2026-10-29z';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -1494,7 +1495,7 @@ function krMapOpen(style, name, acct){
     var all=S.products.filter(function(p){ return String(p.sbnPrd)===sel.prd; }), cols=[]; all.forEach(function(p){ var c=krColorOf(p); if(c && cols.indexOf(c)<0) cols.push(c); });
     if (!sel.color && cols.length>1){ var hint=String(name).split(/\s+/).pop(); var auto=cols.filter(function(c){ return c.indexOf(hint)>=0 || hint.indexOf(c.replace(/\(.*\)/,''))>=0; })[0]; if(auto) sel.color=auto; }
     var ps=krMapProducts({sbnPrd:sel.prd, color:sel.color});
-    $('kmp').innerHTML = (cols.length>1?'<div class="chsel" style="margin-top:12px"><span>컬러</span><div class="seg" id="kmcol">'+['(전체)'].concat(cols).map(function(c){ var v=c==='(전체)'?'':c; return '<button data-v="'+esc(v)+'" class="'+(sel.color===v?'on':'')+'">'+esc(c)+'</button>'; }).join('')+'</div></div>':'')+
+    $('kmp').innerHTML = (cols.length>1?'<div class="chsel" style="margin-top:12px"><span>컬러</span><div class="seg segwrap" id="kmcol">'+['(전체)'].concat(cols).map(function(c){ var v=c==='(전체)'?'':c; return '<button data-v="'+esc(v)+'" class="'+(sel.color===v?'on':'')+'">'+esc(c)+'</button>'; }).join('')+'</div></div>':'')+
       '<div class="sec" style="margin-top:12px"><i class="ti ti-arrows-left-right"></i>사이즈 맞춰보기</div><div class="tblwrap" style="margin:0"><table class="tbl"><thead><tr><th>크림 사이즈</th><th>사방넷 옵션</th><th class="r">앱 재고</th></tr></thead><tbody>'+
       sizes.map(function(z){ ps._style=''; var auto=krSizeHit(ps, z)[0], cur=sel.sizes[z]!=null?sel.sizes[z]:(auto?String(auto.sbnSku):''); sel.sizes[z]=cur; var h=ps.filter(function(p){ return String(p.sbnSku)===cur; })[0];
         return '<tr><td><b>'+esc(z)+'</b></td><td><select class="inp" data-z="'+esc(z)+'" style="padding:6px 8px;min-width:180px"><option value="">— 연결 안 함 —</option>'+ps.map(function(p){ return '<option value="'+esc(p.sbnSku)+'"'+(String(p.sbnSku)===cur?' selected':'')+'>'+esc(p.sbnSku+' · '+p.option)+'</option>'; }).join('')+'</select></td><td class="r num">'+(h?won(Math.max(0,effStock(h))):'—')+'</td></tr>'; }).join('')+'</tbody></table></div><p class="sm" style="margin-top:6px">사이즈 표기가 달라도 여기서 골라두면 그대로 연결돼요</p>';
