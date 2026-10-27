@@ -522,7 +522,7 @@ function boot(){
   S.loading = true;
   var fresh = false;
   if (!DEMO) idbGet('S').then(function(c){ if (!fresh && c && c.me && (!S.products||!S.products.length)){ S = c; S.loading = true; shell(); route(); } });
-  api('boot').then(function(j){
+  api('boot',{compact:1}).then(function(j){
     fresh = true;
     S = {me:j.me, products:expandProducts(j), history:j.history||[], config:j.config||{}, users:j.users||[]};
     persist(); shell(); route();

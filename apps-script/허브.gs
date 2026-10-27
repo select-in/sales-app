@@ -37,7 +37,7 @@ function doPost(e) {
     if (!me) return hubOut_({ error: 'login' });
     var admin = me.role === '관리자';
     switch (req.action) {
-      case 'boot': return hubOut_(hubBoot_(me));
+      case 'boot': return hubOut_(hubBoot_(me, req.compact));
       case 'product_save': return hubOut_(hubLocked_(function () { return hubProductSave_(req.p, me); }));
       case 'product_delete': if (!admin) return hubOut_({ error: '관리자만 삭제할 수 있습니다' });
         return hubOut_(hubLocked_(function () { return hubProductDelete_(req.id); }));
@@ -993,7 +993,8 @@ function hubConfigSet_(key, value, me) {
 }
 
 /* ===================== 첫 화면 데이터 ===================== */
-function hubBoot_(me) {
+function hubBoot_(me, compact) {
+  if (!compact) { var o0 = { me: me, products: hubProducts_(), history: hubHistory_(null, 200), config: hubConfig_() }; if (me.role === '관리자') o0.users = hubUsers_(); return o0; }   // 옛 화면 호환
   // 상품은 가볍게: 열 이름 + 값 배열 (객체 키 반복 제거, 등록서 JSON은 등록서 상품만)
   var iReg = HUB_P_FIELDS.indexOf('reg'), iRs = HUB_P_FIELDS.indexOf('regStatus');
   var rows = hubRows_('상품').vals.filter(function (v) { return v[0]; }).map(function (v) {
