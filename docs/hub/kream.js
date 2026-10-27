@@ -35,7 +35,9 @@
     });
   }
   function get(path, retried) {
-    return fetch(API + path, { headers: { Authorization: auth() } }).then(function (r) {
+    var ac = new AbortController(), to = setTimeout(function () { ac.abort(); }, 25000);
+    return fetch(API + path, { headers: { Authorization: auth() }, signal: ac.signal }).then(function (r) {
+      clearTimeout(to);
       if (r.status === 401 && !retried) return refreshSession().then(function () { return get(path, true); });
       if (r.status === 401) throw new Error('크림 로그인이 풀렸어요. 크림에 다시 로그인한 뒤 [지금 동기화]를 눌러 주세요');
       if (!r.ok) return r.text().then(function (t) { throw new Error('크림 응답 ' + r.status + ' ' + t.slice(0, 80)); });
@@ -92,7 +94,7 @@
     return asksAll('start_date=' + ymd(daysAgo(364)) + '&end_date=' + today + '&status=live&date_column=date_created&price_column=sale_price')
       .then(function (items) {
         res.asks = items.map(askRow);
-        var sts = ['shipment_required', 'shipped', 'warehouse_scanned', 'payout_scheduled', 'canceled'], k = 0;
+        var sts = ['shipment_required', 'warehouse_scanned', 'payout_scheduled', 'canceled'], k = 0;
         var from = ymd(daysAgo(60));
         var next = function () {
           if (k >= sts.length) return;
@@ -124,16 +126,17 @@
 
   /* ---------- OPS 앱으로 보내기 ---------- */
   function openHub() {
-    if (hubWin && !hubWin.closed) return Promise.resolve(hubWin);
-    hubWin = window.open(HUB + '#kream', 'opsHub');
-    if (!hubWin) throw new Error('팝업이 막혔어요. 주소창 오른쪽에서 팝업 허용 후 다시 눌러 주세요');
+    if (!hubWin || hubWin.closed) hubWin = window.open(HUB + '#kream', 'opsHub');
+    if (!hubWin) return Promise.reject(new Error('팝업이 막혔어요. 주소창 오른쪽에서 팝업 허용 후 [지금 동기화]를 눌러 주세요'));
     return new Promise(function (res, rej) {
-      var n = 0, t = setInterval(function () {
-        if (++n > 60) { clearInterval(t); window.removeEventListener('message', on); rej(new Error('OPS 앱이 열리지 않았어요 (로그인 확인)')); }
-        try { hubWin.postMessage({ type: 'krm_ping' }, HUB_ORIGIN); } catch (e) {}
-      }, 1000);
-      var on = function (e) { if (e.origin === HUB_ORIGIN && e.data && e.data.type === 'hub_ready') { clearInterval(t); window.removeEventListener('message', on); res(hubWin); } };
+      var n = 0, on = function (e) { if (e.origin === HUB_ORIGIN && e.data && e.data.type === 'hub_ready') { clearInterval(t); window.removeEventListener('message', on); res(hubWin); } };
       window.addEventListener('message', on);
+      var ping = function () { try { hubWin.postMessage({ type: 'krm_ping' }, HUB_ORIGIN); } catch (e) {} };
+      var t = setInterval(function () {
+        if (++n > 60) { clearInterval(t); window.removeEventListener('message', on); rej(new Error('OPS 앱이 열리지 않았어요 (OPS 로그인 확인)')); return; }
+        ping();
+      }, 1000);
+      ping();
     });
   }
   function send(res) {
@@ -156,8 +159,9 @@
     });
   }
 
-  function run() {
+  function run(ev) {
     if (busy) return; busy = true; $('okgo').disabled = true;
+    if (ev && (!hubWin || hubWin.closed)) hubWin = window.open(HUB + '#kream', 'opsHub');   // 버튼 클릭 순간에 열어야 팝업이 안 막혀요
     var t0 = Date.now();
     Promise.resolve().then(collect).then(function (res) {
       msg('OPS로 보내는 중… 입찰 ' + res.asks.length + ' · 거래 ' + res.sales.length);
