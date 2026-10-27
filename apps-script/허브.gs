@@ -45,6 +45,8 @@ function doPost(e) {
         return hubOut_(hubLocked_(function () { return hubSbnSync_(req.rows, me, req.final); }));
       case 'sbn_flags': if (!admin) return hubOut_({ error: '관리자만 사방넷 동기화를 할 수 있습니다' });
         return hubOut_(hubLocked_(function () { return hubSbnFlags_(req.rows, me); }));
+      case 'owner_bulk': if (!admin) return hubOut_({ error: '관리자만 담당자를 일괄 변경할 수 있습니다' });
+        return hubOut_(hubLocked_(function () { return hubOwnerBulk_(req.rows, me); }));
       case 'photo_upload': return hubOut_(hubPhotoUpload_(req, me));
       case 'ai_fill': return hubOut_(hubAiFill_(req));
       case 'barsheet_export': return hubOut_(hubLocked_(function () { return hubBarSheetExport_(req, me); }));
@@ -405,6 +407,17 @@ function hubSbnFlags_(rows, me) {
   var missing = Object.keys(map).length;
   hubConfigSet_('sbn_flags', '재고관리 ' + y + ' · 가상재고 ' + n + (missing ? ' · 앱에 없음 ' + missing : ''), me);
   return { ok: true, matched: hitN, y: y, n: n, missing: missing, byCorp: byCorp, ownerSet: ownerSet };
+}
+
+/* 담당자 일괄 변경 rows: [{id, owner}] — 담당자 칸만 바꿈 */
+function hubOwnerBulk_(rows, me) {
+  if (!rows || !rows.length) return { error: '바꿀 행이 없습니다' };
+  var m = {}; rows.forEach(function (r) { if (r && r.id) m[String(r.id)] = hubStr_(r.owner, 30); });
+  var list = hubProducts_(), n = 0;
+  list.forEach(function (p) { if (m.hasOwnProperty(p.id) && p.owner !== m[p.id]) { p.owner = m[p.id]; n++; } });
+  hubWriteAll_(list);
+  hubConfigSet_('owner_bulk', '담당자 ' + n + '개 변경', me);
+  return { ok: true, changed: n };
 }
 
 /* ===================== 재고 ===================== */
