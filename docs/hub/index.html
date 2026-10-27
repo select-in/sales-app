@@ -306,7 +306,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-27s';
+var APP_BUILD = '2026-10-27t';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -824,7 +824,7 @@ function openImport(){
 }
 
 /* ---------- 재고 입출고 ---------- */
-var MV = {type:'in', id:null, qty:1, cont:false};
+var MV = {type:'in', id:null, qty:1, cont:false, corp:(function(){ var v=lsGetRaw('hubScanCorp'); return v==='셀렉트인'||v==='겐더샵'?v:''; })()};
 VIEWS.stock = {
   html: function(){
     var m = location.hash.match(/id=([^&]+)/); if (m){ MV.id = decodeURIComponent(m[1]); }
@@ -834,6 +834,7 @@ VIEWS.stock = {
       '<div class="card">'+
         '<div class="mv-type">'+types.map(function(t){ return '<button data-t="'+t[0]+'" class="'+t[0]+(MV.type===t[0]?' on':'')+'"><i class="ti ti-'+t[2]+'"></i>'+t[1]+'</button>'; }).join('')+'</div>'+
         '<div class="scanrow"><div class="search"><i class="ti ti-search"></i><input class="inp" id="sq" placeholder="바코드 · 상품코드 · 상품명" autocomplete="off"></div><button class="btn pri" id="scam" title="카메라로 바코드 찍기"><i class="ti ti-camera"></i><span>스캔</span></button></div>'+
+        '<div style="display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap"><span style="font-size:13px;font-weight:600;color:var(--sub)">스캔할 법인</span><div class="seg" id="scorp">'+[['','자동 (겹치면 물어보기)'],['셀렉트인','셀렉트인'],['겐더샵','겐더샵']].map(function(c){ return '<button data-v="'+c[0]+'" class="'+(MV.corp===c[0]?'on':'')+'">'+c[1]+'</button>'; }).join('')+'</div></div>'+
         '<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:14px;color:var(--sub)"><input type="checkbox" id="scont"'+(MV.cont?' checked':'')+'> 연속 스캔 (찍을 때마다 수량 1개씩 바로 저장)</label>'+
         '<div id="scamv"></div><div id="spick"></div><div id="ssel"></div>'+
       '</div>'+
@@ -843,18 +844,19 @@ VIEWS.stock = {
   bind: function(){
     document.querySelectorAll('.mv-type button').forEach(function(b){ b.onclick = function(){ MV.type = b.dataset.t; document.querySelectorAll('.mv-type button').forEach(function(x){ x.classList.toggle('on',x===b); }); drawSel(); }; });
     $('scont').onchange = function(){ MV.cont = this.checked; };
+    document.querySelectorAll('#scorp button').forEach(function(b){ b.onclick=function(){ MV.corp=b.dataset.v; try{ localStorage.setItem('hubScanCorp',MV.corp); }catch(e){} document.querySelectorAll('#scorp button').forEach(function(x){ x.classList.toggle('on',x===b); }); }; });
     $('sq').oninput = function(){ drawPick(this.value); };
     $('sq').onkeydown = function(e){
       if (e.key!=='Enter') return;
       var v = this.value.trim(); if (!v) return;
-      var all = findAllByCode(v);
+      var all = scanCorpFilter(findAllByCode(v));
       if (all.length>1) return drawPick(v, all);
       if (all.length) return choose(all[0].id, true);
       var L = searchProducts(v); if (L.length===1) choose(L[0].id);
     };
     $('scam').onclick = function(){
       openScanner(MV.cont ? '연속 스캔 — '+({in:'입고',out:'출고',adjust:'실사'}[MV.type]) : '바코드 스캔', function(code){
-        var all = findAllByCode(code), p = all[0];
+        var all = scanCorpFilter(findAllByCode(code)), p = all[0];
         if (!p){ toast('등록되지 않은 바코드예요: '+code, true); return 'continue'; }
         if (all.length>1){ drawPick(code, all); toast('같은 바코드 상품이 '+all.length+'개예요 · 골라 주세요'); return 'stop'; }
         if (navigator.vibrate) navigator.vibrate(40);
@@ -865,7 +867,8 @@ VIEWS.stock = {
     if (MV.id && S.products.some(function(p){ return p.id===MV.id; })) drawSel(); else { MV.id=null; setTimeout(function(){ if($('sq') && window.innerWidth>900) $('sq').focus(); },50); }
   }
 };
-function findAllByCode(code){ code=String(code).trim(); return S.products.filter(function(p){ return p.barcode===code || p.sku===code || (p.sbnPrd&&p.sbnPrd+'-'+p.sbnSku===code); }); }
+function findAllByCode(code){ code=String(code).trim(); var up=code.toUpperCase(), raw=up.replace(/^S/,''), sb='S'+raw; return S.products.filter(function(p){ var b=String(p.barcode||'').toUpperCase(); return b===up || b===raw || b===sb || p.sku===code || (p.sbnPrd&&p.sbnPrd+'-'+p.sbnSku===code); }); }
+function scanCorpFilter(L){ if (L.length<2 || !MV.corp) return L; var f=L.filter(function(p){ return p.corp===MV.corp; }); return f.length?f:L; }
 function findByCode(code){ var L=findAllByCode(code); if(L.length<2) return L[0]; return L.filter(function(p){ return !isVirtual(p) && p.sbnStatus!=='미사용'; }).sort(function(a,b){ return b.stock-a.stock; })[0] || L[0]; }
 function searchProducts(q){
   var toks = q.toLowerCase().split(/\s+/).filter(Boolean);
@@ -1205,11 +1208,11 @@ VIEWS.barcode = {
 function scanFix(id, after){
   var p = S.products.filter(function(x){ return x.id===id; })[0]; if (!p) return;
   openScanner('새 바코드 스캔 · '+p.name.slice(0,18)+(p.option?' ('+p.option+')':''), function(code){
-    if (code===p.barcode){ toast('지금 바코드와 같아요'); return 'stop'; }
+    if (code===p.barcode || (p.corp==='셀렉트인' && 'S'+String(code).toUpperCase()===String(p.barcode).toUpperCase())){ toast('지금 바코드와 같아요'); return 'stop'; }
     if (navigator.vibrate) navigator.vibrate(40);
     var save=function(force){ api('barcode_set',{id:id, barcode:code, force:!!force}).then(function(j){
       var i=S.products.findIndex(function(x){ return x.id===id; }); if(i>=0) S.products[i]=j.product; persist();
-      toast('바코드 저장 · '+code+' → 사방넷 반영 대기');
+      toast('바코드 저장 · '+j.product.barcode+' → 사방넷 반영 대기');
       if (after) after(); else route();
     }).catch(function(e){
       if (!force && e && /같은 법인/.test(e.message||'') && confirm((e.message||'')+'\n\n같은 실물을 두 번 등록한 경우일 수 있어요. 그래도 이 바코드로 바꿀까요?')) return save(true);

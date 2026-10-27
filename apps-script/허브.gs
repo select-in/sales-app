@@ -258,6 +258,7 @@ function hubProductSave_(raw, me) {
   var c = hubClean_(raw);
   if (!c.name) return { error: '상품명을 입력하세요' };
   var hit = raw.id ? hubFindProduct_(raw.id) : null;
+  if (c.barcode && (!hit || c.barcode !== hit.p.barcode)) c.barcode = hubCorpBar_(c.corp, c.barcode);
   var dup = hubDupCheck_(c, hit ? hit.p.id : null);
   if (dup) return { error: dup };
   var now = hubNow_(), sh = hubSheet_('상품'), fm = [hubFormats_()];
@@ -460,12 +461,19 @@ function hubPendingAfter_(p, newBar) {
   var orig = p.barPending || p.barcode;          // 사방넷에 실제로 들어있는 값
   return newBar === orig ? '' : orig;
 }
+/* 셀렉트인 상품에 새로 넣는 바코드는 앞에 S를 붙여 겐더샵(같은 실물)과 구분: 888999493016 → S888999493016 */
+function hubCorpBar_(corp, bar) {
+  bar = String(bar || '').replace(/\s+/g, '').toUpperCase();
+  if (!bar || corp !== '셀렉트인' || /^S/.test(bar)) return bar;
+  return 'S' + bar;
+}
 function hubBarcodeSet_(req, me) {
   var bar = hubStr_(req.barcode, 60).replace(/\s+/g, '');
   if (!/^[0-9A-Za-z\-]{4,40}$/.test(bar)) return { error: '바코드 형식이 올바르지 않습니다: ' + bar };
   var list = hubProducts_(), hit = null, dup = null;
   list.forEach(function (p) { if (p.id === req.id) hit = p; });
   if (!hit) return { error: '상품을 찾을 수 없습니다' };
+  bar = hubCorpBar_(hit.corp, bar);
   // 같은 실물을 셀렉트인·겐더샵이 각각 등록해 쓰므로, 중복은 같은 법인 안에서만 막음 (force면 같은 법인도 허용)
   list.forEach(function (p) { if (p.id !== hit.id && p.barcode === bar && p.corp === hit.corp) dup = dup || p; });
   if (dup && !req.force) return { dupSameCorp: true, error: '같은 법인(' + hit.corp + ')에서 이미 쓰는 바코드예요: ' + dup.name + (dup.option ? ' (' + dup.option + ')' : '') + (dup.sbnPrd ? ' · 사방넷 ' + dup.sbnPrd + '-' + dup.sbnSku : '') };
@@ -561,6 +569,7 @@ function hubBarSheetApply_(me) {
   W.forEach(function (w) {
     var b = String(w[7]).replace(/\s+/g, ''); if (!b) return;
     var p = byId[w[0]];
+    if (p) b = hubCorpBar_(p.corp, b);
     var err = !p ? '앱에서 상품을 찾을 수 없음'
       : !/^[0-9A-Za-z\-]{8,40}$/.test(b) ? '형식 오류 (8자리 이상 숫자·영문)'
       : inSheet[b] > 1 ? '시트 안에 같은 바코드가 ' + inSheet[b] + '개'
