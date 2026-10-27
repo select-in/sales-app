@@ -362,7 +362,9 @@ function api(action, body){
     }, function(e){ if(e&&e.silent) throw e; throw {message:'서버에 연결할 수 없습니다. 인터넷 연결을 확인하세요'}; });
 }
 function lsGetRaw(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
-function fail(e){ if(e&&e.silent) return; toast((e&&e.message)||'처리 중 오류가 났습니다',true); }
+function fail(e){ if(e&&e.silent) return; var m=(e&&e.message)||'처리 중 오류가 났습니다';
+  if (/DriveApp|auth\/drive|권한/.test(m)) m='사진 저장 권한이 아직 없어요. 관리자가 Apps Script에서 hubAuthorize를 실행해 허용한 뒤 새 버전으로 배포해 주세요';
+  toast(m,true); }
 
 function demoDb(){
   var d = lsGet(LS_DEMO);
