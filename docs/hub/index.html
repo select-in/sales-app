@@ -338,7 +338,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-30b';
+var APP_BUILD = '2026-10-30b-s3';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -709,7 +709,10 @@ function salesFoot(){
   var lab={'사방넷':'사방넷','스마트스토어':'스마트스토어','크림':'크림','포이즌':'포이즌','도소매':'도소매','공동구매':'공동구매'};
   Object.keys(lab).forEach(function(k){ if(!L[k]) return; var gap=Math.round((new Date(td)-new Date(L[k]))/864e5); var late=(k==='사방넷'||k==='스마트스토어')?gap>1:(k==='크림'||k==='포이즌')?gap>8:false;
     out.push('<span class="pill"'+(late?' style="background:var(--amberbg);color:var(--amber)"':'')+'>'+lab[k]+' '+esc(L[k].slice(5).replace('-','/'))+'까지</span>'); });
-  var lv=SALES.live||{};
+  var lv=SALES.live||{}, nowHm=new Date(Date.now()+9*36e5).toISOString().slice(11,16);
+  var stale=function(t){ if(!/^\d{1,2}:\d{2}$/.test(t||'')) return true; var a=t.split(':'), b=nowHm.split(':'); return (b[0]*60+ +b[1])-(a[0]*60+ +a[1])>150; };
+  var warn=[]; if(stale(lv.sabang)) warn.push('사방넷 '+(lv.sabang||'미갱신')); if(stale(lv.store)) warn.push('스마트스토어 '+(lv.store||'미갱신'));
+  if (warn.length) out.unshift('<span class="pill" style="background:var(--amberbg);color:var(--amber)"><i class="ti ti-clock-exclamation"></i> 오늘 실시간이 오래됐어요 · '+esc(warn.join(' · '))+' — 오늘 매출이 실제보다 적게 보일 수 있어요</span>');
   return '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;font-size:12px">'+out.join('')+'</div>'+
     '<p style="margin:8px 0 0;font-size:12px;color:var(--mute)">매출판 시트 「일별입력」을 직접 읽어요 · 어제까지는 확정, 오늘은 사방넷'+(lv.sabang?' '+esc(lv.sabang):'')+'·스마트스토어'+(lv.store?' '+esc(lv.store):'')+' 실시간(주문 기준) · 크림·포이즌은 매주 월요일 반영 · 불러온 시각 '+esc(SALES.at||'')+
     ' <a href="#" id="sref" style="color:var(--accent)">새로고침</a></p>';
