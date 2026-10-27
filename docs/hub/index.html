@@ -343,7 +343,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-30h';
+var APP_BUILD = '2026-10-30i';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -2092,7 +2092,7 @@ function regDraw(){
       '<div class="tblwrap"><table class="tbl ktbl"><thead><tr><th>쇼핑몰 · 계정</th><th class="r">등록</th><th class="r">미등록</th><th class="r">일시중지</th><th class="r">다른 법인 상품</th><th></th></tr></thead><tbody>'+
       A.map(function(a){ var k=a.shma+'|'+a.id, pct=prods.length?Math.round(a.has/prods.length*100):0;
         return '<tr class="click'+(RG.acct===k?' open':'')+'" data-a="'+esc(k)+'"><td><div class="c2 nm2"><b>'+esc(a.mall)+'</b><span>'+esc(a.id)+'</span></div></td><td class="r num">'+c2_(won(a.has)+'개', pct+'%')+'</td><td class="r num">'+c2_(a.miss?'<em class="wn">'+won(a.miss)+'개</em>':'0', '')+'</td><td class="r num">'+(a.pause?won(a.pause)+'개':'<span class="sm">0</span>')+'</td><td class="r num">'+(a.wrong?'<em class="wn">'+won(a.wrong)+'개</em>':'<span class="sm">0</span>')+'</td><td class="c"><span class="sm">'+(RG.acct===k?'선택됨':'미등록 보기')+'</span></td></tr>'; }).join('')+
-      '</tbody></table></div><p class="sm" style="margin:8px 0 0">다른 법인 상품 = 이 계정에 다른 법인(마이카테고리) 상품이 등록된 수 · 계정→법인은 데일리매출판 설정 ③ 기준 (없으면 겐더샵) · 제외 계정('+D.accts.length+'개 중 '+(SBR.accts.length-D.accts.length)+'개)은 뺌</p></div>'+
+      '</tbody></table></div><p class="sm" style="margin:8px 0 0">다른 법인 상품 = 이 계정에 다른 법인(마이카테고리) 상품이 등록된 수 · 계정→법인은 데일리매출판 설정 ③ 기준 (없으면 겐더샵) · 전체 '+SBR.accts.length+'개 계정 중 제외 '+(SBR.accts.length-D.accts.length)+'개는 뺌</p></div>'+
     '<div class="card" style="margin-top:16px"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'+
       '<div class="seg" id="rgo">'+[['miss','미등록 있는 상품'],['all','전체']].map(function(t){ return '<button data-v="'+t[0]+'" class="'+(RG.only===t[0]?'on':'')+'">'+t[1]+'</button>'; }).join('')+'</div>'+
       '<div class="search" style="flex:1;min-width:200px"><i class="ti ti-search"></i><input class="inp" id="rgq" placeholder="상품명, 사방넷 코드, 브랜드" value="'+esc(RG.q)+'"></div></div><div id="rglist"></div></div>';
