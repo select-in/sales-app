@@ -1179,7 +1179,7 @@ function openReg(id){
     '<label class="fld"><span>판매가 (원) <em>*</em></span><input class="inp r num" name="price" inputmode="numeric" value="'+v('price')+'"></label></div>'+
     '<div class="row2"><label class="fld"><span>원가 (원)</span><input class="inp r num" name="cost" inputmode="numeric" value="'+v('cost')+'"></label>'+
     '<label class="fld"><span>TAG가 · 소비자가 (원)</span><input class="inp r num" name="tagPrice" inputmode="numeric" value="'+(r.tagPrice?won(r.tagPrice):'')+'"></label></div>'+
-    '<div class="sec"><i class="ti ti-list-details"></i>있으면 입력 <small>비워두면 사진 보고 Claude가 채워요</small></div>'+
+    '<div class="sec"><i class="ti ti-list-details"></i>있으면 입력 <small>비워도 등록돼요</small></div>'+
     '<div class="row2"><label class="fld"><span>브랜드</span><input class="inp" name="brand" value="'+v('brand')+'"></label><label class="fld"><span>모델번호 · 품번</span><input class="inp" name="modelNo" value="'+rv('modelNo')+'"></label></div>'+
     '<label class="fld"><span>옵션 <small style="font-weight:400;color:var(--mute)">쉼표로 구분 · 예) 블랙:M, 블랙:L, 네이비:M</small></span><input class="inp" name="options" value="'+esc((r.options||[]).join(', ')||(p&&p.option)||'')+'"></label>'+
     '<label class="fld"><span>바코드</span><div class="scanrow"><input class="inp num" name="barcode" value="'+v('barcode')+'" inputmode="numeric"><button type="button" class="btn pri" id="rscan"><i class="ti ti-scan"></i>스캔</button></div></label>'+

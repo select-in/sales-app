@@ -787,6 +787,7 @@ function hubRegPayload_(p, reg) {
   };
   if (target) o.productTargetCode = target;
   if (!o.modelNo) { delete o.modelNo; delete o.modelName; }
+  if (p.sbnPrd || reg.sbnProductCode) o.optionInfo.options.forEach(function (x) { delete x.stockQuantity; });   // 이미 등록된 상품 수정 시 재고는 건드리지 않음
   return { product: o, noticeType: type };
 }
 function hubRegSend_(req, me) {
