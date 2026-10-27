@@ -337,6 +337,45 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 .stk2{display:flex;flex-direction:column;align-items:center;gap:4px;white-space:nowrap}
 .stk2 .vq{color:var(--mute)}
 .stk2 .lk{font-size:11.5px;color:var(--mute)}
+
+/* 매출 필터·막대: 카드 폭 안에 맞춤 (PC/모바일 공통) */
+.sfilt{display:flex;gap:8px;flex-wrap:wrap;min-width:0;max-width:100%}
+.sfilt .seg{min-width:0}
+@media (max-width:900px){
+  .sfilt{width:100%;flex-direction:column;align-items:stretch}
+  .sfilt .seg{display:grid;width:100%;grid-template-columns:repeat(3,1fr);overflow:visible}
+  .sfilt #sfp{grid-template-columns:repeat(4,1fr)}
+  .sfilt .seg button{padding:7px 4px;font-size:13.5px;text-align:center}
+  .sfilt>span{flex-wrap:wrap}
+  .sfilt input[type=date]{flex:1;min-width:0}
+  .salesbars{overflow:hidden;gap:1px}
+  .salesbars .sb{flex:1 1 0;min-width:0}
+  .salesbars.many .sb:nth-child(even) span{visibility:hidden}
+  .salesbars .sb span{font-size:9.5px}
+  .kpi .sm{word-break:keep-all}
+}
+
+/* 홈: 매출 법인별·채널별 / 섹션 / 바로가기 행 */
+.hsplit{margin:14px 0 4px}
+.moonly{display:none}
+@media (max-width:900px){.moonly{display:block}}
+.mbars{border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.mbars h3{margin:0 0 8px;font-size:14px}
+.mb{display:grid;grid-template-columns:minmax(64px,30%) 1fr auto;gap:8px;align-items:center;font-size:13px;padding:3px 0}
+.mb .l{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mb .b{height:8px;background:var(--bg);border-radius:4px;overflow:hidden}.mb .b i{display:block;height:100%;background:var(--accent);border-radius:4px}
+.mb .r{color:var(--sub);white-space:nowrap}.mb .r b{color:var(--ink)}
+.hsec{margin:22px 0 10px;font-size:17px}
+a.todo.hk{text-decoration:none;color:inherit;cursor:pointer}
+a.todo.hk:hover .t{color:var(--accent)}
+
+/* 모바일 공통: 화면 밖으로 안 나가게 */
+@media (max-width:900px){
+  main .pill{max-width:100%;white-space:normal}
+  main .card,main .kpi,main .grid>*{min-width:0;max-width:100%}
+  main .ph>div{min-width:0}
+  main h2,main h1{overflow-wrap:anywhere}
+}
 </style>
 </head>
 <body>
@@ -721,7 +760,7 @@ function salesFoot(){
   var lv=SALES.live||{}, nowHm=new Date(Date.now()+9*36e5).toISOString().slice(11,16);
   var stale=function(t){ if(!/^\d{1,2}:\d{2}$/.test(t||'')) return true; var a=t.split(':'), b=nowHm.split(':'); return (b[0]*60+ +b[1])-(a[0]*60+ +a[1])>150; };
   var warn=[]; if(stale(lv.sabang)) warn.push('사방넷 '+(lv.sabang||'미갱신')); if(stale(lv.store)) warn.push('스마트스토어 '+(lv.store||'미갱신'));
-  if (warn.length) out.unshift('<span class="pill" style="background:var(--amberbg);color:var(--amber)"><i class="ti ti-clock-exclamation"></i> 오늘 실시간이 오래됐어요 · '+esc(warn.join(' · '))+' — 오늘 매출이 실제보다 적게 보일 수 있어요</span>');
+  if (warn.length) out.unshift('<span class="pill" style="background:var(--amberbg);color:var(--amber);white-space:normal;line-height:1.5"><i class="ti ti-clock-exclamation"></i> 오늘 실시간이 오래됐어요 · '+esc(warn.join(' · '))+' — 오늘 매출이 실제보다 적게 보일 수 있어요</span>');
   return '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;font-size:12px">'+out.join('')+'</div>'+
     '<p style="margin:8px 0 0;font-size:12px;color:var(--mute)">매출판 시트 「일별입력」을 직접 읽어요 · 어제까지는 확정, 오늘은 사방넷'+(lv.sabang?' '+esc(lv.sabang):'')+'·스마트스토어'+(lv.store?' '+esc(lv.store):'')+' 실시간(주문 기준) · 크림·포이즌은 매주 월요일 반영 · 불러온 시각 '+esc(SALES.at||'')+
     ' <a href="#" id="sref" style="color:var(--accent)">새로고침</a></p>';
@@ -760,7 +799,7 @@ function salesDraw(){
   }
   el.innerHTML =
     '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:12px"><h2 style="margin:0">'+(full?'':'<a href="#sales" style="color:inherit;text-decoration:none">')+'매출 <small>'+esc(rg.a===rg.b?rg.a:rg.a+' ~ '+rg.b)+'</small>'+(full?'':' <i class="ti ti-chevron-right" style="font-size:16px;color:var(--mute)"></i></a>')+'</h2>'+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap"><div class="seg" id="sfc">'+['전체','겐더샵','셀렉트인'].map(function(c){ return '<button data-v="'+c+'" class="'+(SF.corp===c?'on':'')+'">'+c+'</button>'; }).join('')+'</div>'+
+      '<div class="sfilt"><div class="seg" id="sfc">'+['전체','겐더샵','셀렉트인'].map(function(c){ return '<button data-v="'+c+'" class="'+(SF.corp===c?'on':'')+'">'+c+'</button>'; }).join('')+'</div>'+
       '<div class="seg" id="sfp">'+pers.map(function(p){ return '<button data-v="'+p[0]+'" class="'+(SF.per===p[0]?'on':'')+'">'+p[1]+'</button>'; }).join('')+'</div>'+
       (full&&SF.per==='custom'?'<span style="display:flex;gap:6px;align-items:center"><input type="date" id="sfa" value="'+esc(rg.a)+'" class="inp" style="width:auto"> ~ <input type="date" id="sfb" value="'+esc(rg.b)+'" class="inp" style="width:auto"></span>':'')+'</div></div>'+
     '<div class="grid g4">'+
@@ -769,17 +808,23 @@ function salesDraw(){
       '<div class="kpi"><div class="k"><i class="ti ti-wallet"></i>정산 예정</div><div class="v num">'+salesMan(st)+'</div><div class="sm">수수료 차감 후'+(lamt?' · 확정분만':'')+'</div></div>'+
       '<div class="kpi"><div class="k"><i class="ti ti-trending-up"></i>이익</div><div class="v num">'+salesMan(pf)+'</div><div class="sm">'+(camt?'이익률 '+(pf/camt*100).toFixed(1)+'%':'')+(lamt?' · 확정분만':'')+'</div></div>'+
     '</div>'+
-    (!full&&GL.length?'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 4px">'+GL.map(function(o){ return '<span class="pill">'+esc(o.k||'기타')+' <b class="num">'+won(Math.round(o.amt/1e4))+'만</b> · '+(amt?Math.round(o.amt/amt*100):0)+'%</span>'; }).join('')+'</div>':'')+
-    '<div class="salesbars" title="일별 매출">'+days.map(function(x){ return '<div class="sb'+(x[2]?' on':'')+'" title="'+esc(x[0])+' · '+won(x[1])+'원"><i style="height:'+Math.max(2,Math.round(x[1]/dmx*100))+'%"></i><span>'+esc(x[0])+'</span></div>'; }).join('')+'</div>'+
+    (!full&&(CO.length||GL.length)?'<div class="grid g2 hsplit">'+(SF.corp==='전체'?miniBars('법인별',CO,amt):'')+miniBars('채널별',GL,amt)+'</div>':'')+
+    '<div class="salesbars'+(days.length>16?' many':'')+'" title="일별 매출">'+days.map(function(x){ return '<div class="sb'+(x[2]?' on':'')+'" title="'+esc(x[0])+' · '+won(x[1])+'원"><i style="height:'+Math.max(2,Math.round(x[1]/dmx*100))+'%"></i><span>'+esc(x[0])+'</span></div>'; }).join('')+'</div>'+
     (full ? (SF.corp==='전체'&&CO.length>1?grpTbl('법인별',CO,true):'')+(GL.length?grpTbl('채널그룹별',GL,false):'') : '')+
     (full?'<h3 style="margin:18px 0 6px;font-size:15px">플랫폼별</h3>':'')+
-    (PL.length ? '<div class="tblwrap" style="margin-top:8px"><table class="tbl"><thead><tr><th>플랫폼</th>'+(SF.corp==='전체'?'<th>법인</th>':'')+'<th class="r">주문</th><th class="r">매출</th><th style="width:28%">비중</th><th class="r">정산 예정</th></tr></thead><tbody>'+
-      PL.slice(0, full?999:12).map(function(o){ return '<tr><td><b>'+esc(o.pf)+'</b> <span class="sm">'+esc(o.grp)+(o.live?' · 실시간':'')+'</span></td>'+(SF.corp==='전체'?'<td><span class="pill">'+esc(o.corp)+'</span></td>':'')+'<td class="r num">'+won(o.cnt)+'</td><td class="r num"><b>'+won(o.amt)+'</b></td><td><div class="sbar"><i style="width:'+Math.max(1,Math.round(o.amt/mx*100))+'%"></i><span>'+(amt?(o.amt/amt*100).toFixed(1):0)+'%</span></div></td><td class="r num">'+(o.st?won(o.st):'—')+'</td></tr>'; }).join('')+
-      '</tbody></table></div>'+(!full&&PL.length>12?'<div style="margin-top:8px"><a class="btn sm" href="#sales">플랫폼 '+PL.length+'개 전체 보기</a></div>':'') : '<div class="empty">이 기간 매출 기록이 없어요</div>')+
+    (!full&&PL.length?'<div class="moonly" style="margin-top:12px">'+miniBars('플랫폼별',PL.map(function(o){ return {k:o.pf+(SF.corp==='전체'?' · '+o.corp:''), amt:o.amt}; }),amt)+'</div>':'')+
+    (PL.length ? '<div class="tblwrap'+(full?'':' pconly')+'" style="margin-top:8px"><table class="tbl"><thead><tr><th>플랫폼</th>'+(SF.corp==='전체'?'<th>법인</th>':'')+'<th class="r">주문</th><th class="r">매출</th><th style="width:28%">비중</th><th class="r">정산 예정</th></tr></thead><tbody>'+
+      PL.slice(0, full?999:8).map(function(o){ return '<tr><td><b>'+esc(o.pf)+'</b> <span class="sm">'+esc(o.grp)+(o.live?' · 실시간':'')+'</span></td>'+(SF.corp==='전체'?'<td><span class="pill">'+esc(o.corp)+'</span></td>':'')+'<td class="r num">'+won(o.cnt)+'</td><td class="r num"><b>'+won(o.amt)+'</b></td><td><div class="sbar"><i style="width:'+Math.max(1,Math.round(o.amt/mx*100))+'%"></i><span>'+(amt?(o.amt/amt*100).toFixed(1):0)+'%</span></div></td><td class="r num">'+(o.st?won(o.st):'—')+'</td></tr>'; }).join('')+
+      '</tbody></table></div>'+(!full&&PL.length>8?'<div style="margin-top:8px"><a class="btn sm" href="#sales">플랫폼 '+PL.length+'개 전체 보기</a></div>':'') : '<div class="empty">이 기간 매출 기록이 없어요</div>')+
     pay+salesFoot();
   [['sfc','corp'],['sfp','per']].forEach(function(g){ el.querySelectorAll('#'+g[0]+' button').forEach(function(b){ b.onclick=function(){ SF[g[1]]=b.dataset.v; salesSave(); salesDraw(); }; }); });
   ['sfa','sfb'].forEach(function(id,i){ var x=$(id); if(x) x.onchange=function(){ SF[i?'b':'a']=this.value; salesSave(); salesDraw(); }; });
   var rf=$('sref'); if(rf) rf.onclick=function(e){ e.preventDefault(); el.style.opacity=.5; salesLoad(true).then(function(){ el.style.opacity=1; salesDraw(); toast('매출을 다시 불러왔어요'); }).catch(function(e2){ el.style.opacity=1; fail(e2); }); };
+}
+function miniBars(title, L, tot){
+  if (!L.length) return '';
+  var mx=L[0].amt||1;
+  return '<div class="mbars"><h3>'+title+'</h3>'+L.slice(0,8).map(function(o){ return '<div class="mb"><span class="l">'+esc(o.k||'기타')+'</span><span class="b"><i style="width:'+Math.max(2,Math.round(o.amt/mx*100))+'%"></i></span><span class="r num"><b>'+won(Math.round(o.amt/1e4))+'</b>만 · '+(tot?Math.round(o.amt/tot*100):0)+'%</span></div>'; }).join('')+'</div>';
 }
 function salesBind(){
   if (SALES) salesDraw();
@@ -896,6 +941,28 @@ function prDraw(){
   box.querySelectorAll('#prt button').forEach(function(b){ b.onclick=function(){ PRF.tab=b.dataset.v; prSave(); prDraw(); }; });
 }
 
+/* ---------- 홈: 상품 확인할 것 기준 (상품 화면 필터와 공유) ---------- */
+var PCHK = {
+  nocost:  {t2:'원가 미입력',   ic:'coin-off',      d:'원가 넣어야 마진·이익 계산돼요',  t:function(p){ return p.type!=='위탁' && !isVirtual(p) && !(+p.cost>0); }},
+  noprice: {t2:'판매가 미입력', ic:'tag-off',       d:'판매가 확인',                    t:function(p){ return !(+p.price>0); }},
+  nobar:   {t2:'바코드 없음',   ic:'barcode-off',   d:'현재고 상품은 바코드가 있어야 입출고돼요', t:function(p){ return stockMode(p)==='현재고' && !p.barcode; }},
+  noowner: {t2:'담당자 미지정', ic:'user-question', d:'상품 담당자 지정',               t:function(p){ return !p.owner; }},
+  nosbn:   {t2:'사방넷 코드 없음', ic:'link-off',   d:'앱에만 있는 상품 — 필요 없으면 삭제', t:function(p){ return !p.sbnPrd; }}
+};
+function homeRegLoad(){
+  sbrLoad().then(function(){
+    var el=$('hreg'); if(!el) return;
+    if (!SBR.accts.length){ el.innerHTML='<a class="todo hk" href="#reg"><div class="ic warn"><i class="ti ti-refresh-alert"></i></div><div class="m"><div class="t">쇼핑몰 미등록 상품</div><div class="s">등록 현황이 아직 없어요 — PC에서 사방넷 동기화 실행</div></div><i class="ti ti-chevron-right" style="color:var(--mute)"></i></a>'; return; }
+    var D=regData();
+    el.innerHTML=['셀렉트인','겐더샵'].map(function(c){
+      var A=D.accts.filter(function(a){ return a.corp===c; });
+      var miss=Object.keys(D.P).map(function(k){ return D.P[k]; }).filter(function(o){ return o.corp===c && o.stock>0 && A.some(function(a){ return !a.m[o.prd]; }); }).length;
+      return '<a class="todo hk" href="#reg" data-rc="'+c+'"><div class="ic '+(miss?'warn':'ok')+'"><i class="ti ti-'+(miss?'building-store':'circle-check')+'"></i></div><div class="m"><div class="t">'+c+' 쇼핑몰 미등록</div><div class="s">'+(miss?'재고 있는 상품 '+won(miss)+'개가 '+c+' 계정 '+A.length+'곳 중 일부에 없어요':'재고 있는 상품이 모두 등록돼 있어요')+'</div></div><i class="ti ti-chevron-right" style="color:var(--mute)"></i></a>';
+    }).join('');
+    el.querySelectorAll('[data-rc]').forEach(function(a){ a.onclick=function(){ RG.corp=a.dataset.rc; RG.stock=true; }; });
+  }).catch(function(){ var el=$('hreg'); if(el) el.innerHTML='<a class="todo hk" href="#reg"><div class="ic warn"><i class="ti ti-alert-triangle"></i></div><div class="m"><div class="t">쇼핑몰 미등록 상품</div><div class="s">등록 현황을 불러오지 못했어요 — 사방넷 점검에서 확인</div></div></a>'; });
+}
+
 /* ---------- 홈 ---------- */
 VIEWS.home = {
   html: function(){
@@ -908,9 +975,14 @@ VIEWS.home = {
     var sch = S.config.scheduler_check, schToday = sch && String(sch.at).slice(0,10)===td;
     var lowM = P.filter(function(p){ var m=margin(p); return m!==null && m<marginMin(); });
     var d = new Date(Date.now()+9*36e5), wd='일월화수목금토'.charAt(d.getUTCDay());
-    return '<div class="ph"><div><h1>'+esc(S.me.name)+'님, 안녕하세요</h1><p>'+td.replace(/-/g,'.')+' ('+wd+') · 오늘 확인할 것부터 정리했어요</p></div>'+
+    var A = P.filter(function(p){ return p.sbnStatus!=='미사용'; });
+    var chk = Object.keys(PCHK).map(function(k){ var c=PCHK[k]; return {k:k, c:c, n:A.filter(c.t).length}; });
+    var regL = P.filter(function(p){ return p.regStatus; }), rc=function(st){ return regL.filter(function(p){ return p.regStatus===st; }).length; };
+    var row=function(ic, cls, t, sub, href){ return '<a class="todo hk" href="'+href+'"><div class="ic '+cls+'"><i class="ti ti-'+ic+'"></i></div><div class="m"><div class="t">'+t+'</div><div class="s">'+sub+'</div></div><i class="ti ti-chevron-right" style="color:var(--mute)"></i></a>'; };
+    return '<div class="ph"><div><h1>'+esc(S.me.name)+'님, 안녕하세요</h1><p>'+td.replace(/-/g,'.')+' ('+wd+') · 매출과 상품부터 정리했어요</p></div>'+
       '<div class="acts"><button class="btn" data-xl="1" title="지금 보이는 조건 그대로 엑셀로 받기"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button><a class="btn pri" href="#stock"><i class="ti ti-barcode"></i>입출고 시작</a></div></div>'+
-      salesHtml()+'<div class="card" id="hops" style="margin-bottom:16px"><div class="empty">오늘 처리 현황 불러오는 중…</div></div>'+
+      salesHtml()+
+      '<h2 class="hsec">상품</h2>'+
       '<div class="grid g4">'+
         '<a class="kpi" href="#products"><div class="k"><i class="ti ti-package"></i>등록 상품</div><div class="v num">'+won(P.length)+'<small>개</small></div></a>'+
         '<a class="kpi amber" href="#products?f=low"><div class="k"><i class="ti ti-alert-triangle"></i>재고 부족</div><div class="v num">'+won(low.length)+'<small>개</small></div></a>'+
@@ -918,12 +990,25 @@ VIEWS.home = {
         '<a class="kpi" href="#cost"><div class="k"><i class="ti ti-coin"></i>사입 재고 금액</div><div class="v num">'+(value>=1e8?(value/1e8).toFixed(1)+'<small>억</small>':won(Math.round(value/1e4))+'<small>만원</small>')+'</div></a>'+
       '</div>'+
       '<div class="grid g2" style="margin-top:16px">'+
+        '<div class="card"><h2>상품 확인해야 할 것</h2>'+
+          row(out.length?'circle-x':'circle-check', out.length?'bad':'ok', '품절', out.length?won(out.length)+'개 — 채널 품절 처리 또는 입고':'없어요', '#products?f=out')+
+          row(low.length?'alert-triangle':'circle-check', low.length?'warn':'ok', '재고 부족', low.length?'안전재고 이하 '+won(low.length)+'개 — 추가 사입 검토':'없어요', '#products?f=low')+
+          row(lowM.length?'percentage':'circle-check', lowM.length?'warn':'ok', '마진 '+marginMin()+'% 미만', lowM.length?won(lowM.length)+'개 — 판매가·원가 확인':'없어요', '#cost')+
+          chk.map(function(x){ return row(x.n?x.c.ic:'circle-check', x.n?'warn':'ok', x.c.t2, x.n?won(x.n)+'개 — '+x.c.d:'없어요', '#products?f='+x.k); }).join('')+
+        '</div>'+
+        '<div class="card"><h2>상품 등록해야 할 것</h2>'+
+          row(rc('등록요청')?'send':'circle-check', rc('등록요청')?'warn':'ok', '사방넷 등록 요청', rc('등록요청')?won(rc('등록요청'))+'개 — 사방넷에 등록 대기':'없어요', '#register')+
+          row(rc('작성중')?'pencil':'circle-check', rc('작성중')?'warn':'ok', '등록서 작성 중', rc('작성중')?won(rc('작성중'))+'개 — 필수 정보 입력 마무리':'없어요', '#register')+
+          '<div id="hreg"><div class="todo"><div class="ic"><i class="ti ti-loader"></i></div><div class="m"><div class="t">쇼핑몰 미등록 상품</div><div class="s">사방넷 등록 현황 불러오는 중…</div></div></div></div>'+
+          '<div style="margin-top:10px"><a class="btn sm pri" href="#register"><i class="ti ti-camera-plus"></i>새 상품 등록</a></div>'+
+        '</div>'+
+      '</div>'+
+      '<h2 class="hsec">오늘 운영</h2>'+
+      '<div class="card" id="hops" style="margin-bottom:16px"><div class="empty">오늘 처리 현황 불러오는 중…</div></div>'+
+      '<div class="grid g2">'+
         '<div class="card"><h2>오늘 할 일</h2>'+
           '<div class="todo"><div class="ic '+(schToday?'ok':'warn')+'"><i class="ti ti-'+(schToday?'circle-check':'clock')+'"></i></div><div class="m"><div class="t">사방넷 스케줄러 점검</div><div class="s">'+(sch?'마지막 점검 '+esc(sch.at)+' · '+esc(sch.by):'아직 점검 기록이 없어요')+'</div></div>'+
             '<button class="btn sm" id="schk">'+(schToday?'다시 점검':'점검 완료')+'</button></div>'+
-          '<div class="todo"><div class="ic '+(out.length?'bad':'ok')+'"><i class="ti ti-'+(out.length?'circle-x':'circle-check')+'"></i></div><div class="m"><div class="t">품절 상품 확인</div><div class="s">'+(out.length?'품절 '+out.length+'개 — 채널 품절 처리 또는 입고 필요':'품절 상품이 없어요')+'</div></div>'+(out.length?'<a class="btn sm" href="#products?f=out">보기</a>':'')+'</div>'+
-          '<div class="todo"><div class="ic '+(low.length?'warn':'ok')+'"><i class="ti ti-'+(low.length?'alert-triangle':'circle-check')+'"></i></div><div class="m"><div class="t">재고 부족 상품</div><div class="s">'+(low.length?'안전재고 이하 '+low.length+'개 — 추가 사입 검토':'안전재고 이하 상품이 없어요')+'</div></div>'+(low.length?'<a class="btn sm" href="#products?f=low">보기</a>':'')+'</div>'+
-          '<div class="todo"><div class="ic '+(lowM.length?'warn':'ok')+'"><i class="ti ti-'+(lowM.length?'percentage':'circle-check')+'"></i></div><div class="m"><div class="t">마진 '+marginMin()+'% 미만 상품</div><div class="s">'+(lowM.length?lowM.length+'개 — 판매가·원가 확인':'기준 미만 상품이 없어요')+'</div></div>'+(lowM.length?'<a class="btn sm" href="#cost">보기</a>':'')+'</div>'+
         '</div>'+
         '<div class="card"><h2>오늘 입출고 <small>입고 '+won(inQ)+' · 출고 '+won(outQ)+'</small></h2>'+histList(todays.slice(0,6),'오늘 처리한 입출고가 없어요')+
           '<div style="margin-top:10px"><a class="btn sm" href="#stock">전체 이력 보기</a></div></div>'+
@@ -931,7 +1016,7 @@ VIEWS.home = {
       '<div class="card" style="margin-top:16px"><h2>자주 쓰는 프로그램</h2><div class="grid g3">'+toolCards(true)+'</div></div>';
   },
   bind: function(){
-    salesBind(); opsTodayLoad();
+    salesBind(); opsTodayLoad(); homeRegLoad();
     $('schk').onclick = function(){
       this.disabled = true;
       api('config_set',{key:'scheduler_check',value:'ok'}).then(function(j){ S.config=j.config; persist(); toast('사방넷 스케줄러 점검 완료로 기록했어요'); route(); }).catch(function(e){ fail(e); route(); });
@@ -991,6 +1076,7 @@ VIEWS.products = {
         if (PF.f==='real' && stockMode(p)!=='현재고') return false;
         if (PF.f==='moum' && !isMoum(p)) return false;
         if (PF.f==='virtual' && !isVirtual(p)) return false;
+        if (PF.f!=='all' && PCHK[PF.f] && !PCHK[PF.f].t(p)) return false;
         var hay = [p.name,p.brand,p.option,p.sku,p.barcode,p.loc,p.cat,p.owner,p.sbnPrd,p.sbnPrd&&p.sbnPrd+'-'+p.sbnSku].join(' ').toLowerCase();
         return toks.every(function(t){ return hay.indexOf(t)>=0; });
       }).sort(function(a,b){ return (a.brand+a.name+a.option).localeCompare(b.brand+b.name+b.option,'ko'); });
