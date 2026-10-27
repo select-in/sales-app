@@ -1235,7 +1235,7 @@ function openReg(id){
   var send = function(status, btn){
     var num = function(x){ return String(x||'').replace(/[^\d]/g,''); };
     var pd = {id:p?p.id:undefined, name:F.name.value.trim(), brand:F.brand.value.trim(), barcode:F.barcode.value.trim(),
-      option:optRows().map(function(o){ return [o.color,o.size].filter(Boolean).join(':'); }).join(', '), price:num(F.price.value), cost:num(F.cost.value), stock:F.stock&&!F.stock.disabled?num(F.stock.value):undefined,
+      option:optRows().map(function(o){ return [o.color,o.size].filter(Boolean).join(':'); }).join(', '), price:num(F.price.value), cost:num(F.cost.value), stock:F.stock&&!F.stock.disabled?(optRows().length?String(optRows().reduce(function(t,o){ return t+o.qty; },0)):num(F.stock.value)):undefined,
       corp:F.myCategory.value==='셀렉트인전용'?'셀렉트인':'겐더샵', type:'사입', sku:p?p.sku:'', safety:p?p.safety:0, loc:p?p.loc:'', memo:p?p.memo:''};
     if (!pd.name) return toast('상품명을 입력하세요',true);
     var reg = Object.assign({}, r, {photos:photos, myCategory:F.myCategory.value, tagPrice:+num(F.tagPrice.value)||0, modelNo:F.modelNo.value.trim(),
