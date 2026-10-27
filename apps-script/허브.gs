@@ -50,6 +50,9 @@ function doPost(e) {
         return hubOut_(hubLocked_(function () { return hubOwnerBulk_(req.rows, me); }));
       case 'channel_ship': return hubOut_(hubLocked_(function () { return hubChannelShip_(req, me); }));
       case 'channel_list': return hubOut_({ rows: hubChannelList_(req.limit || 400) });
+      case 'sbn_get': if (!admin) return hubOut_({ error: '관리자만 조회할 수 있습니다' });   // 읽기 전용 (GET)
+        if (!/^\/v3\/sb\/[A-Za-z0-9\/_\-]+(\?[A-Za-z0-9_\-=&%.,:]*)?$/.test(String(req.path || ''))) return hubOut_({ error: 'path_not_allowed' });
+        return hubOut_({ ok: true, body: hubSbnCall_('GET', req.path, null, req.mode === 'SANDBOX' ? 'SANDBOX' : 'PRODUCTION') });
       case 'photo_upload': return hubOut_(hubPhotoUpload_(req, me));
       case 'ai_fill': return hubOut_(hubAiFill_(req));
       case 'barsheet_export': return hubOut_(hubLocked_(function () { return hubBarSheetExport_(req, me); }));
