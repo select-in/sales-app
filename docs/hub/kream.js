@@ -159,11 +159,31 @@
     });
   }
 
+  /* 크림 로그인 계정(이메일) ↔ OPS 계정(겐더샵/셀렉트인) 고정 — 다른 계정으로 로그인했는데 잘못된 이름으로 저장되는 것 방지 */
+  function acctMap() { try { return JSON.parse(LS('opsKrmMap') || '{}'); } catch (e) { return {}; } }
+  function whoAmI() { return get('user/me').then(function (m) { return String(m.email || m.kream_email || '').toLowerCase(); }); }
+  function checkAcct(ev) {
+    return whoAmI().then(function (em) {
+      if (!em) throw new Error('크림 로그인 정보를 확인할 수 없어요');
+      var map = acctMap(), sel = $('oka').value;
+      if (map[em] && map[em] !== sel) {
+        if (ev) throw new Error('이 크림 로그인(' + em.replace(/(.{3}).*@/, '$1***@') + ')은 「' + map[em] + '」 계정으로 연결돼 있어요. 계정을 「' + map[em] + '」로 바꿔 주세요');
+        $('oka').value = map[em];
+      }
+      if (!map[em]) {
+        if (!ev) throw new Error('처음 보는 크림 로그인이에요. 계정을 확인하고 [지금 동기화]를 눌러 주세요');
+        var used = Object.keys(map).filter(function (k) { return map[k] === sel; })[0];
+        if (used && !confirm('「' + sel + '」은 다른 크림 로그인(' + used.replace(/(.{3}).*@/, '$1***@') + ')에 연결돼 있어요.\n지금 로그인한 계정도 「' + sel + '」로 저장할까요?')) throw new Error('취소했어요');
+        map[em] = sel; LS('opsKrmMap', JSON.stringify(map));
+      }
+      $('oka').title = em;
+    });
+  }
   function run(ev) {
     if (busy) return; busy = true; $('okgo').disabled = true;
     if (ev && (!hubWin || hubWin.closed)) hubWin = window.open(HUB + '#kream', 'opsHub');   // 버튼 클릭 순간에 열어야 팝업이 안 막혀요
     var t0 = Date.now();
-    Promise.resolve().then(collect).then(function (res) {
+    checkAcct(ev).then(collect).then(function (res) {
       msg('OPS로 보내는 중… 입찰 ' + res.asks.length + ' · 거래 ' + res.sales.length);
       return send(res).then(function (r) {
         if (res.full) LS('opsKrmFull_' + res.account, '1');
@@ -176,6 +196,7 @@
   }
 
   var saved = LS('opsKrmAcct'); if (saved) $('oka').value = saved;
+  if (saved && !Object.keys(acctMap()).length) whoAmI().then(function (em) { if (em) { var m = {}; m[em] = saved; LS('opsKrmMap', JSON.stringify(m)); } }).catch(function () {});
   $('okgo').onclick = run;
   $('okauto').onchange = function () { clearInterval(timer); if (this.checked) timer = setInterval(run, EVERY); };
   timer = setInterval(run, EVERY);
