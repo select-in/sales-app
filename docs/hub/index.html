@@ -414,8 +414,8 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
   .tblwrap>.tbl{width:auto;min-width:100%}
   .tbl{font-size:13px}
   .tbl th,.tbl td{padding:9px 8px;white-space:nowrap;word-break:keep-all}
-  .tbl td:first-child{white-space:normal;min-width:112px;max-width:160px}
-  .tbl td:first-child b{display:block}
+  .tbl td:first-child:not(.c),.tbl td.c:first-child+td{white-space:normal;min-width:120px;max-width:180px}
+  .tbl td:first-child:not(.c) b{display:block}
   .tbl .sbar{min-width:64px}
   .tbl th{position:static}
 }
@@ -715,7 +715,7 @@ var SYNC_BUSY=false, SYNC_AT='';
 function syncAll(){
   if (SYNC_BUSY) return; SYNC_BUSY=true; otabsDraw();
   var hhmm=function(){ var d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
-  var krAsk = function(){ var op=(typeof krOpener==='function')&&krOpener(); if(op){ try{ op.postMessage({type:'krm_run'}, KRM_ORIGIN); }catch(e){} return Promise.resolve(); } return api('krm_req',{}).catch(function(){}); };
+  var krAsk = function(){ if (syncRunHere()) return Promise.resolve(); return api('krm_req',{}).catch(function(){}); };
   var jobs=[
     api('boot',{compact:1}).then(function(j){ S={me:j.me, products:expandProducts(j), history:j.history||[], config:j.config||{}, users:j.users||[]}; KR_IDX=null; persist(); }),
     (typeof salesLoad==='function'?salesLoad(true):Promise.resolve()).catch(function(){}),
@@ -889,7 +889,7 @@ var OPT=null;
 function opsTodayLoad(force){
   if (OPT && !force && Date.now()-OPT._t<5*60e3) return opsTodayDraw();
   api('ops_today',{force:!!force}).then(function(j){ if(j.error) throw {message:j.error}; OPT=j; OPT._t=Date.now(); opsTodayDraw(); })
-    .catch(function(e){ if($('hops')) $('hops').innerHTML='<h2>오늘 처리 현황</h2><div class="empty">사방넷에서 불러오지 못했어요 · '+esc(e&&e.message||'')+'</div>'; });
+    .catch(function(e){ var m=String(e&&e.message||''); if($('hops')) $('hops').innerHTML='<h2>오늘 처리 현황</h2><div class="empty" style="overflow-wrap:anywhere">'+(/NOT_FOUND|"totalItemCnt":0/.test(m)?'오늘 사방넷에 들어온 주문이 아직 없어요':'사방넷에서 불러오지 못했어요 · '+esc(m.replace(/\{.*$/,'').slice(0,80)))+'</div>'; });
 }
 function opsTodayDraw(){
   var el=$('hops'); if(!el||!OPT) return;
@@ -1091,7 +1091,7 @@ VIEWS.home = {
     var inQ = todays.filter(function(h){ return h.qty>0; }).reduce(function(a,h){ return a+h.qty; },0);
     var outQ = todays.filter(function(h){ return h.qty<0; }).reduce(function(a,h){ return a-h.qty; },0);
     var value = sa.reduce(function(a,p){ return a+Math.max(0,p.stock)*p.cost; },0);
-    var sch = S.config.scheduler_check, schToday = sch && String(sch.at).slice(0,10)===td;
+    var sch = S.config.scheduler_check, schD = sch ? new Date(sch.at) : null, schToday = sch && (String(sch.at).slice(0,10)===td || (schD && !isNaN(schD) && new Date(schD.getTime()+9*36e5).toISOString().slice(0,10)===td));
     var lowM = P.filter(function(p){ var m=margin(p); return m!==null && m<marginMin(); });
     var d = new Date(Date.now()+9*36e5), wd='일월화수목금토'.charAt(d.getUTCDay());
     var A = P.filter(function(p){ return p.sbnStatus!=='미사용'; });
@@ -1126,7 +1126,7 @@ VIEWS.home = {
       '<div class="card" id="hops" style="margin-bottom:16px"><div class="empty">오늘 처리 현황 불러오는 중…</div></div>'+
       '<div class="grid g2">'+
         '<div class="card"><h2>오늘 할 일</h2>'+
-          '<div class="todo"><div class="ic '+(schToday?'ok':'warn')+'"><i class="ti ti-'+(schToday?'circle-check':'clock')+'"></i></div><div class="m"><div class="t">사방넷 스케줄러 점검</div><div class="s">'+(sch?'마지막 점검 '+esc(sch.at)+' · '+esc(sch.by):'아직 점검 기록이 없어요')+'</div></div>'+
+          '<div class="todo"><div class="ic '+(schToday?'ok':'warn')+'"><i class="ti ti-'+(schToday?'circle-check':'clock')+'"></i></div><div class="m"><div class="t">사방넷 스케줄러 점검</div><div class="s">'+(sch?'마지막 점검 '+esc(krFmtAt(sch.at))+' · '+esc(sch.by):'아직 점검 기록이 없어요')+'</div></div>'+
             '<button class="btn sm" id="schk">'+(schToday?'다시 점검':'점검 완료')+'</button></div>'+
         '</div>'+
         '<div class="card"><h2>오늘 입출고 <small>입고 '+won(inQ)+' · 출고 '+won(outQ)+'</small></h2>'+histList(todays.slice(0,6),'오늘 처리한 입출고가 없어요')+
@@ -1925,12 +1925,20 @@ function krSyncNow(){
 }
 /* 크림 창에서 열린 OPS(PC)는 30초마다 요청을 확인해서 크림 창에 전달 */
 var KR_POLL = null, KR_REQ_DONE = 0;
+var PZ_SRC = null;   // 이 OPS 창을 부른 포이즌 판매자센터 창
+function pzSrc(){ try{ return PZ_SRC && !PZ_SRC.closed ? PZ_SRC : null; }catch(e){ return null; } }
+function syncRunHere(){   // 이 창이 PC 크림·포이즌 창과 연결돼 있으면 바로 실행 신호
+  var n=0, op=krOpener(), pz=pzSrc();
+  if (op){ try{ op.postMessage({type:'krm_run'}, KRM_ORIGIN); n++; }catch(e){} }
+  if (pz){ try{ pz.postMessage({type:'pzn_run'}, PZN_ORIGIN); n++; }catch(e){} }
+  return n;
+}
 function krPollStart(){
-  if (KR_POLL || !krOpener()) return;
+  if (KR_POLL || (!krOpener() && !pzSrc())) return;
   KR_REQ_DONE = Date.now();
   KR_POLL = setInterval(function(){
-    var op=krOpener(); if(!op || !S.me){ return; }
-    api('krm_poll',{}).then(function(j){ if (j.req && j.req>KR_REQ_DONE){ KR_REQ_DONE=j.req; try{ op.postMessage({type:'krm_run'}, KRM_ORIGIN); }catch(e){} } }).catch(function(){});
+    if((!krOpener() && !pzSrc()) || !S.me){ return; }
+    api('krm_poll',{}).then(function(j){ if (j.req && j.req>KR_REQ_DONE){ KR_REQ_DONE=j.req; syncRunHere(); } }).catch(function(){});
   }, 30000);
 }
 function krHow(){
@@ -2174,13 +2182,22 @@ var PF2 = {acct:'전체', tab:'WAIT_SHIPPING', q:'', page:1, open:{}, allOpen:fa
 VIEWS.poizon = {
   html: function(){
     return '<div class="ph"><div><h1>포이즌 판매 관리</h1><p>입찰 · 발송 · 거래 성공 · 다른 계정·크림과 가격 비교</p></div>'+
-      '<div class="acts"><button class="btn" data-xl="1"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button>'+(KR_MOBILE()?'':'<button class="btn" id="pzhow"><i class="ti ti-bookmark"></i>PC 동기화 설정</button>')+'</div></div><div id="pzbody"><div class="empty">포이즌 데이터를 불러오는 중…</div></div>';
+      '<div class="acts"><button class="btn" data-xl="1"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button>'+(KR_MOBILE()?'':'<button class="btn" id="pzhow"><i class="ti ti-bookmark"></i>PC 동기화 설정</button>')+'<button class="btn pri" id="pzsync"><i class="ti ti-refresh"></i>지금 동기화</button></div></div><div id="pzbody"><div class="empty">포이즌 데이터를 불러오는 중…</div></div>';
   },
   bind: function(){
     if ($('pzhow')) $('pzhow').onclick = krHow;
+    $('pzsync').onclick = pzSyncNow;
     Promise.all([pzLoad(), krLoad().catch(function(){})]).then(pzDraw).catch(function(e){ if($('pzbody')) $('pzbody').innerHTML='<div class="empty">불러오지 못했어요 · '+esc(e&&e.message||'')+'</div>'; });
   }
 };
+function pzSyncNow(){
+  var b=$('pzsync'); if(b) b.disabled=true;
+  var key=function(k){ return JSON.stringify([(k&&k.synced)||{}, (k&&k.bidSynced)||{}]); }, before=key(PZ);
+  var wait=function(){ var n=0, t=setInterval(function(){ n++; pzLoad(true).then(function(k){ var ch=key(k)!==before;
+      if (ch || n>=8){ clearInterval(t); if(b) b.disabled=false; if((location.hash||'').indexOf('#poizon')===0) pzDraw(); toast(ch?'포이즌 동기화 반영 완료':'아직 반영이 안 됐어요. PC에 포이즌 판매자센터 창(동기화)이 켜져 있는지 확인해 주세요', !ch); } }).catch(function(){}); }, 20000); };
+  if (pzSrc()){ try{ pzSrc().postMessage({type:'pzn_run'}, PZN_ORIGIN); }catch(e){} toast('포이즌 창에서 동기화를 시작했어요 · 1~2분 뒤 반영돼요'); wait(); return; }
+  api('krm_req',{}).then(function(){ toast('PC 포이즌·크림 창에 동기화를 요청했어요 · 1~2분 뒤 반영돼요'); wait(); }).catch(function(e){ if(b) b.disabled=false; fail(e); });
+}
 function pzDraw(){
   var box=$('pzbody'); if(!box) return;
   if (!PZ.rows.length && !(PZ.bids||[]).length){ box.innerHTML='<div class="card"><div class="empty">아직 가져온 포이즌 주문이 없어요.<br>PC에서 [PC 동기화 설정]의 「OPS 포이즌 동기화」 북마크를 포이즌 판매자센터에서 눌러 주세요.</div></div>'; return; }
@@ -2381,7 +2398,8 @@ function regList(A, prods){
   if (!L.length){ el.innerHTML='<div class="empty">'+(sel?esc(sel.mall)+' '+esc(sel.id)+'에 미등록 상품이 없어요':'해당 상품이 없어요')+'</div>'; return; }
   var pages=Math.max(1,Math.ceil(L.length/PG.size)); if(RG.page>pages) RG.page=pages; var CS=L.slice((RG.page-1)*PG.size, RG.page*PG.size);
   el.innerHTML=(sel?'<p style="margin:0 0 8px"><b>'+esc(sel.mall)+' · '+esc(sel.id)+'</b>에 미등록 '+won(L.length)+'개</p>':'')+
-    '<div class="tblwrap"><table class="tbl ktbl"><colgroup><col style="width:44px"><col><col style="width:90px"><col style="width:100px"><col style="width:40%"></colgroup><thead><tr><th class="c">No</th><th>상품</th><th class="r">재고</th><th class="r">등록</th><th>미등록 쇼핑몰</th></tr></thead><tbody>'+
+    '<div class="mcards">'+CS.map(function(o){ return '<div class="mc" style="cursor:default"><div class="m"><div class="t">'+esc(o.name)+'</div><div class="s">'+esc([o.prd,o.brand,o.opts+'옵션'].filter(Boolean).join(' · '))+' · 재고 '+won(o.stock)+' · 등록 '+o.has+'/'+A.length+'</div><div style="margin-top:4px">'+(o.miss.length?o.miss.map(function(a){ return '<span class="pill" style="margin:1px 2px">'+esc(a.mall)+'</span>'; }).join(''):'<span class="sm">모두 등록</span>')+'</div></div></div>'; }).join('')+'</div>'+
+    '<div class="dtable tblwrap"><table class="tbl ktbl"><colgroup><col style="width:44px"><col><col style="width:90px"><col style="width:100px"><col style="width:40%"></colgroup><thead><tr><th class="c">No</th><th>상품</th><th class="r">재고</th><th class="r">등록</th><th>미등록 쇼핑몰</th></tr></thead><tbody>'+
     CS.map(function(o,i){ return '<tr><td class="c num">'+((RG.page-1)*PG.size+i+1)+'</td><td><div class="c2 nm2"><b title="'+esc(o.name)+'">'+esc(o.name)+'</b><span>'+esc([o.prd,o.brand,o.opts+'옵션'].filter(Boolean).join(' · '))+'</span></div></td><td class="r num">'+won(o.stock)+'</td><td class="r num">'+c2_(o.has+' / '+A.length,'')+'</td><td style="white-space:normal">'+(o.miss.length?o.miss.map(function(a){ return '<span class="pill" style="margin:1px 2px" title="'+esc(a.id)+'">'+esc(a.mall)+'</span>'; }).join(''):'<span class="sm">모두 등록</span>')+'</td></tr>'; }).join('')+
     '</tbody></table></div>'+pagerHtml(L.length, RG.page, PG.size);
   bindPager(el, function(n){ RG.page=n; regList(A, prods); });
@@ -2391,7 +2409,7 @@ var PZN_ORIGIN = 'https://seller.poizon.com';
 window.addEventListener('message', function(e){
   if (e.origin !== PZN_ORIGIN || !e.data || typeof e.data !== 'object') return;
   var d=e.data, src=e.source;
-  if (d.type==='pzn_ping'){ if (S.me) src.postMessage({type:'hub_ready'}, PZN_ORIGIN); return; }
+  if (d.type==='pzn_ping'){ PZ_SRC=src; if (S.me){ src.postMessage({type:'hub_ready'}, PZN_ORIGIN); krPollStart(); } return; }
   if (d.type!=='pzn_rows' || !S.me) return;
   api('pzn_sync',{account:d.account, rows:d.rows, waitNos:d.waitNos, waitOk:!!d.waitOk, bids:Array.isArray(d.bids)?d.bids:undefined}).then(function(j){
     src.postMessage({type:'pzn_saved', batch:d.batch, added:j.added, updated:j.updated}, PZN_ORIGIN);

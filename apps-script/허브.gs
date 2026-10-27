@@ -1444,6 +1444,11 @@ function hubSbnToken_(mode) {
 function hubSbnCall_(method, path, body, mode) {
   var r = hubRelay_({ action: 'call', mode: mode || 'PRODUCTION', token: hubSbnToken_(mode), svc: HUB_SBN.svc, method: method, path: path, body: body == null ? null : body });
   if (r.status === 401) { CacheService.getScriptCache().remove('sbn_tok_' + (mode === 'SANDBOX' ? 'SANDBOX' : 'PRODUCTION')); }
+  // 조회 결과 0건이면 사방넷이 404 NOT_FOUND로 응답 → 빈 목록으로 처리
+  var nb = r.body || {};
+  if (!r.ok && Number(r.status) === 404 && String(nb.message) === 'NOT_FOUND' && nb.data && Number(nb.data.totalItemCnt || 0) === 0) {
+    nb.data.results = nb.data.results || []; nb.data.hasNext = false; return nb;
+  }
   if (!r.ok) throw new Error('사방넷 API 오류 ' + (r.status || '') + ' ' + JSON.stringify(r.body || r.error || r).slice(0, 400));
   return r.body;
 }
