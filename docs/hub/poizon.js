@@ -65,8 +65,10 @@
     var out = [];
     return waitTab(label).then(function (tab) {
     if (!tab) throw new Error('「' + label + '」 탭을 찾지 못했어요. 주문 관리 화면이 다 열린 뒤 다시 눌러 주세요');
-    var p = nextResp(); click(tab);
-    return p.then(function (rec) {
+    // 이미 선택된 탭을 누르면 화면이 다시 불러오지 않아서, 다른 탭(전체)을 먼저 눌러 둠
+    var other = findTab('전체'), pre = other && other !== tab ? (function () { var q = nextResp(8000); click(other); return q; })() : Promise.resolve();
+    return pre.then(function () { var p = nextResp(20000); click(tab); return p; }).then(function (rec) {
+      if (!rec) throw new Error('「' + label + '」 목록 응답이 없었어요. 화면을 앞에 띄운 채 다시 눌러 주세요');
       var n = 1;
       var step = function (rec) {
         if (!rec) return out;
@@ -111,10 +113,15 @@
     } catch (e) { return { list: out }; }
   }
   function collectBids() {
-    var out = [], n = 1, p0 = nextBid(25000);
+    var out = [], n = 1, p0 = nextBid(20000);
     if (!/\/main\/bid\/freely/.test(location.pathname)) { history.pushState({}, '', '/main/bid/freely'); dispatchEvent(new PopStateEvent('popstate', { state: {} })); }
     else { var t = findTab('일반 판매'); if (t) click(t); }
     return p0.then(function (rec) {
+      if (rec) return rec;
+      // 화면이 목록을 다시 안 불러오면 [초기화]로 다시 불러오게 함
+      var r = [].slice.call(document.querySelectorAll('a,button,span')).filter(function (e) { return (e.textContent || '').trim() === '초기화' && e.getClientRects().length; })[0];
+      if (!r) return null; var q = nextBid(20000); click(r); return q;
+    }).then(function (rec) {
       if (!rec) throw new Error('입찰 목록을 못 읽었어요');
       var step = function (rec) {
         if (!rec) return out;
