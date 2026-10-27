@@ -141,6 +141,11 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 .tbl .nm{font-weight:600}
 .tbl .sm{font-size:12.5px;color:var(--mute)}
 .tblwrap{overflow-x:auto;margin:0 -20px;padding:0 20px}
+.ktbl{table-layout:fixed;min-width:960px}.ktbl td{white-space:nowrap}.ktbl td:first-child{white-space:normal}
+.c2{display:flex;flex-direction:column;gap:2px;line-height:1.3;min-width:0}.c2>b{font-weight:700;white-space:nowrap}.c2>span{font-size:12px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tbl .r .c2{align-items:flex-end}
+.nm2>b{overflow:hidden;text-overflow:ellipsis;font-weight:600}.c2 .ell{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.c2 em{font-style:normal;font-weight:600}.c2 em.ok,em.ok{color:var(--accent);font-style:normal}.c2 em.wn,em.wn{color:var(--amber);font-style:normal}
+.ktbl tr.sub .subnm{padding-left:16px}
 
 .pill{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--bg);color:var(--sub);white-space:nowrap}
 .pill.g{background:var(--soft);color:var(--accent)}
@@ -326,7 +331,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-28t';
+var APP_BUILD = '2026-10-28u';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -1318,6 +1323,17 @@ VIEWS.channel = {
   }
 };
 
+/* 사이즈 순서: XXS, XS, S, M, L, XL, XXL, XXXL … → 숫자 사이즈 오름차순 → 그 외 */
+var SIZE_ORD=['XXXS','XXS','XS','S','M','L','XL','XXL','XXXL','XXXXL'];
+function sizeKey(v){
+  var s=String(v==null?'':v).toUpperCase().replace(/\s/g,'').split(/[:\/]/).pop();
+  s=s.replace(/^([2-5])XL$/,function(m,n){ return new Array(+n+1).join('X')+'L'; }).replace(/^([2-4])XS$/,function(m,n){ return new Array(+n+1).join('X')+'S'; });
+  var i=SIZE_ORD.indexOf(s); if(i>=0) return [0,i,''];
+  var n=parseFloat(s.replace(/^[A-Z]+/,'')); if(isFinite(n)) return [1,n,s];
+  if(/ONE|FREE|F$/.test(s)) return [3,0,s];
+  return [2,0,s];
+}
+function sizeCmp(a,b){ var x=sizeKey(a), y=sizeKey(b); return x[0]-y[0] || x[1]-y[1] || String(x[2]).localeCompare(String(y[2])); }
 /* ---------- 크림 판매자센터 (입찰 · 진행 · 정산) ---------- */
 var KR = null, KF = {acct:'전체', kind:'전체', tab:'live', q:'', page:1, open:{}, allOpen:false};
 var KR_BM = "javascript:(function(){var s=document.createElement('script');s.src='https://select-in.github.io/sales-app/hub/kream.js?'+Date.now();document.body.appendChild(s);})()";
@@ -1468,67 +1484,88 @@ function krList(){
       var sz={}, rows=[];
       g.items.forEach(function(x){ var k=x.option+'|'+krKind(x), o=sz[k]; if(!o){ o=sz[k]={option:x.option, kind:krKind(x), n:0, pmin:Infinity, pmax:0, rank:Infinity, payout:x.payout, style:x.style, account:x.account}; rows.push(o); } o.n++; o.pmin=Math.min(o.pmin,+x.price||0); o.pmax=Math.max(o.pmax,+x.price||0); if(+x.rank) o.rank=Math.min(o.rank,+x.rank); });
       rows.forEach(function(o){ var s=SM[o.account+'|'+o.style+'|'+o.option+'|'+o.kind]; o.sold=s||null; });
-      rows.sort(function(a,b){ return String(a.option).localeCompare(String(b.option),'ko',{numeric:true}) || a.kind.localeCompare(b.kind); });
+      rows.sort(function(a,b){ return sizeCmp(a.option,b.option) || a.kind.localeCompare(b.kind); });
       g.rows=rows; g.first=rows.filter(function(o){ return o.rank===1; }).length;
-    } else g.items.sort(function(a,b){ return String(b.settledAt||b.orderedAt).localeCompare(String(a.settledAt||a.orderedAt)); });
+    } else g.items.sort(function(a,b){ return sizeCmp(a.option,b.option) || String(b.settledAt||b.orderedAt).localeCompare(String(a.settledAt||a.orderedAt)); });
   });
   G.sort(function(a,b){ return live ? b.items.length-a.items.length : b.at.localeCompare(a.at); });
   var pages=Math.max(1,Math.ceil(G.length/PG.size)); if(KF.page>pages) KF.page=pages;
   var CS=G.slice((KF.page-1)*PG.size, KF.page*PG.size);
   var appCell=function(ps, opt){ if(!ps.length) return '<span class="sm">미연결</span>'; var n=opt==null?ps.reduce(function(t,p){ return t+Math.max(0,effStock(p)); },0):krOptStock(ps,opt); return n==null?'<span class="sm">—</span>':'<b>'+won(n)+'</b>'; };
   var kpill=function(k){ return '<span class="pill '+(k==='보관'?'b':'')+'">'+k+'</span>'; };
-  var cnts=function(g){ return (g.nN?kpill('일반')+' <b>'+g.nN+'</b>개 ':'')+(g.nI?kpill('보관')+' <b>'+g.nI+'</b>개':''); };
+  var c2=function(a,b){ return '<div class="c2"><b>'+a+'</b>'+(b!=null&&b!==''?'<span>'+b+'</span>':'')+'</div>'; };   // 2단: 위 굵게 · 아래 작게
+  var split=function(nN,nI){ return [nN?'일반 '+nN:'', nI?'보관 '+nI:''].filter(Boolean).join(' · '); };
   var mkt=function(r, kind){   // 크림 최저가 / 최근 체결가 (상품 전체 기준, 구분별)
     var low = kind==='보관' ? (r.lowI||r.lowest) : kind==='일반' ? (r.lowN||r.lowest) : r.lowest;
     var last = kind==='보관' ? (r.lastI||r.last) : kind==='일반' ? (r.lastN||r.last) : r.last;
     return {low:+low||0, last:+last||0};
   };
+  var two=function(n,i){ if(!n&&!i) return '—'; if(n&&i) return c2('일반 '+won(n),'보관 '+won(i)); return c2(won(n||i), n?'일반':'보관'); };
   var price=function(o){ return o.pmin===o.pmax?won(o.pmin):won(o.pmin)+'~'+won(o.pmax); };
-  var rankCell=function(o){ if(o.rank===Infinity) return '—'; return o.rank===1?'<b style="color:var(--accent)">1위 최저</b>':'<span style="color:var(--amber)">'+o.rank+'위</span>'; };
+  var rankTxt=function(o){ if(o.rank===Infinity) return '순위 —'; return o.rank===1?'<em class="ok">1위 · 최저가</em>':'<em class="wn">'+o.rank+'위</em>'; };
   var dt=function(s){ return esc(String(s||'').slice(5,16)); };
+  var nameCell=function(top, sub){ return '<div class="c2 nm2"><b title="'+esc(top)+'">'+esc(top)+'</b><span>'+sub+'</span></div>'; };
   var html;
   if (live){
-    html='<div class="dtable tblwrap"><table class="tbl ptbl"><thead><tr><th>상품 · 사이즈</th><th>계정 · 구분</th><th class="r">걸어둔 수량</th><th class="r">내 입찰가</th><th class="c">내 순위</th><th class="r">크림 최저가</th><th class="r">크림 최근 체결가</th><th class="r">내 최근 체결</th><th class="c">앱 재고</th></tr></thead><tbody>'+
+    var gSold=function(g){ var n=0, at='', pr=0; g.rows.forEach(function(o){ if(o.sold){ n+=o.sold.n30; if(o.sold.at>at){ at=o.sold.at; pr=o.sold.price; } } });
+      // 지금 안 걸려 있는 사이즈 체결도 포함
+      var pre=g.r.account+'|'+g.r.style+'|'; Object.keys(SM).forEach(function(k){ if(k.indexOf(pre)===0 && !g.rows.some(function(o){ return pre+o.option+'|'+o.kind===k; })){ n+=SM[k].n30; if(SM[k].at>at){ at=SM[k].at; pr=SM[k].price; } } });
+      return {n:n, at:at, price:pr}; };
+    html='<div class="dtable tblwrap"><table class="tbl ptbl ktbl"><colgroup><col><col style="width:96px"><col style="width:112px"><col style="width:120px"><col style="width:120px"><col style="width:120px"><col style="width:120px"><col style="width:76px"></colgroup>'+
+      '<thead><tr><th>상품 · 사이즈</th><th>계정</th><th class="r">걸어둔 수량</th><th class="r">내 입찰가</th><th class="r">크림 최저가</th><th class="r">크림 최근 체결가</th><th class="r">내 체결 (30일)</th><th class="c">앱 재고</th></tr></thead><tbody>'+
       CS.map(function(g){
-        var r=g.r, open=(!!KF.allOpen)!==(!!KF.open[g.k]), mk=mkt(r, g.nI&&!g.nN?'보관':g.nN&&!g.nI?'일반':'');
-        var h='<tr class="click grp'+(open?' open':'')+'" data-g="'+esc(g.k)+'"><td><div class="nm">'+esc(r.name)+'</div><div class="sm">'+esc([r.brand,r.style].filter(Boolean).join(' · '))+' · <b class="optc"><i class="ti ti-chevron-'+(open?'up':'down')+'"></i>사이즈 '+g.rows.length+'</b></div></td>'+
-          '<td><span class="pill">'+esc(r.account)+'</span></td><td class="r">'+cnts(g)+'</td><td class="r num">'+won(Math.min.apply(null,g.rows.map(function(o){ return o.pmin; })))+'~</td>'+
-          '<td class="c num">'+(g.first?'<span class="sm">1위 '+g.first+'/'+g.rows.length+'</span>':'—')+'</td>'+
-          '<td class="r num">'+(r.lowN||r.lowI?'<div class="sm">일반 <b>'+(r.lowN?won(r.lowN):'—')+'</b></div><div class="sm">보관 <b>'+(r.lowI?won(r.lowI):'—')+'</b></div>':(mk.low?won(mk.low):'—'))+'</td>'+
-          '<td class="r num">'+(r.lastN||r.lastI?'<div class="sm">일반 <b>'+(r.lastN?won(r.lastN):'—')+'</b></div><div class="sm">보관 <b>'+(r.lastI?won(r.lastI):'—')+'</b></div>':(mk.last?won(mk.last):'—'))+'</td><td></td>'+
+        var r=g.r, open=(!!KF.allOpen)!==(!!KF.open[g.k]), gs=gSold(g);
+        var h='<tr class="click grp'+(open?' open':'')+'" data-g="'+esc(g.k)+'">'+
+          '<td>'+nameCell(r.name, esc([r.brand,r.style].filter(Boolean).join(' · '))+' · <b class="optc"><i class="ti ti-chevron-'+(open?'up':'down')+'"></i>사이즈 '+g.rows.length+'</b>')+'</td>'+
+          '<td><span class="pill">'+esc(r.account)+'</span></td>'+
+          '<td class="r num">'+c2(won(g.items.length)+'개', split(g.nN,g.nI))+'</td>'+
+          '<td class="r num">'+c2(won(Math.min.apply(null,g.rows.map(function(o){ return o.pmin; })))+'~', g.first?'<em class="ok">1위 '+g.first+'/'+g.rows.length+'</em>':'1위 없음')+'</td>'+
+          '<td class="r num">'+two(+r.lowN, +r.lowI)+'</td>'+
+          '<td class="r num">'+two(+r.lastN, +r.lastI)+'</td>'+
+          '<td class="r num">'+c2(won(gs.n)+'개', gs.at?won(gs.price)+' · '+esc(gs.at.slice(5,10)):'')+'</td>'+
           '<td class="c num">'+appCell(g.app,null)+'</td></tr>';
         return h+(open?g.rows.map(function(o){
           var m=mkt(r,o.kind), diff=m.low?o.pmin-m.low:null;
-          return '<tr class="sub"><td><div class="subnm"><b>'+esc(o.option)+'</b></div></td><td>'+kpill(o.kind)+'</td><td class="r num"><b>'+o.n+'</b>개</td>'+
-            '<td class="r num"><b>'+price(o)+'</b>'+(diff!=null&&diff>0?'<div class="sm" style="color:var(--amber)">최저가보다 +'+won(diff)+'</div>':'')+'</td><td class="c num">'+rankCell(o)+'</td>'+
-            '<td class="r num">'+(m.low?won(m.low):'—')+'</td><td class="r num">'+(m.last?won(m.last):'—')+'</td>'+
-            '<td class="r num">'+(o.sold?won(o.sold.price)+'<div class="sm">'+esc(o.sold.at.slice(5,10))+' · 30일 '+o.sold.n30+'건</div>':'<span class="sm">없음</span>')+'</td>'+
+          return '<tr class="sub"><td><div class="subnm c2"><b>'+esc(o.option)+'</b><span>'+kpill(o.kind)+'</span></div></td><td></td>'+
+            '<td class="r num">'+c2(o.n+'개','')+'</td>'+
+            '<td class="r num">'+c2(price(o), rankTxt(o))+'</td>'+
+            '<td class="r num">'+c2(m.low?won(m.low):'—', diff!=null&&diff>0?'<em class="wn">내가 +'+won(diff)+'</em>':(diff!=null?'<em class="ok">내가 최저</em>':''))+'</td>'+
+            '<td class="r num">'+c2(m.last?won(m.last):'—','')+'</td>'+
+            '<td class="r num">'+(o.sold?c2(o.sold.n30+'개', won(o.sold.price)+' · '+esc(o.sold.at.slice(5,10))):c2('0개','체결 없음'))+'</td>'+
             '<td class="c num">'+appCell(g.app,o.option)+'</td></tr>';
         }).join(''):'');
       }).join('')+'</tbody></table></div>'+
       '<div class="mcards">'+CS.map(function(g){
-        var r=g.r, open=(!!KF.allOpen)!==(!!KF.open[g.k]);
+        var r=g.r, open=(!!KF.allOpen)!==(!!KF.open[g.k]), gs=gSold(g);
         return '<div class="mc grp" data-g="'+esc(g.k)+'"><div class="m"><div class="t">'+esc(r.name)+'</div><div class="s">'+esc([r.account,r.style].filter(Boolean).join(' · '))+' · <b class="optc">사이즈 '+g.rows.length+' '+(open?'▲':'▼')+'</b></div>'+
-          '<div class="s" style="margin-top:4px">'+cnts(g)+'</div>'+
-          '<div class="s num">크림 최저 '+(r.lowN?'일반 '+won(r.lowN):'')+(r.lowI?' · 보관 '+won(r.lowI):'')+(!r.lowN&&!r.lowI&&r.lowest?won(r.lowest):'')+' · 최근 체결 '+(r.lastN?'일반 '+won(r.lastN):'')+(r.lastI?' · 보관 '+won(r.lastI):'')+(!r.lastN&&!r.lastI&&r.last?won(r.last):'')+'</div></div>'+
-          '<div class="e num"><b>'+g.items.length+'</b>개<div class="s">'+(g.first?'1위 '+g.first:'')+'</div></div></div>'+
-          (open?'<div class="mcsub">'+g.rows.map(function(o){ var m=mkt(r,o.kind); return '<div class="mc"><div class="m"><div class="t" style="font-size:14px"><b>'+esc(o.option)+'</b> '+kpill(o.kind)+' <b>'+o.n+'</b>개 · '+rankCell(o)+'</div><div class="s num">내 입찰 <b>'+price(o)+'</b> · 크림 최저 '+(m.low?won(m.low):'—')+' · 최근 체결 '+(m.last?won(m.last):'—')+'</div><div class="s num">내 최근 체결 '+(o.sold?won(o.sold.price)+' ('+esc(o.sold.at.slice(5,10))+', 30일 '+o.sold.n30+'건)':'없음')+' · 앱 재고 '+appCell(g.app,o.option)+'</div></div></div>'; }).join('')+'</div>':'');
+          '<div class="s num">걸어둔 '+won(g.items.length)+'개 ('+split(g.nN,g.nI)+') · 30일 체결 '+won(gs.n)+'개</div>'+
+          '<div class="s num">크림 최저 '+[r.lowN?'일반 '+won(r.lowN):'', r.lowI?'보관 '+won(r.lowI):''].filter(Boolean).join(' · ')+'</div></div>'+
+          '<div class="e num"><b>'+(g.first?'1위 '+g.first:'')+'</b></div></div>'+
+          (open?'<div class="mcsub">'+g.rows.map(function(o){ var m=mkt(r,o.kind); return '<div class="mc"><div class="m"><div class="t" style="font-size:14px"><b>'+esc(o.option)+'</b> '+kpill(o.kind)+' '+o.n+'개 · '+rankTxt(o)+'</div><div class="s num">내 입찰 <b>'+price(o)+'</b> · 크림 최저 '+(m.low?won(m.low):'—')+' · 최근 체결 '+(m.last?won(m.last):'—')+'</div><div class="s num">30일 체결 '+(o.sold?o.sold.n30+'개 · 최근 '+won(o.sold.price):'0개')+' · 앱 재고 '+appCell(g.app,o.option)+'</div></div></div>'; }).join('')+'</div>':'');
       }).join('')+'</div>';
   } else {
-    html='<div class="dtable tblwrap"><table class="tbl ptbl"><thead><tr><th>상품 (품번)</th><th>계정 · 상태</th><th class="r">수량</th><th class="r">판매가</th><th class="r">수수료</th><th class="r">정산액</th><th>'+(KF.tab==='settle'?'정산일 · 지급일':'주문일')+'</th><th class="c">앱 재고</th></tr></thead><tbody>'+
+    var stSum=function(L){ var c={}, o=[]; L.forEach(function(x){ var k=x.status||'—'; if(!c[k]){ c[k]=0; o.push(k); } c[k]++; }); return o.map(function(k){ return esc(k)+' '+c[k]; }).join(' · '); };
+    html='<div class="dtable tblwrap"><table class="tbl ptbl ktbl"><colgroup><col><col style="width:150px"><col style="width:100px"><col style="width:110px"><col style="width:96px"><col style="width:110px"><col style="width:110px"><col style="width:76px"></colgroup>'+
+      '<thead><tr><th>상품 · 사이즈</th><th>계정 · 상태</th><th class="r">수량</th><th class="r">판매가</th><th class="r">수수료</th><th class="r">정산액</th><th class="r">'+(KF.tab==='settle'?'정산일':'주문일')+'</th><th class="c">앱 재고</th></tr></thead><tbody>'+
       CS.map(function(g){
         var r=g.r, open=(!!KF.allOpen)!==(!!KF.open[g.k]);
-        var sizes=g.items.map(function(x){ return x.option; }).filter(function(v,i,a){ return v&&a.indexOf(v)===i; });
-        var h='<tr class="click grp'+(open?' open':'')+'" data-g="'+esc(g.k)+'"><td><div class="nm">'+esc(r.name)+'</div><div class="sm">'+esc([r.brand,r.style].filter(Boolean).join(' · '))+' · <b class="optc"><i class="ti ti-chevron-'+(open?'up':'down')+'"></i>'+g.items.length+'건</b> <span class="sm">'+esc(sizes.slice(0,8).join(', ')+(sizes.length>8?' …':''))+'</span></div></td>'+
-          '<td><span class="pill">'+esc(r.account)+'</span><div class="sm" style="margin-top:4px;white-space:nowrap">'+(function(){ var c={}, o=[]; g.items.forEach(function(x){ var k=x.status||'—'; if(!c[k]){ c[k]=0; o.push(k); } c[k]++; }); return o.map(function(k){ return esc(k)+' '+c[k]; }).join(' · '); })()+'</div></td><td class="r">'+cnts(g)+'</td><td></td><td></td><td class="r num"><b>'+won(g.amt)+'</b></td><td class="num">'+esc(g.at.slice(5,16))+'</td><td class="c num">'+appCell(g.app,null)+'</td></tr>';
+        var sizes=g.items.map(function(x){ return x.option; }).filter(function(v,i,a){ return v&&a.indexOf(v)===i; }).sort(sizeCmp);
+        var h='<tr class="click grp'+(open?' open':'')+'" data-g="'+esc(g.k)+'">'+
+          '<td>'+nameCell(r.name, esc([r.brand,r.style].filter(Boolean).join(' · '))+' · <b class="optc"><i class="ti ti-chevron-'+(open?'up':'down')+'"></i>'+g.items.length+'건</b> '+esc(sizes.join(', ')))+'</td>'+
+          '<td><div class="c2"><b><span class="pill">'+esc(r.account)+'</span></b><span class="ell">'+stSum(g.items)+'</span></div></td>'+
+          '<td class="r num">'+c2(won(g.items.length)+'개', split(g.nN,g.nI))+'</td><td class="r num">'+c2(won(g.items.reduce(function(t,x){ return t+(+x.price||0); },0)),'합계')+'</td><td></td>'+
+          '<td class="r num">'+c2(won(g.amt),'합계')+'</td><td class="r num">'+c2(esc(g.at.slice(5,10)), esc(g.at.slice(11,16)))+'</td><td class="c num">'+appCell(g.app,null)+'</td></tr>';
         return h+(open?g.items.map(function(x){
-          return '<tr class="sub"><td><div class="subnm"><span class="sku">'+esc(x.oid||'')+'</span> <b>'+esc(x.option||'')+'</b></div></td><td>'+kpill(krKind(x))+'<div class="sm" style="margin-top:4px;white-space:nowrap">'+esc(x.status||'')+'</div></td><td class="r num">1</td><td class="r num">'+won(x.price)+'</td><td class="r num">'+(x.fee?won(x.fee):'—')+'</td><td class="r num">'+(x.payout?won(x.payout):'—')+'</td>'+
-            '<td class="num">'+(KF.tab==='settle'?dt(x.settledAt)+'<div class="sm">지급 '+esc(String(x.payoutDate||'').slice(5))+'</div>':dt(x.orderedAt))+'</td><td class="c num">'+appCell(g.app,x.option)+'</td></tr>';
+          var d=String(KF.tab==='settle'?x.settledAt:x.orderedAt||'');
+          return '<tr class="sub"><td><div class="subnm c2"><b>'+esc(x.option||'')+'</b><span>'+esc(x.oid||'')+'</span></div></td>'+
+            '<td><div class="c2"><b>'+kpill(krKind(x))+'</b><span>'+esc(x.status||'')+'</span></div></td><td class="r num">1개</td>'+
+            '<td class="r num">'+won(x.price)+'</td><td class="r num">'+(x.fee?won(x.fee):'—')+'</td><td class="r num">'+(x.payout?'<b>'+won(x.payout)+'</b>':'—')+'</td>'+
+            '<td class="r num">'+c2(esc(d.slice(5,10)), KF.tab==='settle'&&x.payoutDate?'지급 '+esc(String(x.payoutDate).slice(5)):esc(d.slice(11,16)))+'</td><td class="c num">'+appCell(g.app,x.option)+'</td></tr>';
         }).join(''):'');
       }).join('')+'</tbody></table></div>'+
       '<div class="mcards">'+CS.map(function(g){
         var r=g.r, open=(!!KF.allOpen)!==(!!KF.open[g.k]);
-        return '<div class="mc grp" data-g="'+esc(g.k)+'"><div class="m"><div class="t">'+esc(r.name)+'</div><div class="s">'+esc([r.account,r.style].filter(Boolean).join(' · '))+' · <b class="optc">'+g.items.length+'건 '+(open?'▲':'▼')+'</b></div><div class="s" style="margin-top:4px">'+cnts(g)+'</div></div><div class="e num"><b>'+won(g.amt)+'</b><div class="s">정산액</div></div></div>'+
+        return '<div class="mc grp" data-g="'+esc(g.k)+'"><div class="m"><div class="t">'+esc(r.name)+'</div><div class="s">'+esc([r.account,r.style].filter(Boolean).join(' · '))+' · <b class="optc">'+g.items.length+'건 '+(open?'▲':'▼')+'</b></div><div class="s">'+stSum(g.items)+'</div></div><div class="e num"><b>'+won(g.amt)+'</b><div class="s">정산액</div></div></div>'+
           (open?'<div class="mcsub">'+g.items.map(function(x){ return '<div class="mc"><div class="m"><div class="t" style="font-size:14px"><b>'+esc(x.option||'')+'</b> '+kpill(krKind(x))+' <span class="sm">'+esc(x.status)+'</span></div><div class="s num">판매 '+won(x.price)+' · 정산 '+(x.payout?won(x.payout):'—')+' · '+esc(String(x.settledAt||x.orderedAt||'').slice(5,16))+'</div></div></div>'; }).join('')+'</div>':'');
       }).join('')+'</div>';
   }
