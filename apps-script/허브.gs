@@ -503,8 +503,11 @@ function hubChannelShip_(req, me) {
   });
   if (logs.length) { var hs = hubSheet_('재고이력'); hs.getRange(hs.getLastRow() + 1, 1, logs.length, logs[0].length).setValues(logs); }
   var cs = hubSheet_('채널출고'); cs.getRange(cs.getLastRow() + 1, 1, out.length, out[0].length).setValues(out);
+  // 사방넷 재고도 같이 빼기 (사방넷이 재고 기준 — 안 빼면 다음 자동 동기화 때 앱 재고가 되돌아감)
+  var sbn = null, pushIds = changed.filter(function (p) { return p.sbnPrd && p.stocMng !== 'N' && p.type !== '위탁'; }).map(function (p) { return p.id; });
+  if (pushIds.length) { try { sbn = hubSbnStockPush_(pushIds, me); } catch (e) { sbn = { error: String(e.message || e).slice(0, 200) }; } }
   return {
-    ok: true, batch: batch, count: out.length, qty: out.reduce(function (a, o) { return a + o[10]; }, 0),
+    ok: true, batch: batch, sbn: sbn, count: out.length, qty: out.reduce(function (a, o) { return a + o[10]; }, 0),
     products: changed, moves: logs.map(function (l) { return { at: l[0], id: l[1], sku: l[2], name: l[3], type: l[4], qty: l[5], after: l[6], memo: l[7], by: l[8] }; })
   };
 }
