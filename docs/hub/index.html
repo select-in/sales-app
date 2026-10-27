@@ -1969,7 +1969,7 @@ window.addEventListener('message', function(e){
   var d=e.data, src=e.source;
   if (d.type==='pzn_ping'){ if (S.me) src.postMessage({type:'hub_ready'}, PZN_ORIGIN); return; }
   if (d.type!=='pzn_rows' || !S.me) return;
-  api('pzn_sync',{account:d.account, rows:d.rows, waitNos:d.waitNos}).then(function(j){
+  api('pzn_sync',{account:d.account, rows:d.rows, waitNos:d.waitNos, waitOk:!!d.waitOk}).then(function(j){
     src.postMessage({type:'pzn_saved', batch:d.batch, added:j.added, updated:j.updated}, PZN_ORIGIN);
     PZ=null; if((location.hash||'').indexOf('#channel')===0) pzLoad(true).then(function(){ route(); }).catch(function(){});
     toast('포이즌 '+d.account+' 동기화 · 발송 대기 '+(d.waitNos||[]).length+'건');

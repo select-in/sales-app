@@ -54,9 +54,14 @@
   function pageRows(rec) {
     try { var j = JSON.parse(rec.t), P = j && j.data && j.data.pageOrderList; return { list: (P && P.dataList) || [], total: P && P.totalCount }; } catch (e) { return { list: [] }; }
   }
+  function waitTab(label) {   // 화면이 다 그려질 때까지 (최대 20초)
+    var n = 0;
+    return new Promise(function (ok) { var t = setInterval(function () { var el = findTab(label); if (el || ++n > 40) { clearInterval(t); ok(el); } }, 500); });
+  }
   function grab(label, maxPages) {
-    var tab = findTab(label), out = [];
-    if (!tab) return Promise.resolve(out);
+    var out = [];
+    return waitTab(label).then(function (tab) {
+    if (!tab) throw new Error('「' + label + '」 탭을 찾지 못했어요. 주문 관리 화면이 다 열린 뒤 다시 눌러 주세요');
     var p = nextResp(); click(tab);
     return p.then(function (rec) {
       var n = 1;
@@ -71,6 +76,7 @@
         });
       };
       return step(rec);
+    });
     });
   }
   function money(v) { return v && v.money ? Number(v.money.amount) || 0 : (Number(v) || 0); }
@@ -141,7 +147,7 @@
           if (e.data.type === 'pzn_saved') ok(e.data); else bad(new Error(e.data.message || 'OPS 저장 실패'));
         };
         window.addEventListener('message', on);
-        w.postMessage({ type: 'pzn_rows', batch: batch, account: res.account, rows: res.rows, waitNos: res.waitNos }, HUB_ORIGIN);
+        w.postMessage({ type: 'pzn_rows', batch: batch, account: res.account, rows: res.rows, waitNos: res.waitNos, waitOk: true }, HUB_ORIGIN);
         setTimeout(function () { window.removeEventListener('message', on); bad(new Error('OPS 저장 응답이 없어요')); }, 3 * 60 * 1000);
       });
     });

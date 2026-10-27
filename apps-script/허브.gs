@@ -576,7 +576,7 @@ function hubPznSync_(req, me) {
   var acct = req.account === '셀렉트인' ? '셀렉트인' : '겐더샵', now = hubNow_();
   var s = hubRows_('포이즌판매'), w = HUB_TABS['포이즌판매'].length, idx = {}, upd = 0, ins = [];
   var wait = {}; (req.waitNos || []).forEach(function (n) { wait[String(n)] = 1; });
-  s.vals.forEach(function (v, i) { idx[v[0] + '|' + v[1]] = i; if (v[0] === acct && v[3] === 'WAIT_SHIPPING' && !wait[String(v[1])]) v[3] = 'DONE_OR_MOVED'; });
+  s.vals.forEach(function (v, i) { idx[v[0] + '|' + v[1]] = i; if (req.waitOk && v[0] === acct && v[3] === 'WAIT_SHIPPING' && !wait[String(v[1])]) v[3] = 'DONE_OR_MOVED'; });
   (req.rows || []).forEach(function (o) {
     if (!o || !o.orderNo) return;
     var row = hubKrmRow_(o, HUB_PZN, acct, now); row[1] = "'" + String(o.orderNo);
