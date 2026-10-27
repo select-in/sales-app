@@ -63,6 +63,8 @@ function doPost(e) {
       case 'pzn_list': return hubOut_(hubPznList_());
       case 'sbn_stock_sync': if (!admin) return hubOut_({ error: '관리자만 사방넷 재고를 맞출 수 있습니다' });   // 사방넷 관리자 화면(sbn.js)이 읽은 현재고로 앱 재고만 맞춤
         return hubOut_(hubLocked_(function () { return hubSbnStockSync_(req, me); }));
+      case 'sbn_sku_sync': if (!admin) return hubOut_({ error: '관리자만 사방넷 동기화를 할 수 있습니다' });   // 사방넷 단품 전체(sbn.js) → 앱 상품 정보·재고 맞춤
+        return hubOut_(hubLocked_(function () { return hubSbnSkuSync_(req, me); }));
       case 'sbr_sync': if (!admin) return hubOut_({ error: '관리자만 저장할 수 있습니다' });   // 쇼핑몰별 상품 등록 현황 (sbn.js)
         return hubOut_(hubLocked_(function () { return hubSbrSync_(req, me); }));
       case 'sbr_list': return hubOut_(hubSbrList_());
@@ -639,6 +641,60 @@ function hubSbnStockSync_(req, me) {
   if (changed) { hubWriteAll_(list); hubWriteLogs_(logs); }
   if (req.final) hubConfigSet_('sbn_stock_at', now + ' · 단품 ' + (req.total || rows.length) + '개 확인' + (changed ? ' · 변경 ' + changed : ''), me);
   return { ok: true, seen: seen, changed: changed, skipped: skipped, sample: ch };
+}
+
+/* ===================== 사방넷 단품 전체 → 앱 (sbn.js, 10분마다) =====================
+ * 사방넷 「사방넷단품대량수정」 목록 전체: rows [[상품코드, 단품코드, 상품명, 옵션, 바코드, 원가, 판매가, 현재고, 가상재고, 재고관리Y/N, 단품상태, 세트구분, 원상품코드, 원단품코드]]
+ * 사방넷이 기준: 이름·옵션·바코드·원가·판매가·현재고·재고관리 여부·가상재고·상태를 맞춤. 앱에만 있는 위치·메모·담당자·법인은 유지
+ *  - 앱에서 바꾼 바코드가 사방넷에 반영 전(barPending)이면 앱 값 유지
+ *  - 앱에서 10분 안에 입출고한 단품의 재고는 이번엔 건너뜀(사방넷 반영 대기)
+ *  - 사방넷에 새로 생긴 단품은 앱에 추가 (법인: 같은 상품코드의 앱 단품 → 없으면 상품명 [셀렉트인] → 그 외 겐더샵)
+ *  - complete(전체를 다 읽음)일 때만, 사방넷에 없는 앱 단품을 상태 '사방넷없음'으로 표시 (지우지 않음) */
+function hubSbnSkuSync_(req, me) {
+  var rows = req.rows || []; if (!rows.length) return { error: '사방넷 단품 행이 없습니다' };
+  var m = {}; rows.forEach(function (r) { if (r && r[0]) m[hubStr_(r[0], 30) + '-' + hubStr_(r[1], 20)] = r; });
+  var list = hubProducts_(), now = hubNow_(), logs = [], recent = Date.now() - 10 * 60 * 1000, seen = {}, corpOf = {};
+  var C = { stock: 0, cost: 0, price: 0, name: 0, bar: 0, mng: 0, vst: 0, status: 0, added: 0, missing: 0, skipped: 0 }, ex = [];
+  list.forEach(function (p) { if (p.sbnPrd && !corpOf[p.sbnPrd]) corpOf[p.sbnPrd] = p.corp; });
+  list.forEach(function (p) {
+    if (!p.sbnPrd) return;
+    var k = p.sbnPrd + '-' + p.sbnSku, r = m[k];
+    if (!r) { if (req.complete && p.sbnStatus !== '사방넷없음') { p.sbnStatus = '사방넷없음'; C.missing++; p.updatedAt = now; p.updatedBy = '사방넷'; } return; }
+    seen[k] = 1;
+    var ch = false, mng = r[9] === 'N' ? 'N' : 'Y', st = Math.round(hubNum_(r[7])), cost = hubNum_(r[5]), price = hubNum_(r[6]), vst = Math.round(hubNum_(r[8]));
+    var nm = hubStr_(r[2], 150), op = hubStr_(r[3], 80), bar = hubStr_(r[4], 60), sts = hubStr_(r[10], 20);
+    if (p.stocMng !== mng) { p.stocMng = mng; C.mng++; ch = true; }
+    if (mng === 'Y' && p.stock !== st) {
+      var t = Date.parse(String(p.updatedAt).replace(' ', 'T') + ':00+09:00');
+      if (p.updatedBy !== '사방넷' && t && t > recent) C.skipped++;
+      else { logs.push(['재고이력', [now, p.id, p.sku, p.name, '사방넷동기화', st - p.stock, st, '사방넷 현재고로 맞춤(자동)', me.name]]); if (ex.length < 12) ex.push(k + ' 재고 ' + p.stock + '→' + st); p.stock = st; C.stock++; ch = true; }
+    }
+    if (p.vstock !== vst) { p.vstock = vst; C.vst++; ch = true; }
+    if (p.cost !== cost) { logs.push(['원가이력', [now, p.id, p.sku, p.name, p.cost, cost, '사방넷']]); p.cost = cost; C.cost++; ch = true; }
+    if (p.price !== price) { p.price = price; C.price++; ch = true; }
+    if (nm && (p.name !== nm || p.option !== op)) { p.name = nm; p.option = op; C.name++; ch = true; }
+    if (p.barPending) { if (bar === p.barcode) { p.barPending = ''; ch = true; } }
+    else if (bar !== p.barcode) { p.barcode = bar; C.bar++; ch = true; }
+    if (sts && p.sbnStatus !== sts) { p.sbnStatus = sts; C.status++; ch = true; }
+    var link = r[11] === 'L' && r[12] ? hubStr_(r[12], 20) + '-' + hubStr_(r[13], 10) : '';
+    if (String(p.link || '') !== link || String(p.setDiv || '') !== hubStr_(r[11], 4)) { p.link = link; p.setDiv = hubStr_(r[11], 4); ch = true; }
+    if (ch) { p.updatedAt = now; p.updatedBy = '사방넷'; }
+  });
+  Object.keys(m).forEach(function (k) {
+    if (seen[k]) return;
+    var r = m[k], prd = hubStr_(r[0], 30), nm = hubStr_(r[2], 150);
+    var corp = corpOf[prd] || (/^\s*\[셀렉트인\]/.test(nm) ? '셀렉트인' : '겐더샵');
+    var n = { id: hubNewId_() + C.added, sku: k, barcode: hubStr_(r[4], 60), name: nm, brand: '', option: hubStr_(r[3], 80), corp: corp, type: '사입', cat: '',
+      cost: hubNum_(r[5]), price: hubNum_(r[6]), stock: r[9] === 'N' ? 0 : Math.round(hubNum_(r[7])), safety: 0, loc: '', memo: '', updatedAt: now, updatedBy: '사방넷',
+      sbnPrd: prd, sbnSku: hubStr_(r[1], 20), img: '', sbnStatus: hubStr_(r[10], 20), stocMng: r[9] === 'N' ? 'N' : 'Y', vstock: Math.round(hubNum_(r[8])),
+      owner: '', link: r[11] === 'L' && r[12] ? hubStr_(r[12], 20) + '-' + hubStr_(r[13], 10) : '', setDiv: hubStr_(r[11], 4) };
+    list.push(n); C.added++; if (ex.length < 12) ex.push(k + ' 새 단품 추가');
+    if (n.stock) logs.push(['재고이력', [now, n.id, n.sku, n.name, '기초재고', n.stock, n.stock, '사방넷에서 새로 가져옴', me.name]]);
+  });
+  var changed = C.stock + C.cost + C.price + C.name + C.bar + C.mng + C.vst + C.status + C.added + C.missing;
+  if (changed || logs.length) { hubWriteAll_(list); hubWriteLogs_(logs); }
+  hubConfigSet_('sbn_stock_at', now + ' · 사방넷 단품 ' + rows.length + '개 확인' + (changed ? ' · 바뀜 ' + changed : ''), me);
+  return { ok: true, seen: rows.length, changed: changed, c: C, sample: ex };
 }
 
 /* ===================== 쇼핑몰별 상품 등록 현황 (sbn.js) =====================

@@ -343,7 +343,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-30i';
+var APP_BUILD = '2026-10-30j';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -2619,11 +2619,11 @@ window.addEventListener('message', function(e){
   if (e.origin !== SBN_ORIGIN || !e.data || typeof e.data !== 'object') return;
   var d = e.data;
   if (d.type === 'sbn_ping'){ e.source.postMessage({type:'hub_ready', admin:isAdmin()}, SBN_ORIGIN); return; }
-  if ((d.type==='sbs_rows' || d.type==='sbr_rows') && S.me){   // sbn.js: 현재고 자동 맞춤 · 쇼핑몰 등록 현황
-    var src=e.source, act=d.type==='sbs_rows'?'sbn_stock_sync':'sbr_sync';
-    api(act, d.type==='sbs_rows'?{rows:d.rows, final:true, total:d.rows.length}:{accts:d.accts}).then(function(j){
+  if ((d.type==='sbs_rows' || d.type==='sbr_rows' || d.type==='sbk_rows') && S.me){   // sbn.js: 현재고 자동 맞춤 · 쇼핑몰 등록 현황
+    var src=e.source, act=d.type==='sbs_rows'?'sbn_stock_sync':d.type==='sbk_rows'?'sbn_sku_sync':'sbr_sync';
+    api(act, d.type==='sbs_rows'?{rows:d.rows, final:true, total:d.rows.length}:d.type==='sbk_rows'?{rows:d.rows, complete:!!d.complete}:{accts:d.accts}).then(function(j){
       src.postMessage({type:'sbx_saved', batch:d.batch, res:j}, SBN_ORIGIN);
-      if (d.type==='sbs_rows'){ if (j.changed){ toast('사방넷 재고 맞춤 · '+j.changed+'개 변경'); boot(); } }
+      if (d.type==='sbs_rows'||d.type==='sbk_rows'){ if (j.changed){ toast('사방넷 맞춤 · '+j.changed+'곳 변경'); boot(); } }
       else { SBR=null; if(/^#reg/.test(location.hash||'')) route(); toast('쇼핑몰 등록 현황 '+j.accts+'개 계정 저장'); }
     }).catch(function(x){ src.postMessage({type:'sbx_error', batch:d.batch, message:(x&&x.message)||'저장 실패'}, SBN_ORIGIN); });
     return;

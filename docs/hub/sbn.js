@@ -1,6 +1,6 @@
 /* 셀렉트인 OPS — 사방넷 관리자 동기화 (북마크로 실행)
  * sbadmin*.sabangnet.co.kr 에 로그인한 화면에서 실행 → 사방넷 화면이 쓰는 조회 기능으로 읽어서 OPS 앱으로 보냄 (조회 전용)
- *  1) 현재고: 재고현황조회Ⅰ의 단품별 현재고 → 앱 재고를 사방넷 값으로 맞춤
+ *  1) 단품 전체: 사방넷단품대량수정 목록(현재고·가상재고·재고관리 여부·원가·판매가·바코드·이름·상태) → 앱을 사방넷 값으로 맞춤
  *  2) 쇼핑몰 등록 현황: 쇼핑몰상품수정 목록 → 계정(쇼핑몰+로그인ID)별 등록 상품코드 (비밀번호 같은 값은 읽지도 보내지도 않음)
  * - 창을 켜두면 10분마다 재고, 1시간마다 등록 현황을 다시 가져옴 */
 (function () {
@@ -33,22 +33,23 @@
       .then(function (r) { clearTimeout(t); if (r.status === 401 || r.status === 403) throw new Error('사방넷 로그인이 끊겼어요. 새로고침 후 다시 실행해 주세요'); return r.json(); })
       .then(function (j) { if (!j || !j.data) throw new Error('사방넷 응답이 이상해요 (' + (j && (j.message || j.code)) + ')'); return j.data; });
   }
-  function stockBody(page, size) {
-    var now = new Date();
-    return { svcAcntId: null, dayOption: '001', startDate: '20150101', endDate: ymd(now), pageOffset: 0, pageSize: size, sortOption: '001', sort: 'DESC', searchCondition: 'prdNm', searchKeyword: '', currentPage: page, total: 0, selectExcelList: null,
-      stocMngtYymm: String(now.getFullYear()) + pad(now.getMonth() + 1), sortField: 'prdNo', sortMethod: 'ASC', inOutDateSearch: '', inOutDateSearchType: 'fstRegsDt', stockType: 'total', catMpngDivCd: '', catLvl: 0,
-      uprCatSrno: null, catLaclCd: null, catMidclCd: null, catSmclsCd: null, catDtclsCd: null, stdCatLaclNm: null, stdCatMidclNm: null, stdCatSmclsNm: null, stdCatDtclsNm: null, stdCatCdList: [],
-      wrhsNo: null, stocCrfwdDivCd: null, prdSplyStsCd: null, bypcSvcAcntId: null, lgstscSvcAcntId: null, skuSplyStsCd: null, stocUseYn: null, mngtPlcNmView: '', diffStockQt: '', viewNameType: 'modlNm', prdNo: null, skuNo: null };
+  function skuBody(page, size) {
+    return { dayOption: 'prdFstRegsDt', startDate: '20150101', endDate: ymd(new Date()), pageSize: size, currentPage: page, sortOption: 'prdNo', sortValue: 'ASC', catMpngDivCd: '', stdCatLaclNm: '', stdCatMidclNm: '', stdCatSmclsNm: '', stdCatDtclsNm: '', stdCatCdList: [],
+      catLaclCd: '', catMidclCd: '', catSmclsCd: '', catDtclsCd: '', crtinvQtZero: false, vrtlStocQtZero: false, sftinvQtZero: false, setDivCdL: false, setDivCdP: false, setDivCdG: false, prdcYy: '', sesnDivCd: '', prdTgtDivCd: '', taxDivCd: '', dechGvMthdDivCd: '',
+      stocUseYn: '', prdDivCd: '', stockUnderSft: false, minUnderStock: '', maxUnderStock: '', useStockSelect: false, stockOption: 'CRTINV_QT', minStock: '', maxStock: '', productStatus: [], skuSplyStsCd: '', skuSplyStsCd1: false, skuSplyStsCd2: false, skuSplyStsCd3: false,
+      searchCondition: '', searchKeyword: '', searchKeywordList: [], downloadScale: 'SELECTED' };
   }
-  function readStock() {
-    var sum = {}, page = 1, size = 1000, got = 0;
+  /* 사방넷단품대량수정 목록 = 상품 화면의 현재고(가용)와 같은 값. 전체 단품을 읽음 */
+  function readSku() {
+    var out = [], seen = {}, page = 1, size = 2000, total = 0;
     var step = function () {
-      return post('/prod-api/customer/stock/stock-states1', stockBody(page, size)).then(function (d) {
-        var L = d.list || [], total = (d.metaData && d.metaData.total) || 0;
-        L.forEach(function (o) { var k = o.prdNo + '|' + o.skuNo; sum[k] = (sum[k] || 0) + (Number(o.nowTotalQt) || 0); });
-        got += L.length; msg('재고 읽는 중… ' + got + ' / ' + total);
-        if (L.length && got < total && page < 100) { page++; return step(); }
-        return Object.keys(sum).map(function (k) { var p = k.split('|'); return [p[0], p[1], sum[k]]; });
+      return post('/prod-api/customer/product/sku-bulk-modify-list', skuBody(page, size)).then(function (d) {
+        var L = d.skuBulkModifyDetailForList || []; total = d.total || total;
+        L.forEach(function (o) { var k = o.prdNo + '-' + o.skuNo; if (seen[k]) return; seen[k] = 1;
+          out.push([o.prdNo, o.skuNo, o.prdNm, o.optDtlNm, o.barcd, o.splyCprc, o.sepr, o.crtinvQt, o.vrtlStocQt, o.stocUseYn, o.skuSplyStsNm, o.setDivCd, o.conPrdNo, o.conSkuNo]); });
+        msg('사방넷 단품 읽는 중… ' + out.length + ' / ' + total);
+        if (L.length && out.length < total && page < 30) { page++; return step(); }
+        return { rows: out, complete: total > 0 && out.length >= total };
       });
     };
     return step();
@@ -111,11 +112,12 @@
     if (ev && (!hubWin || hubWin.closed)) hubWin = window.open(HUB + '#products', 'opsHub');   // 버튼 클릭 순간에 열어야 팝업이 안 막혀요
     if (busy) return; busy = true; $('osgo').disabled = true;
     var t0 = Date.now(), out = [], wantReg = $('osreg').checked || Date.now() - Number(LS('opsSbnRegAt') || 0) > REG_EVERY;
-    readStock().then(function (rows) {
-      msg('재고 ' + rows.length + '개 단품 → OPS 저장 중…');
-      return send('sbs_rows', { rows: rows });
+    readSku().then(function (res) {
+      msg('사방넷 단품 ' + res.rows.length + '개 → OPS 저장 중…');
+      return send('sbk_rows', res);
     }).then(function (r) {
-      out.push('재고 단품 ' + r.seen + '개 확인 · 바뀐 재고 ' + r.changed + '개' + (r.skipped ? ' · 앱에서 방금 바꾼 ' + r.skipped + '개는 다음에' : ''));
+      var c = r.c || {};
+      out.push('사방넷 단품 ' + r.seen + '개 확인 · 바뀐 곳 ' + r.changed + '개' + (r.changed ? '\n(재고 ' + c.stock + ' · 원가 ' + c.cost + ' · 판매가 ' + c.price + ' · 이름/옵션 ' + c.name + ' · 바코드 ' + c.bar + ' · 재고관리 ' + c.mng + ' · 상태 ' + c.status + ' · 새 단품 ' + c.added + (c.missing ? ' · 사방넷없음 ' + c.missing : '') + ')' : '') + (c.skipped ? '\n앱에서 방금 입출고한 ' + c.skipped + '개는 다음에' : ''));
       if (r.sample && r.sample.length) out.push(r.sample.slice(0, 5).join('\n'));
       if (!wantReg) return;
       return readReg().then(function (accts) { msg('등록 현황 ' + accts.length + '개 계정 → OPS 저장 중…'); return send('sbr_rows', { accts: accts }); })
