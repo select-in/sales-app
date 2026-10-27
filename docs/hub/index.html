@@ -343,7 +343,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-30g';
+var APP_BUILD = '2026-10-30h';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -2061,7 +2061,7 @@ function pzBidList(el){
 }
 function pzSize(o){ var m=String(o||'').match(/(?:SIZE|KR|EU|US|UK|JP)\s*([\w.\/-]+)\s*$/i); return m?m[1]:String(o||'').split(' ').pop(); }
 /* ---------- 쇼핑몰 등록 현황 (sbn.js가 가져온 사방넷 쇼핑몰상품수정 목록) ---------- */
-var SBR=null, RF={corp:'셀렉트인', acct:'', q:'', only:'miss', stock:true, page:1};
+var SBR=null, RG={corp:'셀렉트인', acct:'', q:'', only:'miss', stock:true, page:1};
 function sbrLoad(force){ if (SBR && !force) return Promise.resolve(SBR); return api('sbr_list',{}).then(function(j){ SBR=j; return j; }); }
 function sbrCorp(a){ var c=(SBR.corp||{})[a.id]; return c||'겐더샵'; }
 VIEWS.reg = {
@@ -2079,45 +2079,45 @@ function regData(){
 function regDraw(){
   var box=$('rgbody'); if(!box) return;
   if (!SBR.accts.length){ box.innerHTML='<div class="card"><div class="empty">아직 가져온 등록 현황이 없어요.<br>PC에서 [PC 동기화 설정]의 「OPS 사방넷 동기화」를 사방넷 관리자 화면에서 눌러 주세요.</div></div>'; return; }
-  var D=regData(), A=D.accts.filter(function(a){ return a.corp===RF.corp; }).sort(function(a,b){ return a.mall.localeCompare(b.mall); });
-  var prods=Object.keys(D.P).map(function(k){ return D.P[k]; }).filter(function(o){ return o.corp===RF.corp && (!RF.stock || o.stock>0); });
-  var other=D.accts.filter(function(a){ return a.corp!==RF.corp; });
+  var D=regData(), A=D.accts.filter(function(a){ return a.corp===RG.corp; }).sort(function(a,b){ return a.mall.localeCompare(b.mall); });
+  var prods=Object.keys(D.P).map(function(k){ return D.P[k]; }).filter(function(o){ return o.corp===RG.corp && (!RG.stock || o.stock>0); });
+  var other=D.accts.filter(function(a){ return a.corp!==RG.corp; });
   A.forEach(function(a){ a.has=0; a.miss=0; a.pause=0; a.wrong=0; prods.forEach(function(o){ if(a.m[o.prd]){ a.has++; if(a.m[o.prd]==='p') a.pause++; } else a.miss++; });
-    Object.keys(a.m).forEach(function(k){ if(D.P[k] && D.P[k].corp!==RF.corp) a.wrong++; }); });
-  if (RF.acct && !A.some(function(a){ return a.shma+'|'+a.id===RF.acct; })) RF.acct='';
+    Object.keys(a.m).forEach(function(k){ if(D.P[k] && D.P[k].corp!==RG.corp) a.wrong++; }); });
+  if (RG.acct && !A.some(function(a){ return a.shma+'|'+a.id===RG.acct; })) RG.acct='';
   box.innerHTML='<div class="card"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">'+
-      '<div class="seg" id="rgc">'+['셀렉트인','겐더샵'].map(function(c){ return '<button data-v="'+c+'" class="'+(RF.corp===c?'on':'')+'">'+c+'</button>'; }).join('')+'</div>'+
-      '<label style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" id="rgs"'+(RF.stock?' checked':'')+'> 재고 있는 상품만</label>'+
-      '<span class="sm">'+esc(RF.corp)+' 상품 '+won(prods.length)+'개 · 계정 '+A.length+'개 · 동기화 '+esc(SBR.synced||'')+'</span></div>'+
+      '<div class="seg" id="rgc">'+['셀렉트인','겐더샵'].map(function(c){ return '<button data-v="'+c+'" class="'+(RG.corp===c?'on':'')+'">'+c+'</button>'; }).join('')+'</div>'+
+      '<label style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" id="rgs"'+(RG.stock?' checked':'')+'> 재고 있는 상품만</label>'+
+      '<span class="sm">'+esc(RG.corp)+' 상품 '+won(prods.length)+'개 · 계정 '+A.length+'개 · 동기화 '+esc(SBR.synced||'')+'</span></div>'+
       '<div class="tblwrap"><table class="tbl ktbl"><thead><tr><th>쇼핑몰 · 계정</th><th class="r">등록</th><th class="r">미등록</th><th class="r">일시중지</th><th class="r">다른 법인 상품</th><th></th></tr></thead><tbody>'+
       A.map(function(a){ var k=a.shma+'|'+a.id, pct=prods.length?Math.round(a.has/prods.length*100):0;
-        return '<tr class="click'+(RF.acct===k?' open':'')+'" data-a="'+esc(k)+'"><td><div class="c2 nm2"><b>'+esc(a.mall)+'</b><span>'+esc(a.id)+'</span></div></td><td class="r num">'+c2_(won(a.has)+'개', pct+'%')+'</td><td class="r num">'+c2_(a.miss?'<em class="wn">'+won(a.miss)+'개</em>':'0', '')+'</td><td class="r num">'+(a.pause?won(a.pause)+'개':'<span class="sm">0</span>')+'</td><td class="r num">'+(a.wrong?'<em class="wn">'+won(a.wrong)+'개</em>':'<span class="sm">0</span>')+'</td><td class="c"><span class="sm">'+(RF.acct===k?'선택됨':'미등록 보기')+'</span></td></tr>'; }).join('')+
+        return '<tr class="click'+(RG.acct===k?' open':'')+'" data-a="'+esc(k)+'"><td><div class="c2 nm2"><b>'+esc(a.mall)+'</b><span>'+esc(a.id)+'</span></div></td><td class="r num">'+c2_(won(a.has)+'개', pct+'%')+'</td><td class="r num">'+c2_(a.miss?'<em class="wn">'+won(a.miss)+'개</em>':'0', '')+'</td><td class="r num">'+(a.pause?won(a.pause)+'개':'<span class="sm">0</span>')+'</td><td class="r num">'+(a.wrong?'<em class="wn">'+won(a.wrong)+'개</em>':'<span class="sm">0</span>')+'</td><td class="c"><span class="sm">'+(RG.acct===k?'선택됨':'미등록 보기')+'</span></td></tr>'; }).join('')+
       '</tbody></table></div><p class="sm" style="margin:8px 0 0">다른 법인 상품 = 이 계정에 다른 법인(마이카테고리) 상품이 등록된 수 · 계정→법인은 데일리매출판 설정 ③ 기준 (없으면 겐더샵) · 제외 계정('+D.accts.length+'개 중 '+(SBR.accts.length-D.accts.length)+'개)은 뺌</p></div>'+
     '<div class="card" style="margin-top:16px"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'+
-      '<div class="seg" id="rgo">'+[['miss','미등록 있는 상품'],['all','전체']].map(function(t){ return '<button data-v="'+t[0]+'" class="'+(RF.only===t[0]?'on':'')+'">'+t[1]+'</button>'; }).join('')+'</div>'+
-      '<div class="search" style="flex:1;min-width:200px"><i class="ti ti-search"></i><input class="inp" id="rgq" placeholder="상품명, 사방넷 코드, 브랜드" value="'+esc(RF.q)+'"></div></div><div id="rglist"></div></div>';
-  document.querySelectorAll('#rgc button').forEach(function(b){ b.onclick=function(){ RF.corp=b.dataset.v; RF.acct=''; RF.page=1; regDraw(); }; });
-  document.querySelectorAll('#rgo button').forEach(function(b){ b.onclick=function(){ RF.only=b.dataset.v; RF.page=1; regDraw(); }; });
-  box.querySelectorAll('[data-a]').forEach(function(r){ r.onclick=function(){ RF.acct=RF.acct===r.dataset.a?'':r.dataset.a; RF.page=1; regDraw(); }; });
-  $('rgs').onchange=function(){ RF.stock=this.checked; RF.page=1; regDraw(); };
-  $('rgq').oninput=function(){ RF.q=this.value; RF.page=1; regList(A, prods); };
+      '<div class="seg" id="rgo">'+[['miss','미등록 있는 상품'],['all','전체']].map(function(t){ return '<button data-v="'+t[0]+'" class="'+(RG.only===t[0]?'on':'')+'">'+t[1]+'</button>'; }).join('')+'</div>'+
+      '<div class="search" style="flex:1;min-width:200px"><i class="ti ti-search"></i><input class="inp" id="rgq" placeholder="상품명, 사방넷 코드, 브랜드" value="'+esc(RG.q)+'"></div></div><div id="rglist"></div></div>';
+  document.querySelectorAll('#rgc button').forEach(function(b){ b.onclick=function(){ RG.corp=b.dataset.v; RG.acct=''; RG.page=1; regDraw(); }; });
+  document.querySelectorAll('#rgo button').forEach(function(b){ b.onclick=function(){ RG.only=b.dataset.v; RG.page=1; regDraw(); }; });
+  box.querySelectorAll('[data-a]').forEach(function(r){ r.onclick=function(){ RG.acct=RG.acct===r.dataset.a?'':r.dataset.a; RG.page=1; regDraw(); }; });
+  $('rgs').onchange=function(){ RG.stock=this.checked; RG.page=1; regDraw(); };
+  $('rgq').oninput=function(){ RG.q=this.value; RG.page=1; regList(A, prods); };
   regList(A, prods);
 }
 function regList(A, prods){
   var el=$('rglist'); if(!el) return;
-  var sel=A.filter(function(a){ return a.shma+'|'+a.id===RF.acct; })[0], toks=RF.q.toLowerCase().split(/\s+/).filter(Boolean);
+  var sel=A.filter(function(a){ return a.shma+'|'+a.id===RG.acct; })[0], toks=RG.q.toLowerCase().split(/\s+/).filter(Boolean);
   var L=prods.map(function(o){ var miss=A.filter(function(a){ return !a.m[o.prd]; }); return Object.assign({}, o, {miss:miss, has:A.length-miss.length}); })
-    .filter(function(o){ if(sel) return !sel.m[o.prd]; return RF.only==='all' || o.miss.length; })
+    .filter(function(o){ if(sel) return !sel.m[o.prd]; return RG.only==='all' || o.miss.length; })
     .filter(function(o){ return toks.every(function(t){ return [o.prd,o.name,o.brand].join(' ').toLowerCase().indexOf(t)>=0; }); })
     .sort(function(a,b){ return b.stock-a.stock || b.miss.length-a.miss.length; });
-  XL_CUR=function(){ return {file:'쇼핑몰등록_'+RF.corp, sheets:[{name:RF.corp, head:['사방넷 코드','상품명','브랜드','재고','등록 계정 수','미등록 계정'].concat(A.map(function(a){ return a.mall+' '+a.id; })), rows:prods.map(function(o){ var miss=A.filter(function(a){ return !a.m[o.prd]; }); return [o.prd,o.name,o.brand,o.stock,A.length-miss.length,miss.map(function(a){ return a.mall; }).join(', ')].concat(A.map(function(a){ var v=a.m[o.prd]; return !v?'X':v==='p'?'일시중지':v==='x'?'품절':'O'; })); })}]}; };
+  XL_CUR=function(){ return {file:'쇼핑몰등록_'+RG.corp, sheets:[{name:RG.corp, head:['사방넷 코드','상품명','브랜드','재고','등록 계정 수','미등록 계정'].concat(A.map(function(a){ return a.mall+' '+a.id; })), rows:prods.map(function(o){ var miss=A.filter(function(a){ return !a.m[o.prd]; }); return [o.prd,o.name,o.brand,o.stock,A.length-miss.length,miss.map(function(a){ return a.mall; }).join(', ')].concat(A.map(function(a){ var v=a.m[o.prd]; return !v?'X':v==='p'?'일시중지':v==='x'?'품절':'O'; })); })}]}; };
   if (!L.length){ el.innerHTML='<div class="empty">'+(sel?esc(sel.mall)+' '+esc(sel.id)+'에 미등록 상품이 없어요':'해당 상품이 없어요')+'</div>'; return; }
-  var pages=Math.max(1,Math.ceil(L.length/PG.size)); if(RF.page>pages) RF.page=pages; var CS=L.slice((RF.page-1)*PG.size, RF.page*PG.size);
+  var pages=Math.max(1,Math.ceil(L.length/PG.size)); if(RG.page>pages) RG.page=pages; var CS=L.slice((RG.page-1)*PG.size, RG.page*PG.size);
   el.innerHTML=(sel?'<p style="margin:0 0 8px"><b>'+esc(sel.mall)+' · '+esc(sel.id)+'</b>에 미등록 '+won(L.length)+'개</p>':'')+
     '<div class="tblwrap"><table class="tbl ktbl"><colgroup><col style="width:44px"><col><col style="width:90px"><col style="width:100px"><col style="width:40%"></colgroup><thead><tr><th class="c">No</th><th>상품</th><th class="r">재고</th><th class="r">등록</th><th>미등록 쇼핑몰</th></tr></thead><tbody>'+
-    CS.map(function(o,i){ return '<tr><td class="c num">'+((RF.page-1)*PG.size+i+1)+'</td><td><div class="c2 nm2"><b title="'+esc(o.name)+'">'+esc(o.name)+'</b><span>'+esc([o.prd,o.brand,o.opts+'옵션'].filter(Boolean).join(' · '))+'</span></div></td><td class="r num">'+won(o.stock)+'</td><td class="r num">'+c2_(o.has+' / '+A.length,'')+'</td><td style="white-space:normal">'+(o.miss.length?o.miss.map(function(a){ return '<span class="pill" style="margin:1px 2px" title="'+esc(a.id)+'">'+esc(a.mall)+'</span>'; }).join(''):'<span class="sm">모두 등록</span>')+'</td></tr>'; }).join('')+
-    '</tbody></table></div>'+pagerHtml(L.length, RF.page, PG.size);
-  bindPager(el, function(n){ RF.page=n; regList(A, prods); });
+    CS.map(function(o,i){ return '<tr><td class="c num">'+((RG.page-1)*PG.size+i+1)+'</td><td><div class="c2 nm2"><b title="'+esc(o.name)+'">'+esc(o.name)+'</b><span>'+esc([o.prd,o.brand,o.opts+'옵션'].filter(Boolean).join(' · '))+'</span></div></td><td class="r num">'+won(o.stock)+'</td><td class="r num">'+c2_(o.has+' / '+A.length,'')+'</td><td style="white-space:normal">'+(o.miss.length?o.miss.map(function(a){ return '<span class="pill" style="margin:1px 2px" title="'+esc(a.id)+'">'+esc(a.mall)+'</span>'; }).join(''):'<span class="sm">모두 등록</span>')+'</td></tr>'; }).join('')+
+    '</tbody></table></div>'+pagerHtml(L.length, RG.page, PG.size);
+  bindPager(el, function(n){ RG.page=n; regList(A, prods); });
 }
 /* ---------- 포이즌 판매자센터 → 앱 데이터 수신 (poizon.js) ---------- */
 var PZN_ORIGIN = 'https://seller.poizon.com';
