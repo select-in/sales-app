@@ -331,7 +331,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-29u';
+var APP_BUILD = '2026-10-29u-s2';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -693,7 +693,7 @@ function salesDraw(){
   else for(var d=ta; d<=tb; d=ymdAdd(d,1)) days.push([d.slice(8)*1+'', D[d]||0, d>=rg.a&&d<=rg.b]);
   var dmx=Math.max.apply(null, days.map(function(x){ return x[1]; }).concat([1]));
   var pers=[['today','오늘'],['yday','어제'],['week','이번 주'],['month','이번 달'],['pmonth','지난 달'],['year','올해']].concat(full?[['custom','직접']]:[]);
-  var grpTbl=function(title, L, showCorp){ var t=sum(L,5)||1; return '<h3 style="margin:18px 0 6px;font-size:15px">'+title+'</h3><div class="tblwrap"><table class="tbl"><thead><tr><th>'+(showCorp?'법인':'채널그룹')+'</th><th class="r">주문</th><th class="r">매출</th><th style="width:24%">비중</th><th class="r">정산 예정</th><th class="r">이익</th><th class="r">이익률</th></tr></thead><tbody>'+
+  var grpTbl=function(title, L, showCorp){ var t=L.reduce(function(a,o){ return a+o.amt; },0)||1; return '<h3 style="margin:18px 0 6px;font-size:15px">'+title+'</h3><div class="tblwrap"><table class="tbl"><thead><tr><th>'+(showCorp?'법인':'채널그룹')+'</th><th class="r">주문</th><th class="r">매출</th><th style="width:24%">비중</th><th class="r">정산 예정</th><th class="r">이익</th><th class="r">이익률</th></tr></thead><tbody>'+
     L.map(function(o){ var c=o.amt-o.live; return '<tr><td><b>'+esc(o.k||'기타')+'</b>'+(o.live?' <span class="sm">실시간 '+won(o.live)+'</span>':'')+'</td><td class="r num">'+won(o.cnt)+'</td><td class="r num"><b>'+won(o.amt)+'</b></td><td><div class="sbar"><i style="width:'+Math.max(1,Math.round(o.amt/t*100))+'%"></i><span>'+(o.amt/t*100).toFixed(1)+'%</span></div></td><td class="r num">'+(o.st?won(o.st):'—')+'</td><td class="r num">'+won(o.profit)+'</td><td class="r num">'+(c?(o.profit/c*100).toFixed(1)+'%':'—')+'</td></tr>'; }).join('')+'</tbody></table></div>'; };
   var pay='';
   if (full && adm){
