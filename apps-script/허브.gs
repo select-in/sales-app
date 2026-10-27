@@ -25,6 +25,7 @@ var HUB_TABS = {
   채널출고: ['일시', '배치', '채널', '계정', '구분', '상품id', 'SKU', '상품명', '옵션', '바코드', '수량', '주문번호', '판매가', '수수료율', '정산예상', '재고반영', '작업자', '메모'],
   크림입찰: ['계정', '입찰id', '주문번호', '상태', '구분', '품번', '상품명', '브랜드', '옵션', '입찰가', '수수료', '정산예정', '최저판매가', '최근거래가', '등록일', '만료일', '동기화', '내순위', '최저가일반', '최저가보관', '체결가일반', '체결가보관'],
   포이즌입찰: ['계정', '품번', '상품명', '브랜드', '옵션', '입찰가', '입찰수', '판매중수량', '카테고리', 'spuId', '동기화'],
+  사방넷수집: ['쇼핑몰코드', '쇼핑몰', '로그인ID', '마지막주문수집', '주문수집자', '주문수집결과', '마지막클레임수집', '클레임수집자', '스케줄러사용', '스케줄주문', '스케줄클레임', '스케줄재고송신', '스케줄송장', '메시지', '동기화'],
   사방넷등록: ['쇼핑몰코드', '쇼핑몰', '로그인ID', '상품수', '목록', '동기화'],
   포이즌판매: ['계정', '주문번호', '상태', '탭', '구분', '품번', '상품명', '브랜드', '사이즈', '판매가', '수수료', '정산액', '주문일', '발송기한', '동기화'],
   크림보관: ['계정', '보관id', '주문번호', '단계', '상태', '품번', '상품명', '사이즈', '운송장', '신청일', '수정일', '동기화'],
@@ -67,6 +68,8 @@ function doPost(e) {
         return hubOut_(hubLocked_(function () { return hubSbnSkuSync_(req, me); }));
       case 'sbr_sync': if (!admin) return hubOut_({ error: '관리자만 저장할 수 있습니다' });   // 쇼핑몰별 상품 등록 현황 (sbn.js)
         return hubOut_(hubLocked_(function () { return hubSbrSync_(req, me); }));
+      case 'sbc_sync': if (!admin) return hubOut_({ error: '관리자만 저장할 수 있습니다' });   // 쇼핑몰별 주문수집·스케줄러 상태 (sbn.js)
+        return hubOut_(hubLocked_(function () { return hubSbcSync_(req, me); }));
       case 'sbr_list': return hubOut_(hubSbrList_());
       case 'krm_map_set': return hubOut_(hubLocked_(function () { return hubKrmMapSet_(req, me); }));
       case 'sbn_sales_check': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 사방넷 API(주문일) 기준 일별·법인·쇼핑몰 집계 — 매출판 대조용 (읽기 전용)
@@ -712,12 +715,24 @@ function hubSbrSync_(req, me) {
   hubConfigSet_('sbr_synced', now + ' · ' + out.length + '개 계정', me);
   return { ok: true, accts: out.length };
 }
+function hubSbcSync_(req, me) {
+  var A = req.accts || []; if (!A.length) return { error: '수집 상태가 비어 있어요' };
+  var now = hubNow_(), r = hubRows_('사방넷수집'), w = HUB_TABS['사방넷수집'].length;
+  var out = A.slice(0, 300).map(function (a) { return [hubStr_(a.shma, 20), hubStr_(a.mall, 60), "'" + hubStr_(a.id, 80), hubStr_(a.orderAt, 20), hubStr_(a.orderBy, 30), hubStr_(a.orderRes, 10), hubStr_(a.claimAt, 20), hubStr_(a.claimBy, 30), hubStr_(a.on, 2), hubStr_(a.sOrd, 2), hubStr_(a.sClm, 2), hubStr_(a.sStk, 2), hubStr_(a.sShip, 2), hubStr_(a.msg, 200), now]; });
+  if (r.vals.length) r.sh.getRange(2, 1, r.vals.length, w).clearContent();
+  r.sh.getRange(2, 1, out.length, w).setValues(out);
+  hubConfigSet_('sbc_synced', now, me);
+  return { ok: true, accts: out.length };
+}
 function hubSbrList_() {
   var accts = hubRows_('사방넷등록').vals.filter(function (v) { return v[0]; }).map(function (v) { return { shma: String(v[0]), mall: String(v[1]), id: String(v[2]), n: hubNum_(v[3]), list: String(v[4] || '') }; });
   var corp = {};
   try { SpreadsheetApp.openById(HUB_SALES_ID).getSheetByName('설정').getRange('A57:B120').getValues().forEach(function (r) { var id = String(r[0]).trim(); if (id) corp[id] = String(r[1]).trim(); }); } catch (e) {}
   var c = hubConfig_();
-  return { accts: accts, corp: corp, synced: c.sbr_synced ? c.sbr_synced.value : '', stockAt: c.sbn_stock_at ? c.sbn_stock_at.value : '' };
+  var H = ['shma', 'mall', 'id', 'orderAt', 'orderBy', 'orderRes', 'claimAt', 'claimBy', 'on', 'sOrd', 'sClm', 'sStk', 'sShip', 'msg'];
+  var collect = hubRows_('사방넷수집').vals.filter(function (v) { return v[0]; }).map(function (v) { var o = {}; H.forEach(function (k, i) { o[k] = String(v[i] instanceof Date ? Utilities.formatDate(v[i], 'Asia/Seoul', 'yyyy-MM-dd HH:mm') : v[i]); }); return o; });
+  var missing = 0; hubProducts_().forEach(function (p) { if (p.sbnStatus === '사방넷없음') missing++; });
+  return { accts: accts, corp: corp, collect: collect, sbnMissing: missing, synced: c.sbr_synced ? c.sbr_synced.value : '', stockAt: c.sbn_stock_at ? c.sbn_stock_at.value : '', collectAt: c.sbc_synced ? c.sbc_synced.value : '' };
 }
 
 /* 크림 품번 ↔ 사방넷 상품코드(+컬러) 연결표 */

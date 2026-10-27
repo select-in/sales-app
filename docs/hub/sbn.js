@@ -54,6 +54,25 @@
     };
     return step();
   }
+  /* 쇼핑몰 계정별 주문·클레임 마지막 수집 + 스케줄러 설정 (읽기만) */
+  function get(path) {
+    return fetch(path, { credentials: 'include', headers: { 'Accept': 'application/json, text/plain, */*', 'Authorization': auth() } }).then(function (r) { return r.json(); }).then(function (j) { return j && j.data; });
+  }
+  function readCollect() {
+    return Promise.all([post('/prod-api/customer/order/OrderCollectAuto/getOrderCollectAutoLists', {}), get('/prod-api/customer/mall/auto-service/search')]).then(function (x) {
+      var L = Array.isArray(x[0]) ? x[0] : (x[0].list || []), S = Array.isArray(x[1]) ? x[1] : [], sch = {}, out = [], seen = {};
+      var t = function (v) { return String(v || '').replace('T', ' ').slice(0, 16); };
+      S.forEach(function (o) { var v = {}; (o.scdlrCdList || []).forEach(function (c) { v[c.code] = c.value; }); sch[o.shmaId + '|' + o.shmaCnctnLoginId] = { on: o.useYn, v: v }; });
+      L.forEach(function (o) {
+        var k = o.shmaId + '|' + o.shmaCnctnLoginId, s = sch[k] || { on: '', v: {} }; seen[k] = 1;
+        out.push({ shma: o.shmaId, mall: o.shmaNm, id: o.shmaCnctnLoginId, orderAt: t(o.orderFstRegsDt), orderBy: o.orderFstRegsUserId || '', orderRes: o.orderResStatus || '', claimAt: t(o.claimFstRegsDt), claimBy: o.claimFstRegsUserId || '',
+          on: s.on, sOrd: s.v['01'] || '', sClm: s.v['02'] || '', sStk: s.v['08'] || '', sShip: s.v['03'] || '', msg: String(o.rsltLogMsg || '').slice(0, 200) });
+      });
+      S.forEach(function (o) { var k = o.shmaId + '|' + o.shmaCnctnLoginId; if (seen[k]) return; var s = sch[k];
+        out.push({ shma: o.shmaId, mall: o.shmaNm, id: o.shmaCnctnLoginId, orderAt: '', orderBy: '', orderRes: '', claimAt: '', claimBy: '', on: s.on, sOrd: s.v['01'] || '', sClm: s.v['02'] || '', sStk: s.v['08'] || '', sShip: s.v['03'] || '', msg: '주문수집 목록에 없음' }); });
+      return out;
+    });
+  }
   function regBody(page, size) {
     return { shmaId: '', tbCmmlShmaCnctnAcntD: {}, mode: 'search', searchDateType: 'b.FST_REGS_DT', startDate: '20150101', endDate: ymd(new Date()), startTime: '', endTime: '', svcAcntId: '', catLvl: 0, uprCatSrno: null, catLaclCd: null, catMidclCd: null, catSmclsCd: null, catDtclsCd: null,
       imgExpoYn: '', exlImgExpoYn: '', seprChk1: '', seprChk2: '', searchPriceYn: 'N', searchPrice1: null, searchPrice2: null, skuYn: '', bypcSvcAcntId: '', lgstscSvcAcntId: '', stocUseYn: '', dechGvMthdDivCd: '', taxDivCd: '', prdDivCd: '', prdcYy: '', sesnDivCd: '',
@@ -119,6 +138,8 @@
       var c = r.c || {};
       out.push('사방넷 단품 ' + r.seen + '개 확인 · 바뀐 곳 ' + r.changed + '개' + (r.changed ? '\n(재고 ' + c.stock + ' · 원가 ' + c.cost + ' · 판매가 ' + c.price + ' · 이름/옵션 ' + c.name + ' · 바코드 ' + c.bar + ' · 재고관리 ' + c.mng + ' · 상태 ' + c.status + ' · 새 단품 ' + c.added + (c.missing ? ' · 사방넷없음 ' + c.missing : '') + ')' : '') + (c.skipped ? '\n앱에서 방금 입출고한 ' + c.skipped + '개는 다음에' : ''));
       if (r.sample && r.sample.length) out.push(r.sample.slice(0, 5).join('\n'));
+      return readCollect().then(function (A) { return send('sbc_rows', { accts: A }); }).then(function (r3) { out.push('주문수집 상태 ' + r3.accts + '개 계정'); }, function (e) { out.push('주문수집 상태는 못 읽음: ' + (e && e.message || e)); });
+    }).then(function () {
       if (!wantReg) return;
       return readReg().then(function (accts) { msg('등록 현황 ' + accts.length + '개 계정 → OPS 저장 중…'); return send('sbr_rows', { accts: accts }); })
         .then(function (r2) { LS('opsSbnRegAt', String(Date.now())); $('osreg').checked = false; out.push('쇼핑몰 등록 현황 ' + r2.accts + '개 계정'); });

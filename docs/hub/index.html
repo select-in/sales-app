@@ -343,7 +343,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-30j';
+var APP_BUILD = '2026-10-30k';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -561,7 +561,7 @@ var MENU = [
     {k:'stock',t:'재고 입출고',ic:'barcode'},
     {k:'cost',t:'원가 · 마진',ic:'calculator'},
     {k:'register',t:'사방넷 등록',ic:'cloud-upload'},
-    {k:'reg',t:'쇼핑몰 등록 현황',ic:'building-store'},
+    {k:'reg',t:'사방넷 점검',ic:'building-store'},
     {k:'barcode',t:'바코드 점검',ic:'barcode-off'}]},
   {grp:'업무', items:[
     {k:'kream',t:'크림 판매 관리',ic:'gavel'},
@@ -2066,7 +2066,7 @@ function sbrLoad(force){ if (SBR && !force) return Promise.resolve(SBR); return 
 function sbrCorp(a){ var c=(SBR.corp||{})[a.id]; return c||'겐더샵'; }
 VIEWS.reg = {
   html: function(){
-    return '<div class="ph"><div><h1>쇼핑몰 등록 현황</h1><p>법인 상품이 그 법인 쇼핑몰 계정마다 등록됐는지 · 사방넷 쇼핑몰상품수정 기준</p></div>'+
+    return '<div class="ph"><div><h1>사방넷 점검</h1><p>쇼핑몰별 주문 수집 상태 · 정리할 것 · 법인 상품이 그 법인 쇼핑몰 계정마다 등록됐는지</p></div>'+
       '<div class="acts"><button class="btn" data-xl="1"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button>'+(KR_MOBILE()?'':'<button class="btn" id="rghow"><i class="ti ti-bookmark"></i>PC 동기화 설정</button>')+'</div></div><div id="rgbody"><div class="empty">불러오는 중…</div></div>';
   },
   bind: function(){ if ($('rghow')) $('rghow').onclick=krHow; sbrLoad().then(regDraw).catch(function(e){ if($('rgbody')) $('rgbody').innerHTML='<div class="empty">불러오지 못했어요 · '+esc(e&&e.message||'')+'</div>'; }); }
@@ -2085,7 +2085,7 @@ function regDraw(){
   A.forEach(function(a){ a.has=0; a.miss=0; a.pause=0; a.wrong=0; prods.forEach(function(o){ if(a.m[o.prd]){ a.has++; if(a.m[o.prd]==='p') a.pause++; } else a.miss++; });
     Object.keys(a.m).forEach(function(k){ if(D.P[k] && D.P[k].corp!==RG.corp) a.wrong++; }); });
   if (RG.acct && !A.some(function(a){ return a.shma+'|'+a.id===RG.acct; })) RG.acct='';
-  box.innerHTML='<div class="card"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">'+
+  box.innerHTML=regCollectHtml(D)+'<div class="card" style="margin-top:16px"><h2>쇼핑몰 상품 등록 <small>법인별</small></h2><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">'+
       '<div class="seg" id="rgc">'+['셀렉트인','겐더샵'].map(function(c){ return '<button data-v="'+c+'" class="'+(RG.corp===c?'on':'')+'">'+c+'</button>'; }).join('')+'</div>'+
       '<label style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" id="rgs"'+(RG.stock?' checked':'')+'> 재고 있는 상품만</label>'+
       '<span class="sm">'+esc(RG.corp)+' 상품 '+won(prods.length)+'개 · 계정 '+A.length+'개 · 동기화 '+esc(SBR.synced||'')+'</span></div>'+
@@ -2102,6 +2102,32 @@ function regDraw(){
   $('rgs').onchange=function(){ RG.stock=this.checked; RG.page=1; regDraw(); };
   $('rgq').oninput=function(){ RG.q=this.value; RG.page=1; regList(A, prods); };
   regList(A, prods);
+}
+/* 주문 수집 상태 + 정리할 것 */
+function regAgo(t){ if(!t) return null; var d=new Date(String(t).replace(' ','T')+':00+09:00'); return isNaN(d)?null:(Date.now()-d)/36e5; }
+function regCollectHtml(D){
+  var C=(SBR.collect||[]).map(function(c){ var corp=sbrCorp(c); return Object.assign({}, c, {corp:corp, h:regAgo(c.orderAt)}); });
+  if (!C.length) return '<div class="card"><h2>주문 수집 상태</h2><div class="empty">아직 정보가 없어요. 사방넷 관리자 화면의 「OPS 사방넷 동기화」를 한 번 실행하면 보여요</div></div>';
+  var act=C.filter(function(c){ return c.corp!=='제외'; });
+  var stale=act.filter(function(c){ return c.h==null || c.h>6; });
+  var schedOff=act.filter(function(c){ return c.on!=='Y'; }), ordOff=act.filter(function(c){ return c.sOrd!=='Y'; }), stkOff=act.filter(function(c){ return c.sStk!=='Y'; });
+  var noMap=act.filter(function(c){ return !(SBR.corp||{})[c.id]; });
+  var wrong=[]; ['셀렉트인','겐더샵'].forEach(function(cp){ D.accts.filter(function(a){ return a.corp===cp; }).forEach(function(a){ var n=0; Object.keys(a.m).forEach(function(k){ if(D.P[k] && D.P[k].corp!==cp) n++; }); if(n) wrong.push(a.mall+' '+a.id+' ('+cp+' 계정에 다른 법인 상품 '+n+'개)'); }); });
+  var nm=function(L){ return L.map(function(c){ return esc(c.mall)+' '+esc(c.id); }).join(', '); };
+  var issues=[];
+  if (ordOff.length) issues.push(['alert-triangle','주문이 자동으로 안 들어와요', '스케줄러 「주문수집」이 꺼진 계정 '+ordOff.length+'개'+(ordOff.length===act.length?' (전부)':'')+' — 사람이 [주문서수집]을 눌러야만 사방넷에 주문이 들어와요. OPS·매출판은 사방넷에 들어온 주문만 보여요.', '사방넷 → 스케줄러에서 「주문수집」 켜기 (또는 하루 정해진 시간에 전체 계정 수동 수집)']);
+  if (stale.length) issues.push(['clock','6시간 넘게 주문 수집 안 된 계정 '+stale.length+'개', nm(stale.slice(0,20))+(stale.length>20?' 외':''), '주문서수집(자동)에서 해당 계정까지 체크해 수집']);
+  if (schedOff.length) issues.push(['plug-off','스케줄러 자체가 꺼진 계정 '+schedOff.length+'개', nm(schedOff)+' — 클레임(취소·반품) 수집과 재고 송신도 안 돼서 품절 상품이 쇼핑몰에서 계속 팔릴 수 있어요', '사방넷 → 스케줄러에서 계정 「사용」 + 클레임수집·재고송신 켜기']);
+  if (stkOff.length && stkOff.length!==schedOff.length) issues.push(['package-off','재고 송신이 꺼진 계정 '+stkOff.length+'개', nm(stkOff), '스케줄러 「재고송신」 켜기']);
+  if (noMap.length) issues.push(['help','법인 지정이 없는 계정 '+noMap.length+'개', nm(noMap)+' — 지금은 겐더샵으로 계산', '데일리매출판 설정 ③(쇼핑몰ID→법인)에 추가']);
+  if (wrong.length) issues.push(['arrows-exchange','다른 법인 상품이 올라간 계정', esc(wrong.join(' · ')), '해당 계정에서 상품 연동 해제 또는 법인(마이카테고리) 확인']);
+  if (SBR.sbnMissing) issues.push(['trash','사방넷에 없는 앱 단품 '+won(SBR.sbnMissing)+'개', '사방넷에서 지워진(테스트 등) 상품이 앱에 남아 있어요 · 상품 관리에서 상태 「사방넷없음」', '필요 없으면 앱 상품 관리에서 삭제']);
+  var rows=C.slice().sort(function(a,b){ return (b.h==null?999:b.h)-(a.h==null?999:a.h); }).map(function(c){ var bad=c.corp!=='제외' && (c.h==null||c.h>6);
+    var yn=function(v,l){ return '<span class="pill" style="margin:1px;'+(v==='Y'?'':'opacity:.45;text-decoration:line-through')+'">'+l+'</span>'; };
+    return '<tr><td><div class="c2 nm2"><b>'+esc(c.mall)+'</b><span>'+esc(c.id)+'</span></div></td><td class="c"><span class="pill">'+esc(c.corp)+'</span></td><td class="r num">'+c2_((bad?'<em class="wn">':'<em>')+(c.orderAt?esc(c.orderAt.slice(5)):'없음')+'</em>', c.h==null?'':Math.round(c.h)+'시간 전 · '+esc(c.orderBy))+'</td><td class="r num">'+c2_(c.claimAt?esc(c.claimAt.slice(5)):'없음', esc(c.claimBy))+'</td><td>'+(c.on==='Y'?'':'<em class="wn">스케줄러 꺼짐</em> ')+yn(c.sOrd,'주문')+yn(c.sClm,'클레임')+yn(c.sStk,'재고송신')+yn(c.sShip,'송장')+'</td></tr>'; });
+  return '<div class="card"><h2><i class="ti ti-list-check"></i> 정리할 것 <small>사방넷 기준 · '+esc(SBR.collectAt||'')+'</small></h2>'+
+    (issues.length?'<div style="display:flex;flex-direction:column;gap:10px">'+issues.map(function(x){ return '<div class="sel" style="margin:0"><div class="nm"><i class="ti ti-'+x[0]+'"></i> '+x[1]+'</div><div class="meta" style="white-space:normal">'+x[2]+'</div><div class="meta" style="white-space:normal"><b>할 일:</b> '+x[3]+'</div></div>'; }).join('')+'</div>':'<div class="empty">정리할 게 없어요</div>')+'</div>'+
+    '<div class="card" style="margin-top:16px"><h2>주문 수집 상태 <small>계정별 마지막 수집 · 오래된 순</small></h2><div class="tblwrap"><table class="tbl ktbl"><thead><tr><th>쇼핑몰 · 계정</th><th class="c">법인</th><th class="r">마지막 주문수집</th><th class="r">마지막 클레임수집</th><th>스케줄러 자동</th></tr></thead><tbody>'+rows.join('')+'</tbody></table></div></div>';
 }
 function regList(A, prods){
   var el=$('rglist'); if(!el) return;
@@ -2619,9 +2645,10 @@ window.addEventListener('message', function(e){
   if (e.origin !== SBN_ORIGIN || !e.data || typeof e.data !== 'object') return;
   var d = e.data;
   if (d.type === 'sbn_ping'){ e.source.postMessage({type:'hub_ready', admin:isAdmin()}, SBN_ORIGIN); return; }
-  if ((d.type==='sbs_rows' || d.type==='sbr_rows' || d.type==='sbk_rows') && S.me){   // sbn.js: 현재고 자동 맞춤 · 쇼핑몰 등록 현황
-    var src=e.source, act=d.type==='sbs_rows'?'sbn_stock_sync':d.type==='sbk_rows'?'sbn_sku_sync':'sbr_sync';
+  if ((d.type==='sbs_rows' || d.type==='sbr_rows' || d.type==='sbk_rows' || d.type==='sbc_rows') && S.me){   // sbn.js: 현재고 자동 맞춤 · 쇼핑몰 등록 현황
+    var src=e.source, act=d.type==='sbs_rows'?'sbn_stock_sync':d.type==='sbk_rows'?'sbn_sku_sync':d.type==='sbc_rows'?'sbc_sync':'sbr_sync';
     api(act, d.type==='sbs_rows'?{rows:d.rows, final:true, total:d.rows.length}:d.type==='sbk_rows'?{rows:d.rows, complete:!!d.complete}:{accts:d.accts}).then(function(j){
+      if (d.type==='sbc_rows'){ src.postMessage({type:'sbx_saved', batch:d.batch, res:j}, SBN_ORIGIN); SBR=null; if(/^#reg/.test(location.hash||'')) route(); return; }
       src.postMessage({type:'sbx_saved', batch:d.batch, res:j}, SBN_ORIGIN);
       if (d.type==='sbs_rows'||d.type==='sbk_rows'){ if (j.changed){ toast('사방넷 맞춤 · '+j.changed+'곳 변경'); boot(); } }
       else { SBR=null; if(/^#reg/.test(location.hash||'')) route(); toast('쇼핑몰 등록 현황 '+j.accts+'개 계정 저장'); }
