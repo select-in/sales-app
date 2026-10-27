@@ -331,7 +331,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-29v';
+var APP_BUILD = '2026-10-29w';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -1442,21 +1442,22 @@ function krOptStock(ps, opt){
   return hit.reduce(function(t,p){ return t+Math.max(0,effStock(p)); },0);
 }
 /* 크림 상품 ↔ 사방넷 상품 연결 */
-function krMapOpen(style, name){
+function krMapOpen(style, name, acct){
   var cur=krMap(style), sizes=[], seen={};
   (KR.asks.concat(KR.sales)).forEach(function(r){ if(r.style===style && r.option && !seen[r.option]){ seen[r.option]=1; sizes.push(r.option); } }); sizes.sort(sizeCmp);
   var digits=(String(style).match(/\d{4,}/g)||[]);
   var cand=function(q){
     var t=String(q||'').trim().toLowerCase(), G={};
-    S.products.forEach(function(p){ if(!p.sbnPrd) return; var h=(p.name+' '+p.sbnPrd+' '+p.brand+' '+p.option).toLowerCase(), ok = t ? t.split(/\s+/).every(function(w){ return h.indexOf(w)>=0; }) : digits.some(function(d){ return h.indexOf(d)>=0; }); if(ok){ var g=G[p.sbnPrd]||(G[p.sbnPrd]={prd:p.sbnPrd, name:p.name, corp:p.corp, n:0, colors:{}, real:0, stock:0, modes:{}}); g.n++; var c=krColorOf(p); if(c) g.colors[c]=1; var md=stockMode(p); g.modes[md]=(g.modes[md]||0)+1; if(md==='현재고'){ g.real++; g.stock+=Math.max(0,+p.stock||0); } } });
+    S.products.forEach(function(p){ if(!p.sbnPrd) return; if(corpF!=='전체' && p.corp!==corpF) return; var h=(p.name+' '+p.sbnPrd+' '+p.brand+' '+p.option).toLowerCase(), ok = t ? t.split(/\s+/).every(function(w){ return h.indexOf(w)>=0; }) : digits.some(function(d){ return h.indexOf(d)>=0; }); if(ok){ var g=G[p.sbnPrd]||(G[p.sbnPrd]={prd:p.sbnPrd, name:p.name, corp:p.corp, n:0, colors:{}, real:0, stock:0, modes:{}}); g.n++; var c=krColorOf(p); if(c) g.colors[c]=1; var md=stockMode(p); g.modes[md]=(g.modes[md]||0)+1; if(md==='현재고'){ g.real++; g.stock+=Math.max(0,+p.stock||0); } } });
     var L=Object.keys(G).map(function(k){ return G[k]; });
     if (!showAll) L=L.filter(function(g){ return g.real>0; });   // 기본: 재고관리 하는(현재고) 상품만
     return L.sort(function(a,b){ return b.real-a.real || b.stock-a.stock; }).slice(0,30);
   };
-  var sel={prd:cur?cur.sbnPrd:'', color:cur?cur.color:'', sizes:Object.assign({}, (cur&&cur.sizes)||{})}, showAll=false;
+  var sel={prd:cur?cur.sbnPrd:'', color:cur?cur.color:'', sizes:Object.assign({}, (cur&&cur.sizes)||{})}, showAll=false, corpF=(acct==='셀렉트인'||acct==='겐더샵')?acct:'전체';
   drawer('사방넷 상품 연결',
     '<div class="sel" style="margin:0"><div class="nm">'+esc(name)+'</div><div class="meta">크림 품번 <b>'+esc(style)+'</b> · 사이즈 '+esc(sizes.join(', '))+'</div></div>'+
     '<label class="fld" style="margin-top:14px"><span>사방넷 상품 찾기 (상품코드·상품명)</span><input class="inp" id="kmq" placeholder="예) 100439 또는 디키즈 85283" value="'+esc(sel.prd)+'"></label>'+
+    '<div class="seg" id="kmcorp" style="margin:4px 0">'+['전체','겐더샵','셀렉트인'].map(function(c){ return '<button data-v="'+c+'" class="'+(corpF===c?'on':'')+'">'+(c==='전체'?'전체 법인':c)+'</button>'; }).join('')+'</div>'+
     '<label style="display:flex;gap:6px;align-items:center;font-size:13px;color:var(--sub);margin:6px 0"><input type="checkbox" id="kmall"> 가상재고·모음전 상품도 보기 <span class="sm">(기본은 재고관리 하는 현재고 상품만)</span></label>'+
     '<div id="kmc" class="pick" style="max-height:260px;overflow:auto"></div><div id="kmp"></div>',
     (cur?'<button class="btn" id="kmdel">연결 해제</button>':'')+'<button class="btn" onclick="closeDrawer()">취소</button><button class="btn pri" id="kmsave" disabled>연결 저장</button>');
@@ -1478,7 +1479,7 @@ function krMapOpen(style, name){
     document.querySelectorAll('#kmp select[data-z]').forEach(function(x){ x.onchange=function(){ sel.sizes[x.dataset.z]=x.value; drawP(); }; });
     document.querySelectorAll('#kmcol button').forEach(function(b){ b.onclick=function(){ sel.color=b.dataset.v; sel.sizes={}; drawP(); }; });
   };
-  $('kmq').oninput=drawC; $('kmall').onchange=function(){ showAll=this.checked; drawC(); }; drawC(); drawP();
+  $('kmq').oninput=drawC; $('kmall').onchange=function(){ showAll=this.checked; drawC(); }; document.querySelectorAll('#kmcorp button').forEach(function(b){ b.onclick=function(){ corpF=b.dataset.v; document.querySelectorAll('#kmcorp button').forEach(function(x){ x.classList.toggle('on',x===b); }); drawC(); }; }); drawC(); drawP();
   var save=function(prd, color){ var b=$('kmsave'); b.disabled=true; api('krm_map_set',{style:style, sbnPrd:prd, color:color, sizes:prd?sel.sizes:{}}).then(function(j){ KR.maps=j.maps; KR_IDX=null; closeDrawer(); toast(prd?'연결했어요 · '+style+' → '+prd+(color?' '+color:''):'연결을 해제했어요'); krList(); }).catch(function(e){ b.disabled=false; fail(e); }); };
   $('kmsave').onclick=function(){ save(sel.prd, sel.color); };
   if ($('kmdel')) $('kmdel').onclick=function(){ if(confirm('이 연결을 해제할까요?')) save('', ''); };
@@ -1664,7 +1665,7 @@ function krList(){
           '<td class="r num">'+two(+r.lowN, +r.lowI)+'</td>'+
           '<td class="r num">'+two(+r.lastN, +r.lastI)+'</td>'+
           '<td class="r num">'+c2(won(gs.n)+'개', gs.at?won(gs.price)+' · '+esc(gs.at.slice(5,10)):'')+'</td>'+
-          '<td class="c num"><div class="c2" style="align-items:center"><b>'+appCell(g.app,null)+'</b><span><a href="#" class="kmap" data-st="'+esc(r.style)+'" data-nm="'+esc(r.name)+'">'+(krMap(r.style)?esc(krMap(r.style).sbnPrd):'연결')+'</a></span></div></td></tr>';
+          '<td class="c num"><div class="c2" style="align-items:center"><b>'+appCell(g.app,null)+'</b><span><a href="#" class="kmap" data-st="'+esc(r.style)+'" data-nm="'+esc(r.name)+'" data-ac="'+esc(r.account)+'">'+(krMap(r.style)?esc(krMap(r.style).sbnPrd):'연결')+'</a></span></div></td></tr>';
         var KK=['보관','일반'].filter(function(k){ return g.rows.some(function(o){ return o.kind===k; }); });
         return h+(open?KK.map(function(kind){
           var kr=g.rows.filter(function(o){ return o.kind===kind; }), kk=g.k+'|'+kind, ko=!!KF.openK[kk], m=mkt(r,kind);
@@ -1681,7 +1682,7 @@ function krList(){
               '<td class="r num">'+c2(m.low?won(m.low):'—', krDiff(diff, r.account))+'</td>'+
               '<td class="r num">'+c2(m.last?won(m.last):'—','')+'</td>'+
               '<td class="r num">'+(o.sold?c2(o.sold.n30+'개', won(o.sold.price)+' · '+esc(o.sold.at.slice(5,10))):c2('0개','체결 없음'))+'</td>'+
-              '<td class="c num"><a href="#" class="kmap kmap2" data-st="'+esc(r.style)+'" data-nm="'+esc(r.name)+'" title="사방넷 단품 연결">'+appCell(g.app,o.option)+'</a></td></tr>';
+              '<td class="c num"><a href="#" class="kmap kmap2" data-st="'+esc(r.style)+'" data-nm="'+esc(r.name)+'" data-ac="'+esc(r.account)+'" title="사방넷 단품 연결">'+appCell(g.app,o.option)+'</a></td></tr>';
           }).join(''):'');
         }).join(''):'');
       }).join('')+'</tbody></table></div>'+
@@ -1728,7 +1729,7 @@ function krList(){
   }
   el.innerHTML = grpBar(G.map(function(g){ return {items:live?g.rows:g.items}; })) + html + pagerHtml(G.length, KF.page, PG.size).replace('개 ·','개 품번 ·');
   el.querySelectorAll('[data-g]').forEach(function(r){ r.onclick=function(){ KF.open[r.dataset.g]=!KF.open[r.dataset.g]; krList(); }; });
-  el.querySelectorAll('.kmap').forEach(function(a){ a.onclick=function(e){ e.preventDefault(); e.stopPropagation(); krMapOpen(a.dataset.st, a.dataset.nm); }; });
+  el.querySelectorAll('.kmap').forEach(function(a){ a.onclick=function(e){ e.preventDefault(); e.stopPropagation(); krMapOpen(a.dataset.st, a.dataset.nm, a.dataset.ac); }; });
   el.querySelectorAll('[data-kk]').forEach(function(r){ r.onclick=function(e){ e.stopPropagation(); KF.openK[r.dataset.kk]=!KF.openK[r.dataset.kk]; krList(); }; });
   bindGrpBar(el, KF, krList);
   bindPager(el, function(n){ KF.page=n; krList(); });
