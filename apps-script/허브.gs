@@ -60,6 +60,7 @@ function doPost(e) {
       case 'sbn_sales_check': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 사방넷 API(주문일) 기준 일별·법인·쇼핑몰 집계 — 매출판 대조용 (읽기 전용)
         return hubOut_(hubSbnSalesRange_(req.from, req.to));
       case 'sales': return hubOut_(hubSales_(me));
+      case 'ops_today': return hubOut_(hubOpsToday_(req.force));
       case 'krm_req': return hubOut_(hubLocked_(function () { hubConfigSet_('krm_req', String(Date.now()), me); return { ok: true }; }));   // 휴대폰에서 [지금 동기화] → PC 크림 창이 받아서 실행
       case 'krm_poll': var kc = hubConfig_(); return hubOut_({ req: kc.krm_req ? Number(kc.krm_req.value) || 0 : 0, by: kc.krm_req ? kc.krm_req.by : '' });
       case 'sbn_get': if (!admin) return hubOut_({ error: '관리자만 조회할 수 있습니다' });   // 읽기 전용 (GET)
@@ -703,6 +704,43 @@ function hubSbnSalesRange_(from, to) {
     o[3]++; o[4] += Number(x.ORDER_TOT_AMT) || 0;
   });
   return { n: all.length, rows: Object.keys(g).sort().map(function (k) { return g[k]; }) };
+}
+/* ===================== 오늘 처리 현황 (홈) =====================
+ * 사방넷 API(조회 전용)로 쇼핑몰 계정별 오늘 주문(주문일)·수집(수집일)·발송(출고일)과 최근 7일 하루 평균 주문을 함께 냄.
+ * 평소 주문이 있는 계정인데 오늘 주문이 0건이면 '수집 확인' 경고 → 셀렉트인 계정 수집 누락 같은 일을 바로 알 수 있게.
+ * 규칙은 매출판과 같음: 취소 제외, 반품·교환 재생성 행 제외, 설정 ③ 쇼핑몰ID→법인('제외' 빼기). 5분 캐시. */
+function hubOpsToday_(force) {
+  var tz = 'Asia/Seoul', today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd'), cache = CacheService.getScriptCache();
+  if (!force) { var hit = cache.get('ops_today'); if (hit) { try { var c = JSON.parse(hit); if (c.today === today) return c; } catch (e) {} } }
+  var ss = SpreadsheetApp.openById(HUB_SALES_ID), corp = {};
+  ss.getSheetByName('설정').getRange('A57:B120').getValues().forEach(function (r) { var id = String(r[0]).trim(); if (id) corp[id] = String(r[1]).trim(); });
+  var ymd = function (k) { return Utilities.formatDate(new Date(Date.now() + k * 864e5), tz, 'yyyyMMdd'); };
+  var fetch = function (cond, a, b) {
+    var all = [], page = 1;
+    while (page <= 30) {
+      var r = hubSbnCall_('POST', '/v3/sb/order', { dateSearchCondition: cond, startDate: a, endDate: b, updateOrderStsYn: 'N', page: page, perPage: 1000,
+        responseItems: ['SB_ORD_NO', 'ORDER_STATUS', 'SHOP_NM', 'SHOP_LOGIN_ID', 'ORDER_TOT_AMT', 'ORG_SB_ORD_NO'] });
+      var dt = (r && r.data) || {}; all = all.concat(dt.results || []); if (!dt.hasNext) break; page++;
+    }
+    return all.filter(function (x) { return !/CANCEL/i.test(String(x.ORDER_STATUS)) && !(x.ORG_SB_ORD_NO && String(x.ORG_SB_ORD_NO) !== '0') && corp[String(x.SHOP_LOGIN_ID || '').trim()] !== '제외'; });
+  };
+  var A = {}, acc = function (x) {
+    var id = String(x.SHOP_LOGIN_ID || '').trim(), nm = String(x.SHOP_NM || '').trim(), k = nm + '|' + id;
+    return A[k] || (A[k] = { shop: nm, id: id, corp: corp[id] || '확인필요', ord: 0, ordAmt: 0, reg: 0, send: 0, sendAmt: 0, wk: 0 });
+  };
+  try {
+    var t = ymd(0);
+    fetch(2, t, t).forEach(function (x) { var o = acc(x); o.ord++; o.ordAmt += Number(x.ORDER_TOT_AMT) || 0; });
+    fetch(1, t, t).forEach(function (x) { acc(x).reg++; });
+    fetch(7, t, t).forEach(function (x) { var o = acc(x); o.send++; o.sendAmt += Number(x.ORDER_TOT_AMT) || 0; });
+    fetch(2, ymd(-7), ymd(-1)).forEach(function (x) { acc(x).wk++; });
+  } catch (e) { return { error: '사방넷 조회 실패: ' + String(e.message || e).slice(0, 150) }; }
+  var hour = Number(Utilities.formatDate(new Date(), tz, 'H'));
+  var rows = Object.keys(A).map(function (k) { var o = A[k]; o.avg = Math.round(o.wk / 7 * 10) / 10; o.warn = hour >= 13 && o.avg >= 2 && o.ord === 0; return o; })
+    .sort(function (a, b) { return (b.warn - a.warn) || (b.ordAmt - a.ordAmt) || (b.avg - a.avg); });
+  var out = { today: today, at: Utilities.formatDate(new Date(), tz, 'HH:mm'), rows: rows };
+  try { cache.put('ops_today', JSON.stringify(out), 300); } catch (e) {}
+  return out;
 }
 function hubSalesHm_(x, tz) { return x instanceof Date ? Utilities.formatDate(x, tz, 'HH:mm') : String(x || '').trim(); }
 
