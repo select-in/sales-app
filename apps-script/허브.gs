@@ -17,14 +17,14 @@
  */
 
 var HUB_TABS = {
-  상품: ['id', 'SKU', '바코드', '상품명', '브랜드', '옵션', '법인', '구분', '원가', '판매가', '재고', '안전재고', '위치', '메모', '수정일', '수정자', '사방넷상품코드', '단품코드', '이미지', '사방넷상태', '카테고리', '등록상태', '등록정보', '바코드반영대기', '재고관리', '가상재고', '담당자'],
+  상품: ['id', 'SKU', '바코드', '상품명', '브랜드', '옵션', '법인', '구분', '원가', '판매가', '재고', '안전재고', '위치', '메모', '수정일', '수정자', '사방넷상품코드', '단품코드', '이미지', '사방넷상태', '카테고리', '등록상태', '등록정보', '바코드반영대기', '재고관리', '가상재고', '담당자', '연결원본', '상품구분'],
   재고이력: ['일시', '상품id', 'SKU', '상품명', '구분', '수량', '변경후재고', '메모', '작업자'],
   원가이력: ['일시', '상품id', 'SKU', '상품명', '이전원가', '새원가', '작업자'],
   직원: ['이름', '권한', 'PIN', '사용', '등록일'],
   설정: ['키', '값', '수정일', '수정자'],
   채널출고: ['일시', '배치', '채널', '계정', '구분', '상품id', 'SKU', '상품명', '옵션', '바코드', '수량', '주문번호', '판매가', '수수료율', '정산예상', '재고반영', '작업자', '메모']
 };
-var HUB_P_FIELDS = ['id', 'sku', 'barcode', 'name', 'brand', 'option', 'corp', 'type', 'cost', 'price', 'stock', 'safety', 'loc', 'memo', 'updatedAt', 'updatedBy', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg', 'barPending', 'stocMng', 'vstock', 'owner'];
+var HUB_P_FIELDS = ['id', 'sku', 'barcode', 'name', 'brand', 'option', 'corp', 'type', 'cost', 'price', 'stock', 'safety', 'loc', 'memo', 'updatedAt', 'updatedBy', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg', 'barPending', 'stocMng', 'vstock', 'owner', 'link', 'setDiv'];
 var HUB_TOKEN_DAYS = 90;
 
 /* ===================== 진입점 ===================== */
@@ -227,7 +227,7 @@ function hubProductObj_(v) {
   var o = {};
   HUB_P_FIELDS.forEach(function (f, i) { o[f] = v[i] instanceof Date ? Utilities.formatDate(v[i], 'Asia/Seoul', 'yyyy-MM-dd HH:mm') : v[i]; });
   ['cost', 'price', 'stock', 'safety', 'vstock'].forEach(function (f) { o[f] = hubNum_(o[f]); });
-  ['id', 'sku', 'barcode', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg', 'barPending', 'stocMng', 'owner'].forEach(function (f) { o[f] = String(o[f] == null ? '' : o[f]); });
+  ['id', 'sku', 'barcode', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg', 'barPending', 'stocMng', 'owner', 'link', 'setDiv'].forEach(function (f) { o[f] = String(o[f] == null ? '' : o[f]); });
   return o;
 }
 function hubProducts_() {
@@ -404,6 +404,8 @@ function hubSbnFlags_(rows, me) {
     if (r.stocMng === 'Y' || r.stocMng === 'N') p.stocMng = r.stocMng;
     if (r.vstock != null && r.vstock !== '') p.vstock = Math.round(hubNum_(r.vstock));
     if (r.owner && !p.owner) { p.owner = hubStr_(r.owner, 30); ownerSet++; }
+    if (r.link !== undefined) p.link = hubStr_(r.link, 40);
+    if (r.setDiv !== undefined) p.setDiv = hubStr_(r.setDiv, 4);
     if (r.cost != null && r.cost !== '') { var nc = hubNum_(r.cost); if (nc !== p.cost) { logs.push(['원가이력', [now, p.id, p.sku, p.name, p.cost, nc, '사방넷']]); p.cost = nc; costN++; } }
     if (r.price != null && r.price !== '') { var np = hubNum_(r.price); if (np !== p.price) { p.price = np; priceN++; } }
     var c = byCorp[p.corp] || (byCorp[p.corp] = { y: 0, n: 0 });
@@ -433,6 +435,11 @@ function hubOwnerBulk_(rows, me) {
  *  - 채널출고 탭에 한 줄씩 기록 (수수료율로 정산 예상 금액 계산)
  * req: {channel:'KREAM'|'POIZON', account:'겐더샵'|'셀렉트인', kind:'일반판매'|'보관판매', memo, items:[{id, qty, orderNo, price}]} */
 var HUB_CH_FEE = { KREAM: 0.05, POIZON: 0.10 };
+function hubFindByKey_(key) {
+  var r = hubRows_('상품'), ip = HUB_P_FIELDS.indexOf('sbnPrd'), is = HUB_P_FIELDS.indexOf('sbnSku');
+  for (var i = 0; i < r.vals.length; i++) if (String(r.vals[i][ip]) + '-' + String(r.vals[i][is]) === key) return { row: i + 2, p: hubProductObj_(r.vals[i]), sh: r.sh };
+  return null;
+}
 function hubChannelShip_(req, me) {
   var ch = req.channel === 'POIZON' ? 'POIZON' : 'KREAM';
   var acct = req.account === '셀렉트인' ? '셀렉트인' : '겐더샵';
@@ -440,7 +447,9 @@ function hubChannelShip_(req, me) {
   var items = (req.items || []).filter(function (it) { return it && it.id && Math.round(hubNum_(it.qty)) > 0; });
   if (!items.length) return { error: '출고할 상품이 없습니다' };
   var r = hubRows_('상품'), byId = {};
-  r.vals.forEach(function (v, i) { if (v[0]) byId[String(v[0])] = { row: i + 2, p: hubProductObj_(v) }; });
+  var byKey = {};
+  r.vals.forEach(function (v, i) { if (v[0]) { var o = { row: i + 2, p: hubProductObj_(v) }; byId[String(v[0])] = o; if (o.p.sbnPrd) byKey[o.p.sbnPrd + '-' + o.p.sbnSku] = o; } });
+  items.forEach(function (it) { var h = byId[it.id]; if (h && h.p.link && byKey[h.p.link]) { it.via = h.p.sbnPrd + '-' + h.p.sbnSku; it.id = byKey[h.p.link].p.id; } });
   var miss = items.filter(function (it) { return !byId[it.id]; });
   if (miss.length) return { error: '앱에서 찾을 수 없는 상품이 있어요 (' + miss.length + '개)' };
   var now = hubNow_(), batch = Utilities.formatDate(new Date(), 'Asia/Seoul', 'MMdd-HHmmss'), fee = HUB_CH_FEE[ch];
@@ -448,7 +457,7 @@ function hubChannelShip_(req, me) {
   items.forEach(function (it) {
     var h = byId[it.id], p = h.p, q = Math.round(hubNum_(it.qty)), price = hubNum_(it.price);
     var real = p.stocMng !== 'N' && p.type !== '위탁';
-    var memo = ch + ' ' + kind + (it.orderNo ? ' · ' + hubStr_(it.orderNo, 60) : '') + ' · 배치 ' + batch;
+    var memo = ch + ' ' + kind + (it.orderNo ? ' · ' + hubStr_(it.orderNo, 60) : '') + (it.via ? ' · 모음전 ' + it.via : '') + ' · 배치 ' + batch;
     if (real) {
       p.stock = p.stock - q;
       r.sh.getRange(h.row, stockCol).setValue(p.stock);
@@ -476,6 +485,7 @@ function hubChannelList_(limit) {
 function hubStockMove_(req, me) {
   var hit = hubFindProduct_(req.id);
   if (!hit) return { error: '상품을 찾을 수 없습니다' };
+  if (hit.p.link) { var org = hubFindByKey_(hit.p.link); if (!org) return { error: '모음전(연결상품)인데 원본 ' + hit.p.link + '을 앱에서 찾을 수 없어요' }; req.memo = '모음전 ' + hit.p.sbnPrd + '-' + hit.p.sbnSku + (req.memo ? ' · ' + req.memo : ''); hit = org; }
   if (hit.p.stocMng === 'N') return { error: '사방넷에서 「재고관리 사용안함」인 상품이라 입출고를 기록하지 않아요 (가상재고)' };
   var type = { in: '입고', out: '출고', adjust: '실사조정' }[req.type];
   if (!type) return { error: '구분이 올바르지 않습니다' };
