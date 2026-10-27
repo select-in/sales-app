@@ -521,11 +521,10 @@ function hubKrmSync_(req, me) {
     req.sales.forEach(function (o) {
       if (!o || !o.oid) return;
       var row = hubKrmRow_(o, HUB_KRM_S, acct, now), k = acct + '|' + row[1], i = idx[k];
-      if (i != null) {
-        var old = s.vals[i];
-        row = row.map(function (v, j) { return v === '' ? old[j] : v; });   // 비어 있는 값은 기존 값 유지 (정산 내역 ↔ 진행 내역 합치기)
-        s.vals[i] = row; upd++;
-      } else { idx[k] = s.vals.length + ins.length; ins.push(row); }
+      var merge = function (old) { return row.map(function (v, j) { return v === '' ? old[j] : v; }); };   // 비어 있는 값은 기존 값 유지 (정산 내역 ↔ 진행 내역 합치기)
+      if (i != null && i >= 0) { s.vals[i] = merge(s.vals[i]); upd++; }
+      else if (i != null) { ins[-i - 1] = merge(ins[-i - 1]); }
+      else { ins.push(row); idx[k] = -ins.length; }
     });
     if (s.vals.length) s.sh.getRange(2, 1, s.vals.length, w2).setValues(s.vals);
     if (ins.length) s.sh.getRange(s.vals.length + 2, 1, ins.length, w2).setValues(ins);
