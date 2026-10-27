@@ -141,7 +141,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 .tbl .nm{font-weight:600}
 .tbl .sm{font-size:12.5px;color:var(--mute)}
 .tblwrap{overflow-x:auto;margin:0 -20px;padding:0 20px}
-.ktbl{table-layout:fixed;min-width:960px}.ktbl td{white-space:nowrap}.ktbl td:first-child{white-space:normal}
+.ktbl{table-layout:fixed;min-width:960px}.ktbl th,.ktbl td.r,.ktbl td.c,.ktbl td:nth-child(2){text-align:center!important}.ktbl td.r .c2,.ktbl td.c .c2,.ktbl td:nth-child(2) .c2{align-items:center}.ktbl th:first-child{text-align:left!important}.ktbl td{white-space:nowrap}.ktbl td:first-child{white-space:normal}
 .c2{display:flex;flex-direction:column;gap:2px;line-height:1.3;min-width:0}.c2>b{font-weight:700;white-space:nowrap}.c2>span{font-size:12px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tbl .r .c2{align-items:flex-end}
 .nm2>b{overflow:hidden;text-overflow:ellipsis;font-weight:600}.c2 .ell{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .c2 em{font-style:normal;font-weight:600}.c2 em.ok,em.ok{color:var(--accent);font-style:normal}.c2 em.wn,em.wn{color:var(--amber);font-style:normal}
@@ -331,7 +331,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-28z';
+var APP_BUILD = '2026-10-29a';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -1435,6 +1435,11 @@ function krMapOpen(style, name){
   $('kmsave').onclick=function(){ save(sel.prd, sel.color); };
   if ($('kmdel')) $('kmdel').onclick=function(){ if(confirm('이 연결을 해제할까요?')) save('', ''); };
 }
+function krDiff(diff, acct){   // 내 입찰가 - 크림 최저가 → 최저(겐) / 겐 +5,000 ↑ / 겐 -3,000 ↓
+  if (diff==null) return ''; var a=acct==='셀렉트인'?'셀':'겐';
+  if (diff===0) return '<em class="ok">최저('+a+')</em>';
+  return diff>0 ? '<em class="wn">'+a+' +'+won(diff)+' ↑</em>' : '<em class="ok">'+a+' -'+won(-diff)+' ↓</em>';
+}
 function krKind(r){ return /보관/.test(r.kind||'') ? '보관' : '일반'; }
 function krBase(){
   var a=function(r){ return (KF.acct==='전체'||r.account===KF.acct) && (KF.kind==='전체'||krKind(r)===KF.kind); };
@@ -1517,7 +1522,7 @@ function krDraw(){
   var tabs=[['live','입찰중'],['prog','진행중'],['settle','정산'],['cancel','취소']];
   box.innerHTML =
     '<div class="grid g4">'+
-      '<div class="kpi"><div class="k"><i class="ti ti-gavel"></i>걸어둔 수량</div><div class="v num">'+won(A.length)+'<small>개</small></div><div class="sm">일반 '+won(nN)+' · 보관 '+won(nI)+' · 1위 '+won(first)+'</div></div>'+
+      '<div class="kpi"><div class="k"><i class="ti ti-gavel"></i>체결수량</div><div class="v num">'+won(A.length)+'<small>개</small></div><div class="sm">일반 '+won(nN)+' · 보관 '+won(nI)+' · 1위 '+won(first)+'</div></div>'+
       '<div class="kpi '+(ship.length?'amber':'')+'"><div class="k"><i class="ti ti-truck"></i>발송 필요 <small style="font-weight:400">(일반)</small></div><div class="v num">'+won(ship.length)+'<small>건</small></div><div class="sm">진행중 '+won(prog.length)+'건</div></div>'+
       '<div class="kpi"><div class="k"><i class="ti ti-coin"></i>이번 달 정산</div><div class="v num">'+won(Math.round(sum(mon,'payout')/1e4))+'<small>만원</small></div><div class="sm">'+won(mon.length)+'건 체결</div></div>'+
       '<div class="kpi"><div class="k"><i class="ti ti-calendar-dollar"></i>지급 예정</div><div class="v num">'+won(Math.round(sum(wait,'payout')/1e4))+'<small>만원</small></div><div class="sm">'+won(wait.length)+'건</div></div>'+
@@ -1598,7 +1603,7 @@ function krList(){
       var pre=g.r.account+'|'+g.r.style+'|'; Object.keys(SM).forEach(function(k){ if(k.indexOf(pre)===0 && !g.rows.some(function(o){ return pre+o.option+'|'+o.kind===k; })){ n+=SM[k].n30; if(SM[k].at>at){ at=SM[k].at; pr=SM[k].price; } } });
       return {n:n, at:at, price:pr}; };
     html='<div class="dtable tblwrap"><table class="tbl ptbl ktbl"><colgroup><col><col style="width:96px"><col style="width:112px"><col style="width:120px"><col style="width:120px"><col style="width:120px"><col style="width:120px"><col style="width:84px"></colgroup>'+
-      '<thead><tr><th>상품 · 사이즈</th><th>계정</th><th class="r">걸어둔 수량</th><th class="r">내 입찰가</th><th class="r">크림 최저가</th><th class="r">크림 최근 체결가</th><th class="r">내 체결 (30일)</th><th class="c">앱 재고</th></tr></thead><tbody>'+
+      '<thead><tr><th>상품 · 사이즈</th><th>계정</th><th class="r">체결수량</th><th class="r">내 입찰가</th><th class="r">크림 최저가</th><th class="r">크림 최근 체결가</th><th class="r">30일 판매</th><th class="c">앱 재고</th></tr></thead><tbody>'+
       CS.map(function(g){
         var r=g.r, open=(!!KF.allOpen)!==(!!KF.open[g.k]), gs=gSold(g);
         var h='<tr class="click grp'+(open?' open':'')+'" data-g="'+esc(g.k)+'">'+
@@ -1623,7 +1628,7 @@ function krList(){
             return '<tr class="sub"><td><div class="subnm c2"><b>'+esc(o.option)+'</b></div></td><td></td>'+
               '<td class="r num">'+c2(o.n+'개','')+'</td>'+
               '<td class="r num">'+c2(price(o), rankTxt(o))+'</td>'+
-              '<td class="r num">'+c2(m.low?won(m.low):'—', diff!=null&&diff>0?'<em class="wn">내가 +'+won(diff)+'</em>':(diff!=null?'<em class="ok">내가 최저</em>':''))+'</td>'+
+              '<td class="r num">'+c2(m.low?won(m.low):'—', krDiff(diff, r.account))+'</td>'+
               '<td class="r num">'+c2(m.last?won(m.last):'—','')+'</td>'+
               '<td class="r num">'+(o.sold?c2(o.sold.n30+'개', won(o.sold.price)+' · '+esc(o.sold.at.slice(5,10))):c2('0개','체결 없음'))+'</td>'+
               '<td class="c num">'+appCell(g.app,o.option)+'</td></tr>';
@@ -1633,7 +1638,7 @@ function krList(){
       '<div class="mcards">'+CS.map(function(g){
         var r=g.r, open=(!!KF.allOpen)!==(!!KF.open[g.k]), gs=gSold(g);
         return '<div class="mc grp" data-g="'+esc(g.k)+'"><div class="m"><div class="t">'+esc(r.name)+'</div><div class="s">'+esc([r.account,r.style].filter(Boolean).join(' · '))+' · <b class="optc">사이즈 '+g.rows.length+' '+(open?'▲':'▼')+'</b></div>'+
-          '<div class="s num">걸어둔 '+won(g.items.length)+'개 ('+split(g.nN,g.nI)+') · 30일 체결 '+won(gs.n)+'개</div>'+
+          '<div class="s num">체결수량 '+won(g.items.length)+'개 ('+split(g.nN,g.nI)+') · 30일 판매 '+won(gs.n)+'개</div>'+
           '<div class="s num">크림 최저 '+[r.lowN?'일반 '+won(r.lowN):'', r.lowI?'보관 '+won(r.lowI):''].filter(Boolean).join(' · ')+'</div></div>'+
           '<div class="e num"><b>'+(g.first?'1위 '+g.first:'')+'</b></div></div>'+
           (open?'<div class="mcsub">'+(function(){ var pk=''; return g.rows.map(function(o){ var m=mkt(r,o.kind), hd='', kk=g.k+'|'+o.kind; if(o.kind!==pk){ pk=o.kind; var kr=g.rows.filter(function(x){ return x.kind===o.kind; }); hd='<div class="kmidm click" data-kk="'+esc(kk)+'">'+kpill(o.kind)+' <b>'+(o.kind==='보관'?'보관판매':'일반판매')+'</b> <span class="optc">사이즈 '+kr.length+' · '+kr.reduce(function(t,x){ return t+x.n; },0)+'개 '+(KF.openK[kk]?'▲':'▼')+'</span></div>'; } if(!KF.openK[kk]) return hd; return hd+'<div class="mc"><div class="m"><div class="t" style="font-size:14px"><b>'+esc(o.option)+'</b> '+o.n+'개 · '+rankTxt(o)+'</div><div class="s num">내 입찰 <b>'+price(o)+'</b> · 크림 최저 '+(m.low?won(m.low):'—')+' · 최근 체결 '+(m.last?won(m.last):'—')+'</div><div class="s num">30일 체결 '+(o.sold?o.sold.n30+'개 · 최근 '+won(o.sold.price):'0개')+' · 앱 재고 '+appCell(g.app,o.option)+'</div></div></div>'; }).join(''); })()+'</div>':'');
