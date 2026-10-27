@@ -601,6 +601,60 @@ function hubAuthorize() {
   Logger.log('권한 승인 완료. 사진 폴더: ' + hubPhotoFolder_().getUrl());
 }
 
+/* ===================== 사방넷 API (중계 서버 경유) =====================
+ * 사방넷 API는 등록된 고정 IP에서만 호출 가능 → 카페24 웹호스팅(222.122.39.21)의 relay.php 를 거쳐 호출
+ * 스크립트 속성: SBN_SECRET (프로덕션 시크릿, 필수) · SBN_SANDBOX_SECRET (선택) · HUB_RELAY_KEY (자동 생성)
+ */
+var HUB_SBN = {
+  clientCd: 'ebb78d9a-cc14-4849-acfe-53aab0a9c4da',   // 개발자센터 앱 코드 (공개돼도 되는 식별자)
+  svc: 'mw76946',                                      // 사방넷 서비스코드
+  relay: 'https://sln0217.mycafe24.com/sbapi/relay.php'
+};
+function hubRelayKey_() {
+  var p = PropertiesService.getScriptProperties(), k = p.getProperty('HUB_RELAY_KEY');
+  if (!k) { k = hubRandom_(48); p.setProperty('HUB_RELAY_KEY', k); }
+  return k;
+}
+function hubRelay_(payload) {
+  payload.relayKey = hubRelayKey_();
+  var res = UrlFetchApp.fetch(HUB_SBN.relay, { method: 'post', contentType: 'application/json', payload: JSON.stringify(payload), muteHttpExceptions: true });
+  var t = res.getContentText();
+  try { return JSON.parse(t); } catch (e) { return { error: 'relay_http_' + res.getResponseCode(), raw: t.slice(0, 300) }; }
+}
+function hubSbnToken_(mode) {
+  mode = mode === 'SANDBOX' ? 'SANDBOX' : 'PRODUCTION';
+  var cache = CacheService.getScriptCache(), ck = 'sbn_tok_' + mode, hit = cache.get(ck);
+  if (hit) return hit;
+  var secret = PropertiesService.getScriptProperties().getProperty(mode === 'SANDBOX' ? 'SBN_SANDBOX_SECRET' : 'SBN_SECRET');
+  if (!secret) throw new Error('사방넷 시크릿이 없습니다. 스크립트 속성 ' + (mode === 'SANDBOX' ? 'SBN_SANDBOX_SECRET' : 'SBN_SECRET') + ' 를 넣어주세요');
+  var r = hubRelay_({ action: 'token', mode: mode, clientCd: HUB_SBN.clientCd, secret: secret });
+  if (!r.ok || !r.body || !r.body.access_token) throw new Error('사방넷 토큰 발급 실패: ' + JSON.stringify(r.body || r).slice(0, 300));
+  var ttl = Math.max(60, Math.min(21600, (Number(r.body.expires_in) || 10800) - 1900));   // 만료 30분 전에 새로 받음
+  cache.put(ck, r.body.access_token, ttl);
+  return r.body.access_token;
+}
+/** 사방넷 API 호출 — 실패하면 예외 */
+function hubSbnCall_(method, path, body, mode) {
+  var r = hubRelay_({ action: 'call', mode: mode || 'PRODUCTION', token: hubSbnToken_(mode), svc: HUB_SBN.svc, method: method, path: path, body: body == null ? null : body });
+  if (r.status === 401) { CacheService.getScriptCache().remove('sbn_tok_' + (mode === 'SANDBOX' ? 'SANDBOX' : 'PRODUCTION')); }
+  if (!r.ok) throw new Error('사방넷 API 오류 ' + (r.status || '') + ' ' + JSON.stringify(r.body || r.error || r).slice(0, 400));
+  return r.body;
+}
+/** 연결 점검 (편집기에서 실행) — 중계 서버 IP · 토큰 · 읽기 전용 호출(쇼핑몰 목록) */
+function hubSbnTest() {
+  var ip = hubRelay_({ action: 'ip' });
+  Logger.log('중계 서버: ' + JSON.stringify(ip));
+  var p = PropertiesService.getScriptProperties();
+  ['SANDBOX', 'PRODUCTION'].forEach(function (m) {
+    if (!p.getProperty(m === 'SANDBOX' ? 'SBN_SANDBOX_SECRET' : 'SBN_SECRET')) { Logger.log(m + ': 시크릿 없음 — 건너뜀'); return; }
+    try {
+      hubSbnToken_(m); Logger.log(m + ': 토큰 발급 성공');
+      var malls = hubSbnCall_('GET', '/v3/sb/mall/SHOP', null, m);
+      Logger.log(m + ': 쇼핑몰 ' + (malls && malls.totalCount) + '개 조회 성공');
+    } catch (e) { Logger.log(m + ': ' + e.message); }
+  });
+}
+
 /* ===================== 설정 ===================== */
 function hubConfig_() {
   var o = {};
