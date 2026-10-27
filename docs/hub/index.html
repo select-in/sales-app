@@ -320,7 +320,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-28e';
+var APP_BUILD = '2026-10-28f';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -960,7 +960,8 @@ function drawSel(){
     '<div class="stepper" style="margin-top:6px"><button id="sm">−</button><input id="sqty" class="num" inputmode="numeric" value="'+MV.qty+'"><button id="sp">+</button></div>'+
     '<div class="preview" id="sprev"></div>'+
     '<input class="inp" id="smemo" placeholder="메모 (선택) — 예) 거래처명, 사유" style="margin-top:12px">'+
-    '<button class="btn pri lg" id="sgo" style="width:100%;margin-top:12px"></button></div>';
+    '<button class="btn pri lg" id="sgo" style="width:100%;margin-top:12px"></button>'+
+    (MV.type==='in'&&p.sbnPrd?'<button class="btn" id="snewopt" style="width:100%;margin-top:8px"><i class="ti ti-plus"></i>이 품번에 새 컬러·옵션 추가하며 입고</button>':'')+'</div>';
   var upd = function(){
     var q = Math.max(0, Math.round(+$('sqty').value.replace(/[^\d]/g,'')||0)); MV.qty = q;
     var aft = MV.type==='in'?p.stock+q:MV.type==='out'?p.stock-q:q;
@@ -972,6 +973,7 @@ function drawSel(){
   $('sp').onclick = function(){ $('sqty').value = (+$('sqty').value||0)+1; upd(); };
   $('sclr').onclick = function(){ MV.id=null; $('ssel').innerHTML=''; $('sq').focus(); };
   $('sgo').onclick = function(){ commitMove(MV.qty, $('smemo').value); };
+  if ($('snewopt')) $('snewopt').onclick = function(){ openOptionAdd(p); };
   $('sqty').onkeydown = function(e){ if(e.key==='Enter') $('sgo').click(); };
   upd();
 }
@@ -989,6 +991,27 @@ function sbnFlush(){
     var d=(j.done||[]).length, f=(j.failed||[]).length;
     toast(d ? '사방넷 재고 반영 '+d+'건'+(f?' · 실패 '+f+'건':'')+' ('+j.done.slice(0,2).map(function(z){ return z.option+' '+z.qty; }).join(', ')+(d>2?' …':'')+')' : '사방넷 반영 실패: '+((j.failed||[])[0]||(j.skipped||[])[0]||''), !d);
   }).catch(function(e){ toast('사방넷 재고 반영 실패: '+(e.message||''), true); });
+}
+function openOptionAdd(p){
+  var sibs = S.products.filter(function(x){ return x.sbnPrd===p.sbnPrd; }).map(function(x){ return x.option||'단품'; });
+  drawer('새 컬러·옵션 추가 · '+esc(p.name),
+    '<div class="sel" style="margin:0 0 14px"><div class="nm">'+esc(p.name)+'</div><div class="meta">사방넷 '+esc(p.sbnPrd)+' · 지금 옵션 '+sibs.length+'개: '+esc(sibs.slice(0,8).join(', '))+(sibs.length>8?' …':'')+'</div></div>'+
+    '<div class="row2"><label class="fld"><span>컬러</span><input class="inp" id="nac" placeholder="예) 네이비"></label><label class="fld"><span>사이즈</span><input class="inp" id="nas" placeholder="예) L"></label></div>'+
+    '<div class="row2"><label class="fld"><span>입고 수량</span><input class="inp r num" id="naq" inputmode="numeric" value="1"></label>'+
+    '<label class="fld"><span>바코드</span><div class="scanrow"><input class="inp num" id="nab" inputmode="numeric"><button type="button" class="btn pri" id="nascan"><i class="ti ti-scan"></i></button></div></label></div>'+
+    '<p style="font-size:13px;color:var(--mute);margin:0">사방넷 상품 '+esc(p.sbnPrd)+'에 단품으로 바로 추가되고, 앱에도 새 옵션 줄과 입고 기록이 생겨요.</p>',
+    '<button class="btn" onclick="closeDrawer()">취소</button><button class="btn pri" id="nago"><i class="ti ti-plus"></i>옵션 추가 + 입고</button>');
+  $('nascan').onclick = function(){ openScanner('새 옵션 바코드', function(code){ $('nab').value=code; if(navigator.vibrate) navigator.vibrate(40); }); };
+  $('nago').onclick = function(){
+    var b=this, c=$('nac').value.trim(), sz=$('nas').value.trim(), q=+String($('naq').value).replace(/[^\d]/g,'')||0;
+    if(!c && !sz) return toast('컬러나 사이즈를 입력하세요',true);
+    b.disabled=true; b.textContent='사방넷에 추가 중…';
+    api('option_add',{id:p.id, color:c, size:sz, qty:q, barcode:$('nab').value.trim()}).then(function(j){
+      S.products.push(j.product); if (j.move) S.history.unshift(j.move); persist(); closeDrawer();
+      toast('새 옵션 추가 · '+j.product.option+' '+q+'개 입고 (사방넷 '+j.product.sbnPrd+'-'+j.product.sbnSku+')');
+      MV.id=null; route();
+    }).catch(function(e){ b.disabled=false; b.innerHTML='<i class="ti ti-plus"></i>옵션 추가 + 입고'; fail(e); });
+  };
 }
 function commitMove(qty, memo){
   if (moving) return; moving = true;

@@ -61,6 +61,7 @@ function doPost(e) {
       case 'barcode_set': return hubOut_(hubLocked_(function () { return hubBarcodeSet_(req, me); }));
       case 'reg_send': return hubOut_(hubLocked_(function () { return hubRegSend_(req, me); }));
       case 'sbn_stock_push': return hubOut_(hubSbnStockPush_(req.ids || [], me));
+      case 'option_add': return hubOut_(hubLocked_(function () { return hubOptionAdd_(req, me); }));
       case 'reg_save': return hubOut_(hubLocked_(function () { return hubRegSave_(req, me); }));
       case 'stock_move': return hubOut_(hubLocked_(function () { return hubStockMove_(req, me); }));
       case 'history': return hubOut_({ history: hubHistory_(req.id, 300) });
@@ -768,10 +769,10 @@ function hubRegPayload_(p, reg) {
     var a = String(o || '').split(':'); return { color: hubStr_(a[0], 40), size: hubStr_(a[1], 40), qty: 0, barcode: '' };
   }).filter(function (o) { return o.color || o.size; });
   var hasC = opts.some(function (o) { return o.color; }), hasS = opts.some(function (o) { return o.size; });
-  var oname = hasC && hasS ? '컬러:사이즈' : hasC ? '컬러' : '사이즈';
+  var oname = hasC && hasS ? '컬러/사이즈' : hasC ? '컬러' : '사이즈';   // 사방넷은 ':'를 '/'로 바꿔 저장 → 처음부터 '/' 사용
   var stock = Math.max(0, Math.round(hubNum_(reg.stock != null ? reg.stock : p.stock)));
   var options = opts.length ? opts.map(function (o, i) {
-    return { optionName: oname, optionDetailName: hasC && hasS ? (o.color || '-') + ':' + (o.size || '-') : (o.color || o.size), stockQuantity: o.qty, additionalAmount: 0, optionSupplyStatusCode: 'SALE', barcode: o.barcode || (opts.length === 1 ? (p.barcode || '') : ''), safetyStockQuantity: 0 };
+    return { optionName: oname, optionDetailName: hasC && hasS ? (o.color || '-') + '/' + (o.size || '-') : (o.color || o.size), stockQuantity: o.qty, additionalAmount: 0, optionSupplyStatusCode: 'SALE', barcode: o.barcode || (opts.length === 1 ? (p.barcode || '') : ''), safetyStockQuantity: 0 };
   }) : [{ optionName: '단품', optionDetailName: '단품', stockQuantity: stock, additionalAmount: 0, optionSupplyStatusCode: 'SALE', barcode: p.barcode || '', safetyStockQuantity: 0 }];
   var photos = (reg.photos || []).filter(function (x) { return x && x.url; }).slice(0, 10);
   var esc = function (t) { return String(t || '').replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); };
@@ -828,7 +829,7 @@ function hubRegSplitOptions_(base, options, code, sts, me, regQty) {
   var first = !byKey[code + '-0002'];   // 처음 나눌 때만 재고를 옵션 수량으로 맞춤 (이후엔 입출고 기준)
   options.forEach(function (o, i) {
     var sku = ('000' + (i + 1)).slice(-4), key = code + '-' + sku, qty = first ? (o.stockQuantity != null ? o.stockQuantity : (regQty && regQty[i] != null ? regQty[i] : null)) : null;
-    var opt = String(o.optionDetailName || '').replace(/^-:|:-$/g, '');
+    var opt = String(o.optionDetailName || '').replace(/^-\/|\/-$/g, '');
     var t = i === 0 ? list.filter(function (x) { return x.id === base.id; })[0] : byKey[key];
     if (t) {
       t.option = opt; t.sbnPrd = code; t.sbnSku = sku; if (o.barcode) t.barcode = o.barcode;
@@ -881,6 +882,35 @@ function hubSbnStockPush_(ids, me) {
   });
   if (done.length) hubSheet_('재고이력').appendRow([hubNow_(), '', '', done.length + '개 단품', '사방넷반영', 0, '', done.map(function (z) { return z.key + '=' + z.qty; }).join(', ').slice(0, 900), me.name]);
   return { ok: true, done: done, failed: failed, skipped: skipped };
+}
+
+/* 입고하면서 새 컬러·옵션 추가: 사방넷 상품에 단품 추가(API) → 앱에 단품 줄 추가 + 입고 기록
+ * req: {id(같은 품번의 아무 단품), color, size, qty, barcode} */
+function hubOptionAdd_(req, me) {
+  var base = hubFindProduct_(req.id); if (!base) return { error: '상품을 찾을 수 없습니다' };
+  var p = base.p; if (!p.sbnPrd) return { error: '사방넷 상품코드가 없는 상품이에요' };
+  var color = hubStr_(req.color, 40), size = hubStr_(req.size, 40), qty = Math.max(0, Math.round(hubNum_(req.qty)));
+  if (!color && !size) return { error: '컬러나 사이즈를 입력하세요' };
+  var g = hubSbnCall_('GET', '/v3/sb/product?productCode=' + p.sbnPrd, null, 'PRODUCTION'), d = g.data || g;
+  var opts = (d.optionInfo && d.optionInfo.options) || [], oname = (opts[0] && opts[0].optionName) || '컬러/사이즈';
+  var sep = oname.indexOf('/') >= 0 ? '/' : oname.indexOf(':') >= 0 ? ':' : '';
+  var detail = sep ? (color || '-') + sep + (size || '-') : (color || size);
+  var norm = function (t) { return String(t || '').replace(/\s/g, '').toUpperCase(); };
+  if (opts.some(function (o) { return norm(o.optionDetailName) === norm(detail); })) return { error: '이미 있는 옵션이에요: ' + detail };
+  var bar = req.barcode ? hubCorpBar_(p.corp, req.barcode) : '';
+  var res = hubSbnCall_('POST', '/v3/sb/product/upsert', { products: [{ customProductCode: d.customProductCode, optionInfo: { optionEditCode: 'RESET',
+    options: [{ optionName: oname, optionDetailName: detail, stockQuantity: qty, additionalAmount: 0, optionSupplyStatusCode: 'SALE', barcode: bar, safetyStockQuantity: 0 }] } }] }, 'PRODUCTION');
+  var rd = res.data || res, r0 = (rd.results || [])[0] || {};
+  if (rd.failCount || r0.status === false) return { error: '사방넷 옵션 추가 실패: ' + (r0.errorMessage || '') };
+  var g2 = hubSbnCall_('GET', '/v3/sb/product?productCode=' + p.sbnPrd, null, 'PRODUCTION'), d2 = g2.data || g2, o2 = (d2.optionInfo && d2.optionInfo.options) || [];
+  var idx = -1; o2.forEach(function (o, i) { if (norm(o.optionDetailName) === norm(detail)) idx = i; });
+  var sku = ('000' + (idx >= 0 ? idx + 1 : o2.length)).slice(-4), now = hubNow_();
+  var n = Object.assign({}, p, { id: hubNewId_(), sku: p.sbnPrd + '-' + sku, sbnSku: sku, option: (idx >= 0 ? o2[idx].optionDetailName : detail),
+    barcode: bar || (idx >= 0 ? String(o2[idx].barcode || '') : ''), stock: qty, regStatus: '', reg: '', barPending: '', updatedAt: now, updatedBy: me.name, link: '', stocMng: 'Y' });
+  var sh = hubSheet_('상품'), row = hubRow_(n);
+  sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setNumberFormats([hubFormats_()]).setValues([row]);
+  if (qty) hubSheet_('재고이력').appendRow([now, n.id, n.sku, n.name, '입고', qty, qty, '새 옵션 추가 · ' + n.option, me.name]);
+  return { ok: true, product: hubProductObj_(row), move: qty ? { at: now, id: n.id, sku: n.sku, name: n.name, type: '입고', qty: qty, after: qty, memo: '새 옵션 추가 · ' + n.option, by: me.name } : null };
 }
 
 /** 처음 한 번: 드라이브·외부 호출 권한 승인용 (실행만 하면 됨) */
