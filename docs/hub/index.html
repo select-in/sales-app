@@ -320,7 +320,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-28d';
+var APP_BUILD = '2026-10-28e';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -781,7 +781,7 @@ function openProduct(id){
   drawer(esc(p.name),
     '<div class="tabs2" id="dtabs"><button data-t="info" class="on">기본 정보</button><button data-t="hist">재고 이력</button><button data-t="costh">원가 변동</button></div>'+
     '<div id="dtab"></div>',
-    '<button class="btn dng'+(isAdmin()?'':' hide')+'" id="pdel" style="margin-right:auto"><i class="ti ti-trash"></i>삭제</button>'+(p.sbnPrd?'':'<button class="btn" id="preg"><i class="ti ti-cloud-upload"></i>사방넷 등록</button>')+'<a class="btn" href="#stock?id='+esc(p.id)+'" onclick="closeDrawer()"><i class="ti ti-barcode"></i>입출고</a><button class="btn pri" id="psave">저장</button>');
+    '<button class="btn dng'+(isAdmin()?'':' hide')+'" id="pdel" style="margin-right:auto"><i class="ti ti-trash"></i>삭제</button>'+(p.sbnPrd?(stockMode(p)==='현재고'?'<button class="btn" id="psbn"><i class="ti ti-refresh"></i>사방넷 재고 반영</button>':''):'<button class="btn" id="preg"><i class="ti ti-cloud-upload"></i>사방넷 등록</button>')+'<a class="btn" href="#stock?id='+esc(p.id)+'" onclick="closeDrawer()"><i class="ti ti-barcode"></i>입출고</a><button class="btn pri" id="psave">저장</button>');
   if ($('preg')) $('preg').onclick = function(){ openReg(p.id); };
   var tab = function(t){
     document.querySelectorAll('#dtabs button').forEach(function(b){ b.classList.toggle('on', b.dataset.t===t); });
@@ -808,6 +808,7 @@ function openProduct(id){
   document.querySelectorAll('#dtabs button').forEach(function(b){ b.onclick = function(){ stopCam(); tab(b.dataset.t); }; });
   tab('info');
   $('psave').onclick = function(){ saveProduct(p.id, this); };
+  if ($('psbn')) $('psbn').onclick = function(){ var b=this; b.disabled=true; api('sbn_stock_push',{ids:[p.id]}).then(function(j){ b.disabled=false; var z=(j.done||[])[0]; toast(z?'사방넷 재고 '+z.qty+'개로 반영했어요':'반영 실패: '+((j.failed||[])[0]||(j.skipped||[])[0]||''), !z); }).catch(function(e){ b.disabled=false; fail(e); }); };
   $('pdel').onclick = function(){
     if (!confirm('「'+p.name+'」 상품을 삭제할까요?\n재고 이력은 시트에 남습니다.')) return;
     api('product_delete',{id:p.id}).then(function(){ S.products = S.products.filter(function(x){ return x.id!==p.id; }); persist(); closeDrawer(); toast('삭제했어요'); shell(); route(); }).catch(fail);
@@ -975,6 +976,20 @@ function drawSel(){
   upd();
 }
 var moving = false;
+/* 입출고 후 사방넷 재고 자동 반영 — 연속 스캔은 마지막 저장 3초 뒤에 한 번에 */
+var SBQ = {ids:{}, t:null};
+function sbnQueue(p){
+  if (!p || DEMO) return; var o = isMoum(p) ? originOf(p) : p;
+  if (!o || !o.sbnPrd || stockMode(o)!=='현재고') return;
+  SBQ.ids[o.id] = 1; clearTimeout(SBQ.t); SBQ.t = setTimeout(sbnFlush, 3000);
+}
+function sbnFlush(){
+  var ids = Object.keys(SBQ.ids); SBQ.ids = {}; if (!ids.length) return;
+  api('sbn_stock_push',{ids:ids}).then(function(j){
+    var d=(j.done||[]).length, f=(j.failed||[]).length;
+    toast(d ? '사방넷 재고 반영 '+d+'건'+(f?' · 실패 '+f+'건':'')+' ('+j.done.slice(0,2).map(function(z){ return z.option+' '+z.qty; }).join(', ')+(d>2?' …':'')+')' : '사방넷 반영 실패: '+((j.failed||[])[0]||(j.skipped||[])[0]||''), !d);
+  }).catch(function(e){ toast('사방넷 재고 반영 실패: '+(e.message||''), true); });
+}
 function commitMove(qty, memo){
   if (moving) return; moving = true;
   if ($('sgo')) $('sgo').disabled = true;
@@ -982,7 +997,8 @@ function commitMove(qty, memo){
     moving = false;
     var i = S.products.findIndex(function(x){ return x.id===j.product.id; }); if (i>=0) S.products[i] = j.product;
     S.history.unshift(j.move); persist();
-    toast((j.move.type)+' 저장 · '+j.product.name+' → 재고 '+won(j.product.stock));
+    toast((j.move.type)+' 저장 · '+j.product.name+' → 재고 '+won(j.product.stock)+(j.product.sbnPrd&&stockMode(j.product)==='현재고'?' · 사방넷 반영 중':''));
+    sbnQueue(j.product);
     if (navigator.vibrate) navigator.vibrate(40);
     if ($('shist')){ $('shist').innerHTML = stockHistHtml(); bindStockHist(); }
     MV.id = null; if ($('ssel')) $('ssel').innerHTML='';

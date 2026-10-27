@@ -60,6 +60,7 @@ function doPost(e) {
       case 'barsheet_apply': return hubOut_(hubLocked_(function () { return hubBarSheetApply_(me); }));
       case 'barcode_set': return hubOut_(hubLocked_(function () { return hubBarcodeSet_(req, me); }));
       case 'reg_send': return hubOut_(hubLocked_(function () { return hubRegSend_(req, me); }));
+      case 'sbn_stock_push': return hubOut_(hubSbnStockPush_(req.ids || [], me));
       case 'reg_save': return hubOut_(hubLocked_(function () { return hubRegSave_(req, me); }));
       case 'stock_move': return hubOut_(hubLocked_(function () { return hubStockMove_(req, me); }));
       case 'history': return hubOut_({ history: hubHistory_(req.id, 300) });
@@ -842,6 +843,44 @@ function hubRegSplitOptions_(base, options, code, sts, me, regQty) {
   });
   hubWriteAll_(list); hubWriteLogs_(logs);
   return { added: added, products: out };
+}
+
+/* ===================== 앱 재고 → 사방넷 재고 (API) =====================
+ * 사방넷 상품을 조회해 자체상품코드·옵션명을 확인한 뒤, 해당 옵션의 재고수량(stockQuantity)만 앱 재고로 수정
+ * 모음전은 원본으로, 가상재고(재고관리 사용안함)·위탁은 건너뜀 */
+function hubSbnStockPush_(ids, me) {
+  if (!ids.length) return { error: '반영할 상품이 없습니다' };
+  var all = hubProducts_(), byId = {}, byKey = {};
+  all.forEach(function (x) { byId[x.id] = x; if (x.sbnPrd) byKey[x.sbnPrd + '-' + x.sbnSku] = x; });
+  var groups = {}, skipped = [];
+  ids.forEach(function (id) {
+    var x = byId[id]; if (!x) return;
+    if (x.link && byKey[x.link]) x = byKey[x.link];
+    if (!x.sbnPrd) { skipped.push(x.name + ' (사방넷 코드 없음)'); return; }
+    if (x.stocMng === 'N' || x.type === '위탁') { skipped.push(x.name + ' (가상재고)'); return; }
+    (groups[x.sbnPrd] = groups[x.sbnPrd] || {})[x.sbnSku] = x;
+  });
+  var done = [], failed = [];
+  Object.keys(groups).forEach(function (prd) {
+    try {
+      var g = hubSbnCall_('GET', '/v3/sb/product?productCode=' + prd, null, 'PRODUCTION'); var d = g.data || g;
+      var opts = (d.optionInfo && d.optionInfo.options) || [];
+      var send = [];
+      Object.keys(groups[prd]).forEach(function (sku) {
+        var x = groups[prd][sku], idx = parseInt(sku, 10) - 1;
+        var o = opts.filter(function (z) { return String(z.optionDetailName).replace(/\s/g, '') === String(x.option || '').replace(/\s/g, ''); })[0] || opts[idx];
+        if (!o) { failed.push(prd + '-' + sku + ' 옵션 못 찾음'); return; }
+        send.push({ optionDetailName: o.optionDetailName, stockQuantity: Math.max(0, Math.round(x.stock)) });
+        done.push({ key: prd + '-' + sku, name: x.name, option: o.optionDetailName, qty: Math.max(0, Math.round(x.stock)) });
+      });
+      if (!send.length) return;
+      var res = hubSbnCall_('POST', '/v3/sb/product/upsert', { products: [{ customProductCode: d.customProductCode, optionInfo: { optionEditCode: 'RESET', options: send } }] }, 'PRODUCTION');
+      var rd = res.data || res, r0 = (rd.results || [])[0] || {};
+      if (rd.failCount || r0.status === false) { failed.push(prd + ' ' + (r0.errorMessage || '실패')); done = done.filter(function (z) { return z.key.indexOf(prd + '-') !== 0; }); }
+    } catch (e) { failed.push(prd + ' ' + String(e.message).slice(0, 120)); }
+  });
+  if (done.length) hubSheet_('재고이력').appendRow([hubNow_(), '', '', done.length + '개 단품', '사방넷반영', 0, '', done.map(function (z) { return z.key + '=' + z.qty; }).join(', ').slice(0, 900), me.name]);
+  return { ok: true, done: done, failed: failed, skipped: skipped };
 }
 
 /** 처음 한 번: 드라이브·외부 호출 권한 승인용 (실행만 하면 됨) */
