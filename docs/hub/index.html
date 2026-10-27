@@ -306,7 +306,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-27r';
+var APP_BUILD = '2026-10-27s';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -431,7 +431,7 @@ function demoApi(b){
       var mv={at:t,id:p.id,sku:p.sku,name:p.name,type:ty,qty:aft-bef,after:aft,memo:b.memo||'',by:me.name}; d.history.unshift(mv); save();
       return {ok:true,product:p,move:mv};
     }
-    case 'barcode_set': { var bp=find(b.id); if(!bp) return {error:'상품을 찾을 수 없습니다'}; var du=d.products.filter(function(x){ return x.id!==b.id&&x.barcode===b.barcode; })[0]; if(du) return {error:'이미 다른 상품이 쓰는 바코드예요: '+du.name}; if(bp.sbnPrd){ var o=bp.barPending||bp.barcode; bp.barPending=b.barcode===o?'':o; } bp.barcode=b.barcode; save(); return {ok:true,product:bp}; }
+    case 'barcode_set': { var bp=find(b.id); if(!bp) return {error:'상품을 찾을 수 없습니다'}; var du=d.products.filter(function(x){ return x.id!==b.id&&x.barcode===b.barcode&&x.corp===bp.corp; })[0]; if(du&&!b.force) return {error:'이미 다른 상품이 쓰는 바코드예요: '+du.name}; if(bp.sbnPrd){ var o=bp.barPending||bp.barcode; bp.barPending=b.barcode===o?'':o; } bp.barcode=b.barcode; save(); return {ok:true,product:bp}; }
     case 'history': return {history:d.history.filter(function(h){ return !b.id||h.id===b.id; })};
     case 'cost_history': return {costs:d.costs[b.id]||[]};
     case 'config_set': d.config[b.key]={value:String(b.value),at:t,by:me.name}; save(); return {ok:true,config:d.config};
@@ -847,14 +847,16 @@ VIEWS.stock = {
     $('sq').onkeydown = function(e){
       if (e.key!=='Enter') return;
       var v = this.value.trim(); if (!v) return;
-      var exact = findByCode(v);
-      if (exact) return choose(exact.id, true);
+      var all = findAllByCode(v);
+      if (all.length>1) return drawPick(v, all);
+      if (all.length) return choose(all[0].id, true);
       var L = searchProducts(v); if (L.length===1) choose(L[0].id);
     };
     $('scam').onclick = function(){
       openScanner(MV.cont ? '연속 스캔 — '+({in:'입고',out:'출고',adjust:'실사'}[MV.type]) : '바코드 스캔', function(code){
-        var p = findByCode(code);
+        var all = findAllByCode(code), p = all[0];
         if (!p){ toast('등록되지 않은 바코드예요: '+code, true); return 'continue'; }
+        if (all.length>1){ drawPick(code, all); toast('같은 바코드 상품이 '+all.length+'개예요 · 골라 주세요'); return 'stop'; }
         if (navigator.vibrate) navigator.vibrate(40);
         choose(p.id, true);
         return MV.cont && MV.type!=='adjust' ? 'continue' : 'stop';
@@ -863,14 +865,15 @@ VIEWS.stock = {
     if (MV.id && S.products.some(function(p){ return p.id===MV.id; })) drawSel(); else { MV.id=null; setTimeout(function(){ if($('sq') && window.innerWidth>900) $('sq').focus(); },50); }
   }
 };
-function findByCode(code){ code=String(code).trim(); return S.products.filter(function(p){ return p.barcode===code || p.sku===code || (p.sbnPrd&&p.sbnPrd+'-'+p.sbnSku===code); })[0]; }
+function findAllByCode(code){ code=String(code).trim(); return S.products.filter(function(p){ return p.barcode===code || p.sku===code || (p.sbnPrd&&p.sbnPrd+'-'+p.sbnSku===code); }); }
+function findByCode(code){ var L=findAllByCode(code); if(L.length<2) return L[0]; return L.filter(function(p){ return !isVirtual(p) && p.sbnStatus!=='미사용'; }).sort(function(a,b){ return b.stock-a.stock; })[0] || L[0]; }
 function searchProducts(q){
   var toks = q.toLowerCase().split(/\s+/).filter(Boolean);
   return S.products.filter(function(p){ var h=[p.name,p.brand,p.option,p.sku,p.barcode,p.sbnPrd,p.sbnPrd&&p.sbnPrd+'-'+p.sbnSku].join(' ').toLowerCase(); return toks.every(function(t){ return h.indexOf(t)>=0; }); });
 }
-function drawPick(q){
+function drawPick(q, list){
   if (!q.trim()){ $('spick').innerHTML=''; return; }
-  var L = searchProducts(q).slice(0,30);
+  var L = (list || searchProducts(q)).slice(0,30);
   $('spick').innerHTML = L.length ? '<div class="pick">'+L.map(function(p){
     return '<button data-id="'+esc(p.id)+'">'+thumb(p)+'<div style="flex:1;min-width:0"><div style="font-weight:600">'+esc(p.name)+'</div><div style="font-size:13px;color:var(--mute)">'+esc([p.brand,p.option,p.barcode||p.sku].filter(Boolean).join(' · '))+'</div></div><b class="num">'+(p.type==='위탁'?'위탁':isVirtual(p)?'가상재고':won(p.stock))+'</b></button>';
   }).join('')+'</div>' : '<div class="empty">찾는 상품이 없어요 · <a href="#products">상품 등록하러 가기</a></div>';
@@ -1204,11 +1207,15 @@ function scanFix(id, after){
   openScanner('새 바코드 스캔 · '+p.name.slice(0,18)+(p.option?' ('+p.option+')':''), function(code){
     if (code===p.barcode){ toast('지금 바코드와 같아요'); return 'stop'; }
     if (navigator.vibrate) navigator.vibrate(40);
-    api('barcode_set',{id:id, barcode:code}).then(function(j){
+    var save=function(force){ api('barcode_set',{id:id, barcode:code, force:!!force}).then(function(j){
       var i=S.products.findIndex(function(x){ return x.id===id; }); if(i>=0) S.products[i]=j.product; persist();
       toast('바코드 저장 · '+code+' → 사방넷 반영 대기');
       if (after) after(); else route();
-    }).catch(fail);
+    }).catch(function(e){
+      if (!force && e && /같은 법인/.test(e.message||'') && confirm((e.message||'')+'\n\n같은 실물을 두 번 등록한 경우일 수 있어요. 그래도 이 바코드로 바꿀까요?')) return save(true);
+      fail(e);
+    }); };
+    save(false);
     return 'stop';
   });
 }

@@ -246,7 +246,7 @@ function hubDupCheck_(c, exceptId) {
   var list = hubProducts_();
   for (var i = 0; i < list.length; i++) {
     var p = list[i]; if (p.id === exceptId) continue;
-    if (c.barcode && p.barcode === c.barcode) return '같은 바코드가 이미 있습니다: ' + p.name;
+    if (c.barcode && p.barcode === c.barcode && p.corp === c.corp) return '같은 법인에 같은 바코드가 이미 있습니다: ' + p.name;
     if (c.sku && p.sku === c.sku) return '같은 상품코드(SKU)가 이미 있습니다: ' + p.name;
   }
   return '';
@@ -464,9 +464,11 @@ function hubBarcodeSet_(req, me) {
   var bar = hubStr_(req.barcode, 60).replace(/\s+/g, '');
   if (!/^[0-9A-Za-z\-]{4,40}$/.test(bar)) return { error: '바코드 형식이 올바르지 않습니다: ' + bar };
   var list = hubProducts_(), hit = null, dup = null;
-  list.forEach(function (p) { if (p.id === req.id) hit = p; else if (p.barcode === bar) dup = dup || p; });
+  list.forEach(function (p) { if (p.id === req.id) hit = p; });
   if (!hit) return { error: '상품을 찾을 수 없습니다' };
-  if (dup) return { error: '이미 다른 상품이 쓰는 바코드예요: ' + dup.name + (dup.option ? ' (' + dup.option + ')' : '') + (dup.sbnPrd ? ' · 사방넷 ' + dup.sbnPrd + '-' + dup.sbnSku : '') };
+  // 같은 실물을 셀렉트인·겐더샵이 각각 등록해 쓰므로, 중복은 같은 법인 안에서만 막음 (force면 같은 법인도 허용)
+  list.forEach(function (p) { if (p.id !== hit.id && p.barcode === bar && p.corp === hit.corp) dup = dup || p; });
+  if (dup && !req.force) return { dupSameCorp: true, error: '같은 법인(' + hit.corp + ')에서 이미 쓰는 바코드예요: ' + dup.name + (dup.option ? ' (' + dup.option + ')' : '') + (dup.sbnPrd ? ' · 사방넷 ' + dup.sbnPrd + '-' + dup.sbnSku : '') };
   if (hit.barcode === bar) return { ok: true, product: hit };
   var row = hubFindProduct_(hit.id), now = hubNow_();
   var o = Object.assign({}, hit, { barcode: bar, updatedAt: now, updatedBy: me.name });
