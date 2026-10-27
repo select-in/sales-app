@@ -54,7 +54,8 @@ main{margin-left:var(--side);min-height:100vh;padding:28px 32px 60px}
 .wrap{max-width:1120px;margin:0 auto}
 .topbar{display:none}
 .seg.segwrap{display:flex;flex-wrap:wrap;overflow:visible;max-width:100%;flex:1;min-width:0}.seg.segwrap button{flex:none}
-.otabs{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;position:sticky;top:0;z-index:14;background:var(--bg);padding:10px 0 0;border-bottom:1px solid var(--line);max-width:1120px;margin:0 auto 12px}.otabs::-webkit-scrollbar{display:none}.otabs:empty{display:none}
+.otabs{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;position:sticky;top:0;z-index:14;background:var(--bg);padding:10px 0 0;border-bottom:1px solid var(--line);max-width:1120px;margin:0 auto 12px}.otabs::-webkit-scrollbar{display:none}.osync{order:99;margin-left:auto;display:inline-flex;align-items:center;gap:6px;flex:none;align-self:center;margin-bottom:6px;padding:6px 12px;border:1px solid var(--accent);border-radius:8px;background:var(--card);color:var(--accent);font-size:13px;font-weight:700;cursor:pointer}.osync small{font-weight:400;color:var(--mute);font-size:11.5px}.osync.busy i{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+.otabs:empty{display:none}
 .otab{display:inline-flex;align-items:center;gap:6px;flex:none;padding:8px 10px 8px 12px;border:1px solid var(--line);border-bottom:0;border-radius:9px 9px 0 0;background:var(--bg);font-size:13px;color:var(--sub);text-decoration:none;white-space:nowrap;margin-bottom:-1px}
 .otab:hover{background:var(--card)}.otab.on{background:var(--card);color:var(--ink);font-weight:700;box-shadow:0 -1px 0 var(--accent) inset}.otab i{font-size:15px}.otab .cx{font-weight:400;opacity:.45;padding:0 2px;margin-left:2px;border-radius:4px}.otab .cx:hover{opacity:1;background:var(--line)}
 @media (max-width:900px){.otabs{position:static;padding:4px 0 0;margin:0 0 8px}.otab{padding:6px 8px 6px 10px;font-size:12.5px}}
@@ -337,7 +338,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-30a';
+var APP_BUILD = '2026-10-30b';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -589,7 +590,7 @@ function shell(){
       '<a href="#more" data-k="more"><i class="ti ti-menu-2"></i>전체</a>'+
     '</nav>';
   $('sout').onclick = logout;
-  $('mrefresh').onclick = function(){ boot(); };
+  $('mrefresh').onclick = syncAll;
 }
 function setActive(k){
   document.querySelectorAll('[data-k]').forEach(function(a){ a.classList.toggle('on', a.dataset.k===k || (k==='more' && false)); });
@@ -607,11 +608,29 @@ function otabsDraw(k){
     if (i<0){ OTABS.push({k:k, h:hash}); if (OTABS.length>8) OTABS.splice(OTABS.findIndex(function(t){ return t.k!==k; }),1); } else OTABS[i].h=hash;
     otabsSave(); }
   var cur=k||((location.hash||'#home').slice(1).split('?')[0]||'home');
-  el.innerHTML = OTABS.map(function(t){ return '<a class="otab'+(t.k===cur?' on':'')+'" href="'+esc(t.h)+'" data-ot="'+esc(t.k)+'"><i class="ti ti-'+esc(viewIcon(t.k))+'"></i><span>'+esc(viewTitle(t.k))+'</span>'+(OTABS.length>1?'<b class="cx" data-cx="'+esc(t.k)+'" title="탭 닫기">×</b>':'')+'</a>'; }).join('');
+  el.innerHTML = '<button class="osync'+(SYNC_BUSY?' busy':'')+'" id="osync" title="상품·재고·매출·크림 최신 내용 바로 가져오기"><i class="ti ti-refresh"></i><span>'+(SYNC_BUSY?'동기화 중…':'동기화')+'</span>'+(SYNC_AT?'<small>'+esc(SYNC_AT)+'</small>':'')+'</button>' + OTABS.map(function(t){ return '<a class="otab'+(t.k===cur?' on':'')+'" href="'+esc(t.h)+'" data-ot="'+esc(t.k)+'"><i class="ti ti-'+esc(viewIcon(t.k))+'"></i><span>'+esc(viewTitle(t.k))+'</span>'+(OTABS.length>1?'<b class="cx" data-cx="'+esc(t.k)+'" title="탭 닫기">×</b>':'')+'</a>'; }).join('');
   el.querySelectorAll('[data-cx]').forEach(function(x){ x.onclick=function(e){ e.preventDefault(); e.stopPropagation();
     var i=OTABS.findIndex(function(t){ return t.k===x.dataset.cx; }); if(i<0) return; OTABS.splice(i,1); otabsSave();
     if (x.dataset.cx===cur){ var n=OTABS[Math.min(i,OTABS.length-1)]; location.hash=n?n.h:'#home'; } else otabsDraw(); }; });
+  $('osync').onclick=syncAll;
   var on=el.querySelector('.otab.on'); if(on && on.scrollIntoView) try{ on.scrollIntoView({block:'nearest',inline:'nearest'}); }catch(e){}
+}
+/* 지금 동기화: 상품·재고(서버) · 매출 · 크림(PC 크림 창에 요청) 최신으로 */
+var SYNC_BUSY=false, SYNC_AT='';
+function syncAll(){
+  if (SYNC_BUSY) return; SYNC_BUSY=true; otabsDraw();
+  var hhmm=function(){ var d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
+  var krAsk = function(){ var op=(typeof krOpener==='function')&&krOpener(); if(op){ try{ op.postMessage({type:'krm_run'}, KRM_ORIGIN); }catch(e){} return Promise.resolve(); } return api('krm_req',{}).catch(function(){}); };
+  var jobs=[
+    api('boot',{compact:1}).then(function(j){ S={me:j.me, products:expandProducts(j), history:j.history||[], config:j.config||{}, users:j.users||[]}; KR_IDX=null; persist(); }),
+    (typeof salesLoad==='function'?salesLoad(true):Promise.resolve()).catch(function(){}),
+    (typeof krLoad==='function'?krLoad(true):Promise.resolve()).catch(function(){}),
+    krAsk()
+  ];
+  Promise.all(jobs).then(function(){ SYNC_AT=hhmm(); toast('동기화 완료 · 상품·재고·매출 최신 · 크림은 1~2분 뒤 자동 반영'); })
+    .catch(fail).then(function(){ SYNC_BUSY=false; route(); });
+  // 크림은 PC 크림 창이 가져오는 데 시간이 걸려서 잠시 뒤 한 번 더 읽음
+  setTimeout(function(){ if (typeof krLoad==='function') krLoad(true).then(function(){ if((location.hash||'').indexOf('#kream')===0) route(); }).catch(function(){}); }, 100000);
 }
 function route(){
   if (!S.me) return;
