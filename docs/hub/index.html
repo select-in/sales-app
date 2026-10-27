@@ -1472,7 +1472,7 @@ function krDraw(){
   var tabs=[['live','입찰중'],['prog','진행중'],['settle','정산'],['cancel','취소']];
   box.innerHTML =
     '<div class="grid g4">'+
-      '<div class="kpi"><div class="k"><i class="ti ti-gavel"></i>걸어둔 수량</div><div class="v num">'+won(A.length)+'<small>개</small></div><div class="sm">일반 '+won(nN)+' · 보관 '+won(nI)+' · 최저가(1순위) '+won(first)+'</div></div>'+
+      '<div class="kpi"><div class="k"><i class="ti ti-gavel"></i>걸어둔 수량</div><div class="v num">'+won(A.length)+'<small>개</small></div><div class="sm">일반 '+won(nN)+' · 보관 '+won(nI)+' · 1위 '+won(first)+'</div></div>'+
       '<div class="kpi '+(ship.length?'amber':'')+'"><div class="k"><i class="ti ti-truck"></i>발송 필요 <small style="font-weight:400">(일반)</small></div><div class="v num">'+won(ship.length)+'<small>건</small></div><div class="sm">진행중 '+won(prog.length)+'건</div></div>'+
       '<div class="kpi"><div class="k"><i class="ti ti-coin"></i>이번 달 정산</div><div class="v num">'+won(Math.round(sum(mon,'payout')/1e4))+'<small>만원</small></div><div class="sm">'+won(mon.length)+'건 체결</div></div>'+
       '<div class="kpi"><div class="k"><i class="ti ti-calendar-dollar"></i>지급 예정</div><div class="v num">'+won(Math.round(sum(wait,'payout')/1e4))+'<small>만원</small></div><div class="sm">'+won(wait.length)+'건</div></div>'+
