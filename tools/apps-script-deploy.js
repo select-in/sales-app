@@ -9,12 +9,12 @@ window.__opsDeploy = async function (desc, sha) {
   if (src.indexOf('function doPost') < 0) return 'bad source';
   monaco.editor.getModels()[0].setValue(src);
   var sv = all('[aria-label="Drive에 프로젝트 저장"]')[0]; if (sv) fire(sv); await W(3000);
-  var dep = all('[role=button],button').filter(e => nm(e) === '배포')[0]; if (!dep) return 'no deploy btn'; fire(dep); await W(900);
+  var dep = all('[role=button],button').filter(e => nm(e) === '배포' || nm(e).indexOf('배포새배포') === 0)[0];   // 메뉴가 버튼 안에 들어 있어 글자가 붙어 나옴 if (!dep) return 'no deploy btn'; fire(dep); await W(900);
   var mi = all('[role=menuitem]').filter(e => nm(e).indexOf('배포관리') >= 0)[0]; if (!mi) return 'no menu'; fire(mi); await W(2500);
   var dlg = all('[role=dialog]').pop(); if (!dlg) return 'no dialog';
   var ed = all('[aria-label]', dlg).filter(e => /수정|Edit/.test(e.getAttribute('aria-label')))[0]; if (!ed) return 'no edit'; fire(ed); await W(1500);
   var cb = [...dlg.querySelectorAll('[role=combobox]')].filter(e => nm(e).indexOf('버전') === 0)[0]; if (!cb) return 'no combobox'; fire(cb); await W(900);
-  var li = [...dlg.querySelectorAll('li,[role=option]')].filter(e => nm(e) === '새버전')[0]; if (!li) return 'no new version'; fire(li); await W(900);
+  var li = [...document.querySelectorAll('li,[role=option]')].filter(e => nm(e) === '새버전')[0]; if (!li) return 'no new version'; fire(li); await W(900);
   var inp = all('input,textarea', dlg).filter(e => e.type !== 'hidden' && e.type !== 'checkbox')[0];
   if (inp) { inp.focus(); inp.select(); document.execCommand('insertText', false, desc); }
   await W(400);
