@@ -21,7 +21,8 @@ var HUB_TABS = {
   재고이력: ['일시', '상품id', 'SKU', '상품명', '구분', '수량', '변경후재고', '메모', '작업자'],
   원가이력: ['일시', '상품id', 'SKU', '상품명', '이전원가', '새원가', '작업자'],
   직원: ['이름', '권한', 'PIN', '사용', '등록일'],
-  설정: ['키', '값', '수정일', '수정자']
+  설정: ['키', '값', '수정일', '수정자'],
+  채널출고: ['일시', '배치', '채널', '계정', '구분', '상품id', 'SKU', '상품명', '옵션', '바코드', '수량', '주문번호', '판매가', '수수료율', '정산예상', '재고반영', '작업자', '메모']
 };
 var HUB_P_FIELDS = ['id', 'sku', 'barcode', 'name', 'brand', 'option', 'corp', 'type', 'cost', 'price', 'stock', 'safety', 'loc', 'memo', 'updatedAt', 'updatedBy', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg', 'barPending', 'stocMng', 'vstock', 'owner'];
 var HUB_TOKEN_DAYS = 90;
@@ -47,6 +48,8 @@ function doPost(e) {
         return hubOut_(hubLocked_(function () { return hubSbnFlags_(req.rows, me); }));
       case 'owner_bulk': if (!admin) return hubOut_({ error: '관리자만 담당자를 일괄 변경할 수 있습니다' });
         return hubOut_(hubLocked_(function () { return hubOwnerBulk_(req.rows, me); }));
+      case 'channel_ship': return hubOut_(hubLocked_(function () { return hubChannelShip_(req, me); }));
+      case 'channel_list': return hubOut_({ rows: hubChannelList_(req.limit || 400) });
       case 'photo_upload': return hubOut_(hubPhotoUpload_(req, me));
       case 'ai_fill': return hubOut_(hubAiFill_(req));
       case 'barsheet_export': return hubOut_(hubLocked_(function () { return hubBarSheetExport_(req, me); }));
@@ -393,7 +396,7 @@ function hubSbnFlags_(rows, me) {
   if (!rows || !rows.length) return { error: '가져올 행이 없습니다' };
   var map = {};
   rows.forEach(function (r) { if (r && r.sbnPrd) map[hubStr_(r.sbnPrd, 30) + '-' + hubStr_(r.sbnSku, 20)] = r; });
-  var list = hubProducts_(), y = 0, n = 0, hitN = 0, byCorp = {}, ownerSet = 0;
+  var list = hubProducts_(), y = 0, n = 0, hitN = 0, byCorp = {}, ownerSet = 0, costN = 0, priceN = 0, logs = [], now = hubNow_();
   list.forEach(function (p) {
     var r = p.sbnPrd && map[p.sbnPrd + '-' + p.sbnSku];
     if (!r) return;
@@ -401,13 +404,16 @@ function hubSbnFlags_(rows, me) {
     if (r.stocMng === 'Y' || r.stocMng === 'N') p.stocMng = r.stocMng;
     if (r.vstock != null && r.vstock !== '') p.vstock = Math.round(hubNum_(r.vstock));
     if (r.owner && !p.owner) { p.owner = hubStr_(r.owner, 30); ownerSet++; }
+    if (r.cost != null && r.cost !== '') { var nc = hubNum_(r.cost); if (nc !== p.cost) { logs.push(['원가이력', [now, p.id, p.sku, p.name, p.cost, nc, '사방넷']]); p.cost = nc; costN++; } }
+    if (r.price != null && r.price !== '') { var np = hubNum_(r.price); if (np !== p.price) { p.price = np; priceN++; } }
     var c = byCorp[p.corp] || (byCorp[p.corp] = { y: 0, n: 0 });
     if (p.stocMng === 'N') { n++; c.n++; } else if (p.stocMng === 'Y') { y++; c.y++; }
   });
   hubWriteAll_(list);
+  hubWriteLogs_(logs);
   var missing = Object.keys(map).length;
   hubConfigSet_('sbn_flags', '재고관리 ' + y + ' · 가상재고 ' + n + (missing ? ' · 앱에 없음 ' + missing : ''), me);
-  return { ok: true, matched: hitN, y: y, n: n, missing: missing, byCorp: byCorp, ownerSet: ownerSet };
+  return { ok: true, matched: hitN, y: y, n: n, missing: missing, byCorp: byCorp, ownerSet: ownerSet, costChanged: costN, priceChanged: priceN };
 }
 
 /* 담당자 일괄 변경 rows: [{id, owner}] — 담당자 칸만 바꿈 */
@@ -419,6 +425,51 @@ function hubOwnerBulk_(rows, me) {
   hubWriteAll_(list);
   hubConfigSet_('owner_bulk', '담당자 ' + n + '개 변경', me);
   return { ok: true, changed: n };
+}
+
+/* ===================== 크림 · 포이즌 출고 =====================
+ * 휴대폰으로 바코드를 연속 스캔해 담고 → [출고 확정] 하면
+ *  - 현재고 상품은 재고에서 빠지고(재고이력 '출고', 메모에 채널·주문번호), 가상재고 상품은 기록만 남김
+ *  - 채널출고 탭에 한 줄씩 기록 (수수료율로 정산 예상 금액 계산)
+ * req: {channel:'KREAM'|'POIZON', account:'겐더샵'|'셀렉트인', kind:'일반판매'|'보관판매', memo, items:[{id, qty, orderNo, price}]} */
+var HUB_CH_FEE = { KREAM: 0.05, POIZON: 0.10 };
+function hubChannelShip_(req, me) {
+  var ch = req.channel === 'POIZON' ? 'POIZON' : 'KREAM';
+  var acct = req.account === '셀렉트인' ? '셀렉트인' : '겐더샵';
+  var kind = req.kind === '보관판매' ? '보관판매' : '일반판매';
+  var items = (req.items || []).filter(function (it) { return it && it.id && Math.round(hubNum_(it.qty)) > 0; });
+  if (!items.length) return { error: '출고할 상품이 없습니다' };
+  var r = hubRows_('상품'), byId = {};
+  r.vals.forEach(function (v, i) { if (v[0]) byId[String(v[0])] = { row: i + 2, p: hubProductObj_(v) }; });
+  var miss = items.filter(function (it) { return !byId[it.id]; });
+  if (miss.length) return { error: '앱에서 찾을 수 없는 상품이 있어요 (' + miss.length + '개)' };
+  var now = hubNow_(), batch = Utilities.formatDate(new Date(), 'Asia/Seoul', 'MMdd-HHmmss'), fee = HUB_CH_FEE[ch];
+  var stockCol = HUB_P_FIELDS.indexOf('stock') + 1, logs = [], out = [], changed = [];
+  items.forEach(function (it) {
+    var h = byId[it.id], p = h.p, q = Math.round(hubNum_(it.qty)), price = hubNum_(it.price);
+    var real = p.stocMng !== 'N' && p.type !== '위탁';
+    var memo = ch + ' ' + kind + (it.orderNo ? ' · ' + hubStr_(it.orderNo, 60) : '') + ' · 배치 ' + batch;
+    if (real) {
+      p.stock = p.stock - q;
+      r.sh.getRange(h.row, stockCol).setValue(p.stock);
+      r.sh.getRange(h.row, 15, 1, 2).setValues([[now, me.name]]);
+      logs.push([now, p.id, p.sku, p.name, '출고', -q, p.stock, memo, me.name]);
+      changed.push(p);
+    }
+    out.push([now, batch, ch, acct, kind, p.id, p.sku, p.name, p.option, p.barcode, q, hubStr_(it.orderNo, 60), price || '', fee, price ? Math.round(price * q * (1 - fee)) : '', real ? '재고 -' + q : '가상재고(기록만)', me.name, hubStr_(req.memo, 200)]);
+  });
+  if (logs.length) { var hs = hubSheet_('재고이력'); hs.getRange(hs.getLastRow() + 1, 1, logs.length, logs[0].length).setValues(logs); }
+  var cs = hubSheet_('채널출고'); cs.getRange(cs.getLastRow() + 1, 1, out.length, out[0].length).setValues(out);
+  return {
+    ok: true, batch: batch, count: out.length, qty: out.reduce(function (a, o) { return a + o[10]; }, 0),
+    products: changed, moves: logs.map(function (l) { return { at: l[0], id: l[1], sku: l[2], name: l[3], type: l[4], qty: l[5], after: l[6], memo: l[7], by: l[8] }; })
+  };
+}
+function hubChannelList_(limit) {
+  var r = hubRows_('채널출고'), H = ['at', 'batch', 'channel', 'account', 'kind', 'id', 'sku', 'name', 'option', 'barcode', 'qty', 'orderNo', 'price', 'fee', 'settle', 'stockNote', 'by', 'memo'];
+  return r.vals.slice(-Math.min(2000, limit)).reverse().map(function (v) {
+    var o = {}; H.forEach(function (k, i) { o[k] = v[i] instanceof Date ? Utilities.formatDate(v[i], 'Asia/Seoul', 'yyyy-MM-dd HH:mm') : v[i]; }); return o;
+  });
 }
 
 /* ===================== 재고 ===================== */
