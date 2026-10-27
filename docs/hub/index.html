@@ -313,7 +313,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-27w';
+var APP_BUILD = '2026-10-27x';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -629,7 +629,7 @@ VIEWS.products = {
   html: function(){
     var m = location.hash.match(/f=(\w+)/); if (m) PF.f = m[1];
     return '<div class="ph"><div><h1>상품 관리</h1><p>모든 메뉴가 이 상품 정보를 함께 씁니다 · 바코드·상품코드로 찾기</p></div>'+
-      '<div class="acts"><button class="btn" id="pimp"><i class="ti ti-table-import"></i>엑셀 붙여넣기</button><button class="btn pri" id="padd"><i class="ti ti-plus"></i>상품 등록</button></div></div>'+
+      '<div class="acts"><button class="btn" id="pimp"><i class="ti ti-table-import"></i>엑셀 붙여넣기</button><button class="btn pri" id="padd" title="사진·필수 정보 → 사방넷 등록서"><i class="ti ti-plus"></i>상품 등록</button></div></div>'+
       '<div class="card">'+
         '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">'+
           '<div class="scanrow" style="flex:1;min-width:240px"><div class="search"><i class="ti ti-search"></i><input class="inp" id="pq" placeholder="상품명, 브랜드, 바코드, 상품코드, 담당자" value="'+esc(PF.q)+'"></div><button class="btn pri" id="pscan" title="카메라로 바코드 찍어서 찾기"><i class="ti ti-scan"></i><span>스캔</span></button></div>'+
@@ -684,7 +684,7 @@ VIEWS.products = {
     $('powner').onchange = function(){ PF.owner = this.value; PF.page=1; draw(); };
     document.querySelectorAll('#pcorp button').forEach(function(b){ b.onclick = function(){ PF.corp=b.dataset.v; PF.page=1; document.querySelectorAll('#pcorp button').forEach(function(x){ x.classList.toggle('on',x===b); }); draw(); }; });
     document.querySelectorAll('#pf button').forEach(function(b){ b.onclick = function(){ PF.f=b.dataset.v; PF.page=1; if(location.hash.indexOf('f=')>=0) history.replaceState(null,'','#products'); document.querySelectorAll('#pf button').forEach(function(x){ x.classList.toggle('on',x===b); }); draw(); }; });
-    $('padd').onclick = function(){ openProduct(null); };
+    $('padd').onclick = function(){ location.hash = '#register'; setTimeout(function(){ openReg(null); }, 60); };
     $('pimp').onclick = openImport;
     draw();
   }
