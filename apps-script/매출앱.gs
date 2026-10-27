@@ -476,3 +476,9 @@ function drMemoDel_(req, role) {
   } finally { lock.releaseLock(); }
   return { error: '이미 지워진 메모입니다', memos: drMemos_() };
 }
+
+/** 로그인 잠금(비밀번호 10회 오류 → 15분) 즉시 해제: 편집기에서 이 함수 선택 후 실행 */
+function drUnlock() {
+  CacheService.getScriptCache().remove('drFail');
+  Logger.log('로그인 잠금 해제됨');
+}
