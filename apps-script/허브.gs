@@ -61,6 +61,8 @@ function doPost(e) {
         return hubOut_(hubSbnSalesRange_(req.from, req.to));
       case 'sales': return hubOut_(hubSales_(me));
       case 'ops_today': return hubOut_(hubOpsToday_(req.force));
+      case 'sbn_order_fields': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 사방넷 주문 API 응답 항목 이름 확인용 (읽기 전용, 개인정보 항목은 값 제외)
+        return hubOut_(hubSbnOrderFields_(req.items));
       case 'krm_req': return hubOut_(hubLocked_(function () { hubConfigSet_('krm_req', String(Date.now()), me); return { ok: true }; }));   // 휴대폰에서 [지금 동기화] → PC 크림 창이 받아서 실행
       case 'krm_poll': var kc = hubConfig_(); return hubOut_({ req: kc.krm_req ? Number(kc.krm_req.value) || 0 : 0, by: kc.krm_req ? kc.krm_req.by : '' });
       case 'sbn_get': if (!admin) return hubOut_({ error: '관리자만 조회할 수 있습니다' });   // 읽기 전용 (GET)
@@ -741,6 +743,16 @@ function hubOpsToday_(force) {
   var out = { today: today, at: Utilities.formatDate(new Date(), tz, 'HH:mm'), rows: rows };
   try { cache.put('ops_today', JSON.stringify(out), 300); } catch (e) {}
   return out;
+}
+function hubSbnOrderFields_(items) {
+  var d = Utilities.formatDate(new Date(Date.now() - 864e5), 'Asia/Seoul', 'yyyyMMdd');
+  var body = { dateSearchCondition: 2, startDate: d, endDate: d, updateOrderStsYn: 'N', page: 1, perPage: 3 };
+  if (Array.isArray(items) && items.length) body.responseItems = items.slice(0, 60).map(String);
+  var r = hubSbnCall_('POST', '/v3/sb/order', body), dt = (r && r.data) || {}, L = dt.results || [];
+  var personal = /RCV|RECV|RECEIVE|ADDR|TEL|HP|PHONE|MOBILE|BUYER|ORDERER|ORD_NM|USER_NM|EMAIL|ZIP|PERSONAL|CUSTOMS|MSG|MEMO|NAME_RCV|CUST/i;
+  var keys = {}; L.forEach(function (x) { Object.keys(x).forEach(function (k) { keys[k] = 1; }); });
+  var sample = L.slice(0, 2).map(function (x) { var o = {}; Object.keys(x).forEach(function (k) { o[k] = personal.test(k) ? '(개인정보)' : String(x[k]).slice(0, 40); }); return o; });
+  return { code: r && r.code, message: r && r.message, keys: Object.keys(keys), sample: sample, raw: L.length ? '' : JSON.stringify(r).slice(0, 500) };
 }
 function hubSalesHm_(x, tz) { return x instanceof Date ? Utilities.formatDate(x, tz, 'HH:mm') : String(x || '').trim(); }
 
