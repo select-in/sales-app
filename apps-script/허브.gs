@@ -813,18 +813,20 @@ function hubRegSend_(req, me) {
   var row = hubRow_(Object.assign({}, hit.p, { sbnPrd: code || hit.p.sbnPrd, sbnSku: hit.p.sbnSku || '0001', regStatus: '등록완료',
     sbnStatus: sts, reg: JSON.stringify(rg).slice(0, 45000), updatedAt: now, updatedBy: me.name }));
   hit.sh.getRange(hit.row, 1, 1, row.length).setNumberFormats([hubFormats_()]).setValues([row]);
-  var split = code ? hubRegSplitOptions_(hubProductObj_(row), built.product.optionInfo.options, code, sts, me) : { added: 0 };
+  var regQty = (reg.options || []).map(function (o) { return o && typeof o === 'object' ? Math.max(0, Math.round(hubNum_(o.qty))) : null; });
+  var split = code ? hubRegSplitOptions_(hubProductObj_(row), built.product.optionInfo.options, code, sts, me, regQty) : { added: 0 };
   var fin = hubFindProduct_(p.id);
   return { ok: true, product: fin.p, productCode: code, result: r0, optionRows: split.added, products: split.products || [] };
 }
 /* 옵션이 여러 개면 앱에서도 단품(옵션)마다 한 줄씩 — 사방넷 단품코드 0001, 0002 … 순서와 맞춤
  * 첫 옵션 = 등록서 상품 줄, 나머지는 새 줄 (이미 있으면 갱신). 재고는 옵션별 수량으로 맞추고 이력 남김 */
-function hubRegSplitOptions_(base, options, code, sts, me) {
+function hubRegSplitOptions_(base, options, code, sts, me, regQty) {
   if (!options || options.length < 2) return { added: 0 };
   var list = hubProducts_(), byKey = {}, now = hubNow_(), logs = [], added = 0, out = [];
   list.forEach(function (x) { if (x.sbnPrd) byKey[x.sbnPrd + '-' + x.sbnSku] = x; });
+  var first = !byKey[code + '-0002'];   // 처음 나눌 때만 재고를 옵션 수량으로 맞춤 (이후엔 입출고 기준)
   options.forEach(function (o, i) {
-    var sku = ('000' + (i + 1)).slice(-4), key = code + '-' + sku, qty = o.stockQuantity;
+    var sku = ('000' + (i + 1)).slice(-4), key = code + '-' + sku, qty = first ? (o.stockQuantity != null ? o.stockQuantity : (regQty && regQty[i] != null ? regQty[i] : null)) : null;
     var opt = String(o.optionDetailName || '').replace(/^-:|:-$/g, '');
     var t = i === 0 ? list.filter(function (x) { return x.id === base.id; })[0] : byKey[key];
     if (t) {
