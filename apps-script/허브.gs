@@ -509,7 +509,7 @@ function hubStockMove_(req, me) {
   // 사방넷 재고 바로 반영 (현재고 상품만 · 실패해도 입출고 저장은 유지)
   var sbn = null;
   if (hit.p.sbnPrd && hit.p.stocMng !== 'N' && hit.p.type !== '위탁' && req.sbn !== false) {
-    try { sbn = hubSbnStockPush_([hit.p.id], me); } catch (e) { sbn = { error: String(e.message || e).slice(0, 200) }; }
+    try { sbn = hubSbnStockPush_([hit.p.id], me, [hit.p]); } catch (e) { sbn = { error: String(e.message || e).slice(0, 200) }; }
   }
   return { ok: true, product: hit.p, sbn: sbn, move: { at: now, id: hit.p.id, sku: hit.p.sku, name: hit.p.name, type: type, qty: delta, after: after, memo: hubStr_(req.memo, 200), by: me.name } };
 }
@@ -854,9 +854,9 @@ function hubRegSplitOptions_(base, options, code, sts, me, regQty) {
 /* ===================== 앱 재고 → 사방넷 재고 (API) =====================
  * 사방넷 상품을 조회해 자체상품코드·옵션명을 확인한 뒤, 해당 옵션의 재고수량(stockQuantity)만 앱 재고로 수정
  * 모음전은 원본으로, 가상재고(재고관리 사용안함)·위탁은 건너뜀 */
-function hubSbnStockPush_(ids, me) {
+function hubSbnStockPush_(ids, me, preload) {
   if (!ids.length) return { error: '반영할 상품이 없습니다' };
-  var all = hubProducts_(), byId = {}, byKey = {};
+  var all = preload || hubProducts_(), byId = {}, byKey = {};
   all.forEach(function (x) { byId[x.id] = x; if (x.sbnPrd) byKey[x.sbnPrd + '-' + x.sbnSku] = x; });
   var groups = {}, skipped = [];
   ids.forEach(function (id) {
@@ -885,7 +885,7 @@ function hubSbnStockPush_(ids, me) {
       if (rd.failCount || r0.status === false) { failed.push(prd + ' ' + (r0.errorMessage || '실패')); done = done.filter(function (z) { return z.key.indexOf(prd + '-') !== 0; }); }
     } catch (e) { failed.push(prd + ' ' + String(e.message).slice(0, 120)); }
   });
-  if (done.length) hubSheet_('재고이력').appendRow([hubNow_(), '', '', done.length + '개 단품', '사방넷반영', 0, '', done.map(function (z) { return z.key + '=' + z.qty; }).join(', ').slice(0, 900), me.name]);
+  if (done.length && !preload) hubSheet_('재고이력').appendRow([hubNow_(), '', '', done.length + '개 단품', '사방넷반영', 0, '', done.map(function (z) { return z.key + '=' + z.qty; }).join(', ').slice(0, 900), me.name]);
   return { ok: true, done: done, failed: failed, skipped: skipped };
 }
 
