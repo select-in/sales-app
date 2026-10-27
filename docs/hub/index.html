@@ -296,13 +296,15 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 .sbn{font-size:12px;color:var(--mute);font-variant-numeric:tabular-nums}
 .prog{height:8px;background:var(--bg);border-radius:4px;overflow:hidden;margin-top:12px}
 .prog i{display:block;height:100%;background:var(--accent);width:0;transition:width .3s}
+.stk2{display:flex;flex-direction:column;align-items:flex-end;gap:4px;white-space:nowrap}
+.stk2 .sm{color:var(--mute)}
 </style>
 </head>
 <body>
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-27n';
+var APP_BUILD = '2026-10-27o';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -633,11 +635,11 @@ VIEWS.products = {
             '<td><span class="pill '+(p.corp==='겐더샵'?'b':'g')+'">'+esc(p.corp)+'</span> <span class="pill">'+esc(p.type)+'</span></td>'+
             '<td class="sm num">'+(p.sbnPrd?esc(p.sbnPrd)+'-'+esc(p.sbnSku):esc(p.sku||'—'))+'<br>'+esc(p.barcode||'—')+'</td>'+
             '<td class="r num">'+won(p.cost)+'</td><td class="r num">'+won(p.price)+'</td>'+
-            '<td class="r num">'+(isVirtual(p)?'<span class="sm">가상 '+won(p.vstock||0)+'</span> ':'<b>'+(p.type==='위탁'?'—':won(p.stock))+'</b> ')+stockPill(p)+'</td></tr>';
+            '<td class="r num"><div class="stk2">'+(isVirtual(p)?'<span class="sm">가상 '+won(p.vstock||0)+'</span>':'<b>'+(p.type==='위탁'?'—':won(p.stock))+'</b>')+(stockPill(p)?'<div>'+stockPill(p)+'</div>':'')+'</div></td></tr>';
         }).join('')+'</tbody></table></div>'+
         '<div class="mcards">'+shown.map(function(p){
           return '<div class="mc" data-id="'+esc(p.id)+'">'+thumb(p)+'<div class="m"><div class="t">'+esc(p.name)+'</div><div class="s">'+esc([p.brand,p.option].filter(Boolean).join(' · '))+'</div><div class="s">'+esc(p.corp)+' · '+won(p.price)+'원'+(p.sbnPrd?' · '+esc(p.sbnPrd)+'-'+esc(p.sbnSku):'')+'</div></div>'+
-            '<div class="e">'+(p.type==='위탁'?'<span class="pill">위탁</span>':isVirtual(p)?'<span class="pill">가상재고</span>':'<b class="num">'+won(p.stock)+'</b><div>'+stockPill(p)+'</div>')+'</div></div>';
+            '<div class="e">'+(p.type==='위탁'?'<span class="pill">위탁</span>':isVirtual(p)?'<span class="sm num">가상 '+won(p.vstock||0)+'</span><div><span class="pill">가상재고</span></div>':'<b class="num">'+won(p.stock)+'</b><div>'+stockPill(p)+'</div>')+'</div></div>';
         }).join('')+'</div>'+
         pagerHtml(L.length, PF.page, PG.size);
       document.querySelectorAll('#plist [data-id]').forEach(function(r){ r.onclick = function(){ openProduct(r.dataset.id); }; });
