@@ -17,13 +17,13 @@
  */
 
 var HUB_TABS = {
-  상품: ['id', 'SKU', '바코드', '상품명', '브랜드', '옵션', '법인', '구분', '원가', '판매가', '재고', '안전재고', '위치', '메모', '수정일', '수정자', '사방넷상품코드', '단품코드', '이미지', '사방넷상태', '카테고리', '등록상태', '등록정보', '바코드반영대기'],
+  상품: ['id', 'SKU', '바코드', '상품명', '브랜드', '옵션', '법인', '구분', '원가', '판매가', '재고', '안전재고', '위치', '메모', '수정일', '수정자', '사방넷상품코드', '단품코드', '이미지', '사방넷상태', '카테고리', '등록상태', '등록정보', '바코드반영대기', '재고관리', '가상재고'],
   재고이력: ['일시', '상품id', 'SKU', '상품명', '구분', '수량', '변경후재고', '메모', '작업자'],
   원가이력: ['일시', '상품id', 'SKU', '상품명', '이전원가', '새원가', '작업자'],
   직원: ['이름', '권한', 'PIN', '사용', '등록일'],
   설정: ['키', '값', '수정일', '수정자']
 };
-var HUB_P_FIELDS = ['id', 'sku', 'barcode', 'name', 'brand', 'option', 'corp', 'type', 'cost', 'price', 'stock', 'safety', 'loc', 'memo', 'updatedAt', 'updatedBy', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg', 'barPending'];
+var HUB_P_FIELDS = ['id', 'sku', 'barcode', 'name', 'brand', 'option', 'corp', 'type', 'cost', 'price', 'stock', 'safety', 'loc', 'memo', 'updatedAt', 'updatedBy', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg', 'barPending', 'stocMng', 'vstock'];
 var HUB_TOKEN_DAYS = 90;
 
 /* ===================== 진입점 ===================== */
@@ -200,8 +200,8 @@ function hubUserSave_(req, me) {
 function hubProductObj_(v) {
   var o = {};
   HUB_P_FIELDS.forEach(function (f, i) { o[f] = v[i] instanceof Date ? Utilities.formatDate(v[i], 'Asia/Seoul', 'yyyy-MM-dd HH:mm') : v[i]; });
-  ['cost', 'price', 'stock', 'safety'].forEach(function (f) { o[f] = hubNum_(o[f]); });
-  ['id', 'sku', 'barcode', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg', 'barPending'].forEach(function (f) { o[f] = String(o[f] == null ? '' : o[f]); });
+  ['cost', 'price', 'stock', 'safety', 'vstock'].forEach(function (f) { o[f] = hubNum_(o[f]); });
+  ['id', 'sku', 'barcode', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg', 'barPending', 'stocMng'].forEach(function (f) { o[f] = String(o[f] == null ? '' : o[f]); });
   return o;
 }
 function hubProducts_() {
@@ -255,7 +255,7 @@ function hubProductSave_(raw, me) {
   return { ok: true, product: hubProductObj_(nrow) };
 }
 function hubFormats_() {   // id·SKU·바코드는 글자로 저장 (앞자리 0 보존)
-  return HUB_P_FIELDS.map(function (f) { return /^(cost|price|stock|safety)$/.test(f) ? '#,##0' : '@'; });
+  return HUB_P_FIELDS.map(function (f) { return /^(cost|price|stock|safety|vstock)$/.test(f) ? '#,##0' : '@'; });
 }
 function hubProductDelete_(id) {
   var hit = hubFindProduct_(id);
@@ -311,7 +311,8 @@ function hubWriteLogs_(logs) {
 /* ===================== 사방넷 동기화 =====================
  * 지금: Claude가 사방넷 관리자 화면(로그인)에서 단품 목록을 읽어 앱으로 전달
  * 나중: 사방넷 API로 같은 rows를 만들어 이 함수에 넣으면 그대로 동작 (구조 동일)
- * rows: [{sbnPrd, sbnSku, barcode, name, option, brand, cost, price, stock, safety, img, sbnStatus, corp}]
+ * rows: [{sbnPrd, sbnSku, barcode, name, option, brand, cost, price, stock, vstock, stocMng, safety, img, sbnStatus, corp}]
+ *       stocMng: 사방넷 '재고관리 사용' Y/N — N이면 앱에서 가상재고로만 표시(입출고·품절경고·자동반영 제외)
  * 규칙: 사방넷상품코드+단품코드가 같은 상품을 찾아 갱신(없으면 바코드로), 없으면 새로 등록.
  *       재고는 사방넷 현재고로 맞추고 차이는 재고이력에 '사방넷동기화'로 남김.
  *       법인은 사방넷 마이카테고리로 정함: '셀렉트인전용' → 셀렉트인, 그 외 → 겐더샵 (보내는 쪽에서 corp로 계산해 넘김).
@@ -319,7 +320,7 @@ function hubWriteLogs_(logs) {
  */
 function hubSbnSync_(rows, me) {
   if (!rows || !rows.length) return { error: '가져올 행이 없습니다' };
-  var list = hubProducts_(), byKey = {}, byBar = {}, now = hubNow_(), logs = [], added = 0, updated = 0, stockChanged = 0;
+  var list = hubProducts_(), byKey = {}, byBar = {}, now = hubNow_(), logs = [], added = 0, updated = 0, stockChanged = 0, mngY = 0, mngN = 0;
   list.forEach(function (p) { if (p.sbnPrd) byKey[p.sbnPrd + '-' + p.sbnSku] = p; if (p.barcode) byBar[p.barcode] = p; });
   rows.forEach(function (r) {
     var key = hubStr_(r.sbnPrd, 30) + '-' + hubStr_(r.sbnSku, 20);
@@ -329,9 +330,12 @@ function hubSbnSync_(rows, me) {
     var byB = bar && byBar[bar];
     var hit = byKey[key] || (byB && !byB.sbnPrd ? byB : null);
     var stock = Math.round(hubNum_(r.stock)), cost = hubNum_(r.cost);
+    var mng = r.stocMng === 'N' ? 'N' : r.stocMng === 'Y' ? 'Y' : (hit && hit.stocMng) || '';
+    var vst = r.vstock == null || r.vstock === '' ? (hit ? hit.vstock : 0) : Math.round(hubNum_(r.vstock));
+    if (mng === 'N') mngN++; else if (mng === 'Y') mngY++;
     if (hit) {
       if (hit.cost !== cost) logs.push(['원가이력', [now, hit.id, hit.sku, hit.name, hit.cost, cost, '사방넷']]);
-      if (hit.stock !== stock) { logs.push(['재고이력', [now, hit.id, hit.sku, hit.name, '사방넷동기화', stock - hit.stock, stock, '사방넷 현재고로 맞춤', me.name]]); stockChanged++; }
+      if (hit.stock !== stock && mng !== 'N') { logs.push(['재고이력', [now, hit.id, hit.sku, hit.name, '사방넷동기화', stock - hit.stock, stock, '사방넷 현재고로 맞춤', me.name]]); stockChanged++; }
       var keepBar = hit.barPending && bar !== hit.barcode;   // 앱에서 바꾼 바코드가 아직 사방넷에 반영 전이면 앱 값 유지
       if (hit.barPending && bar === hit.barcode) hit.barPending = '';
       Object.assign(hit, {
@@ -339,7 +343,7 @@ function hubSbnSync_(rows, me) {
         name: hubStr_(r.name, 150), option: hubStr_(r.option, 80), brand: hubStr_(r.brand, 60) || hit.brand,
         cost: cost, price: hubNum_(r.price), stock: stock, safety: hubNum_(r.safety), img: hubStr_(r.img, 300) || hit.img,
         sbnStatus: hubStr_(r.sbnStatus, 20), cat: hubStr_(r.cat, 60), corp: r.corp === '셀렉트인' ? '셀렉트인' : '겐더샵',
-        regStatus: hit.regStatus === '등록요청' ? '등록완료' : hit.regStatus,
+        regStatus: hit.regStatus === '등록요청' ? '등록완료' : hit.regStatus, stocMng: mng, vstock: vst,
         updatedAt: now, updatedBy: '사방넷'
       });
       updated++;
@@ -348,21 +352,22 @@ function hubSbnSync_(rows, me) {
         id: hubNewId_(), sku: key, barcode: bar, name: hubStr_(r.name, 150), brand: hubStr_(r.brand, 60), option: hubStr_(r.option, 80),
         corp: r.corp === '셀렉트인' ? '셀렉트인' : '겐더샵', type: '사입', cat: hubStr_(r.cat, 60), cost: cost, price: hubNum_(r.price), stock: stock,
         safety: hubNum_(r.safety), loc: '', memo: '', updatedAt: now, updatedBy: '사방넷',
-        sbnPrd: hubStr_(r.sbnPrd, 30), sbnSku: hubStr_(r.sbnSku, 20), img: hubStr_(r.img, 300), sbnStatus: hubStr_(r.sbnStatus, 20)
+        sbnPrd: hubStr_(r.sbnPrd, 30), sbnSku: hubStr_(r.sbnSku, 20), img: hubStr_(r.img, 300), sbnStatus: hubStr_(r.sbnStatus, 20), stocMng: mng, vstock: vst
       };
       list.push(n); byKey[key] = n; if (bar && !byBar[bar]) byBar[bar] = n; added++;
     }
   });
   hubWriteAll_(list);
   hubWriteLogs_(logs);
-  hubConfigSet_('sbn_sync', '추가 ' + added + ' · 갱신 ' + updated + ' · 재고변경 ' + stockChanged, me);
-  return { ok: true, added: added, updated: updated, stockChanged: stockChanged };
+  hubConfigSet_('sbn_sync', '추가 ' + added + ' · 갱신 ' + updated + ' · 재고변경 ' + stockChanged + (mngY + mngN ? ' · 재고관리 ' + mngY + ' / 가상재고 ' + mngN : ''), me);
+  return { ok: true, added: added, updated: updated, stockChanged: stockChanged, mngY: mngY, mngN: mngN };
 }
 
 /* ===================== 재고 ===================== */
 function hubStockMove_(req, me) {
   var hit = hubFindProduct_(req.id);
   if (!hit) return { error: '상품을 찾을 수 없습니다' };
+  if (hit.p.stocMng === 'N') return { error: '사방넷에서 「재고관리 사용안함」인 상품이라 입출고를 기록하지 않아요 (가상재고)' };
   var type = { in: '입고', out: '출고', adjust: '실사조정' }[req.type];
   if (!type) return { error: '구분이 올바르지 않습니다' };
   var qty = Math.round(hubNum_(req.qty));
