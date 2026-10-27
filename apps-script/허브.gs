@@ -17,13 +17,13 @@
  */
 
 var HUB_TABS = {
-  상품: ['id', 'SKU', '바코드', '상품명', '브랜드', '옵션', '법인', '구분', '원가', '판매가', '재고', '안전재고', '위치', '메모', '수정일', '수정자'],
+  상품: ['id', 'SKU', '바코드', '상품명', '브랜드', '옵션', '법인', '구분', '원가', '판매가', '재고', '안전재고', '위치', '메모', '수정일', '수정자', '사방넷상품코드', '단품코드', '이미지', '사방넷상태'],
   재고이력: ['일시', '상품id', 'SKU', '상품명', '구분', '수량', '변경후재고', '메모', '작업자'],
   원가이력: ['일시', '상품id', 'SKU', '상품명', '이전원가', '새원가', '작업자'],
   직원: ['이름', '권한', 'PIN', '사용', '등록일'],
   설정: ['키', '값', '수정일', '수정자']
 };
-var HUB_P_FIELDS = ['id', 'sku', 'barcode', 'name', 'brand', 'option', 'corp', 'type', 'cost', 'price', 'stock', 'safety', 'loc', 'memo', 'updatedAt', 'updatedBy'];
+var HUB_P_FIELDS = ['id', 'sku', 'barcode', 'name', 'brand', 'option', 'corp', 'type', 'cost', 'price', 'stock', 'safety', 'loc', 'memo', 'updatedAt', 'updatedBy', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus'];
 var HUB_TOKEN_DAYS = 90;
 
 /* ===================== 진입점 ===================== */
@@ -41,6 +41,8 @@ function doPost(e) {
       case 'product_delete': if (!admin) return hubOut_({ error: '관리자만 삭제할 수 있습니다' });
         return hubOut_(hubLocked_(function () { return hubProductDelete_(req.id); }));
       case 'products_import': return hubOut_(hubLocked_(function () { return hubImport_(req.rows, me); }));
+      case 'sbn_sync': if (!admin) return hubOut_({ error: '관리자만 사방넷 동기화를 할 수 있습니다' });
+        return hubOut_(hubLocked_(function () { return hubSbnSync_(req.rows, me, req.final); }));
       case 'stock_move': return hubOut_(hubLocked_(function () { return hubStockMove_(req, me); }));
       case 'history': return hubOut_({ history: hubHistory_(req.id, 300) });
       case 'cost_history': return hubOut_({ costs: hubCostHistory_(req.id) });
@@ -106,6 +108,10 @@ function hubSheet_(name) {
     sh.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight('bold').setBackground('#e8f5ef');
     sh.setFrozenRows(1);
     if (name === '직원') sh.getRange('C:C').setFontColor('#999999');
+  } else if (sh.getLastColumn() < HUB_TABS[name].length) {
+    var hd = HUB_TABS[name];
+    if (sh.getMaxColumns() < hd.length) sh.insertColumnsAfter(sh.getMaxColumns(), hd.length - sh.getMaxColumns());
+    sh.getRange(1, 1, 1, hd.length).setValues([hd]).setFontWeight('bold').setBackground('#e8f5ef');
   }
   return sh;
 }
@@ -188,7 +194,7 @@ function hubProductObj_(v) {
   var o = {};
   HUB_P_FIELDS.forEach(function (f, i) { o[f] = v[i] instanceof Date ? Utilities.formatDate(v[i], 'Asia/Seoul', 'yyyy-MM-dd HH:mm') : v[i]; });
   ['cost', 'price', 'stock', 'safety'].forEach(function (f) { o[f] = hubNum_(o[f]); });
-  ['id', 'sku', 'barcode'].forEach(function (f) { o[f] = String(o[f] == null ? '' : o[f]); });
+  ['id', 'sku', 'barcode', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus'].forEach(function (f) { o[f] = String(o[f] == null ? '' : o[f]); });
   return o;
 }
 function hubProducts_() {
@@ -215,6 +221,8 @@ function hubDupCheck_(c, exceptId) {
   }
   return '';
 }
+function hubRow_(o) { return HUB_P_FIELDS.map(function (f) { return o[f] == null ? '' : o[f]; }); }
+function hubNewId_() { return 'P' + Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMddHHmmss') + hubRandom_(4); }
 function hubProductSave_(raw, me) {
   if (!raw) return { error: 'bad_request' };
   var c = hubClean_(raw);
@@ -222,24 +230,24 @@ function hubProductSave_(raw, me) {
   var hit = raw.id ? hubFindProduct_(raw.id) : null;
   var dup = hubDupCheck_(c, hit ? hit.p.id : null);
   if (dup) return { error: dup };
-  var now = hubNow_(), sh = hubSheet_('상품');
+  var now = hubNow_(), sh = hubSheet_('상품'), fm = [hubFormats_()];
   if (hit) {
     var p = hit.p;
     if (p.cost !== c.cost) hubSheet_('원가이력').appendRow([now, p.id, c.sku, c.name, p.cost, c.cost, me.name]);
-    var row = [p.id, c.sku, c.barcode, c.name, c.brand, c.option, c.corp, c.type, c.cost, c.price, p.stock, c.safety, c.loc, c.memo, now, me.name];
-    sh.getRange(hit.row, 1, 1, row.length).setNumberFormats([hubFormats_()]).setValues([row]);
+    var o = Object.assign({}, p, c, { updatedAt: now, updatedBy: me.name });
+    var row = hubRow_(o);
+    sh.getRange(hit.row, 1, 1, row.length).setNumberFormats(fm).setValues([row]);
     return { ok: true, product: hubProductObj_(row) };
   }
-  var id = 'P' + Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMddHHmmss') + hubRandom_(3);
-  var stock = hubNum_(raw.stock);
-  var nrow = [id, c.sku, c.barcode, c.name, c.brand, c.option, c.corp, c.type, c.cost, c.price, stock, c.safety, c.loc, c.memo, now, me.name];
-  sh.getRange(sh.getLastRow() + 1, 1, 1, nrow.length).setNumberFormats([hubFormats_()]).setValues([nrow]);
-  if (stock) hubSheet_('재고이력').appendRow([now, id, c.sku, c.name, '기초재고', stock, stock, '상품 등록', me.name]);
-  if (c.cost) hubSheet_('원가이력').appendRow([now, id, c.sku, c.name, '', c.cost, me.name]);
+  var n = Object.assign({ id: hubNewId_(), stock: hubNum_(raw.stock), updatedAt: now, updatedBy: me.name }, c);
+  var nrow = hubRow_(n);
+  sh.getRange(sh.getLastRow() + 1, 1, 1, nrow.length).setNumberFormats(fm).setValues([nrow]);
+  if (n.stock) hubSheet_('재고이력').appendRow([now, n.id, c.sku, c.name, '기초재고', n.stock, n.stock, '상품 등록', me.name]);
+  if (c.cost) hubSheet_('원가이력').appendRow([now, n.id, c.sku, c.name, '', c.cost, me.name]);
   return { ok: true, product: hubProductObj_(nrow) };
 }
 function hubFormats_() {   // id·SKU·바코드는 글자로 저장 (앞자리 0 보존)
-  return HUB_P_FIELDS.map(function (f) { return /^(id|sku|barcode|name|brand|option|corp|type|loc|memo|updatedAt|updatedBy)$/.test(f) ? '@' : '#,##0'; });
+  return HUB_P_FIELDS.map(function (f) { return /^(cost|price|stock|safety)$/.test(f) ? '#,##0' : '@'; });
 }
 function hubProductDelete_(id) {
   var hit = hubFindProduct_(id);
@@ -250,40 +258,90 @@ function hubProductDelete_(id) {
 function hubImport_(rows, me) {
   if (!rows || !rows.length) return { error: '가져올 행이 없습니다' };
   if (rows.length > 3000) return { error: '한 번에 3,000행까지 가져올 수 있습니다' };
-  var list = hubProducts_(), byKey = {};
+  var list = hubProducts_(), byKey = {}, now = hubNow_(), added = 0, updated = 0, skipped = 0, logs = [];
   list.forEach(function (p) { if (p.barcode) byKey['b:' + p.barcode] = p; if (p.sku) byKey['s:' + p.sku] = p; });
-  var sh = hubSheet_('상품'), now = hubNow_(), added = 0, updated = 0, skipped = 0, out = [], logs = [];
-  var all = hubRows_('상품').vals;
+  var has = function (r, k) { return r[k] !== '' && r[k] != null; };
   rows.forEach(function (raw) {
     var c = hubClean_(raw);
     if (!c.name) { skipped++; return; }
     var hit = (c.barcode && byKey['b:' + c.barcode]) || (c.sku && byKey['s:' + c.sku]);
     if (hit) {
-      for (var i = 0; i < all.length; i++) if (String(all[i][0]) === hit.id) {
-        var keep = hubProductObj_(all[i]);
-        all[i] = [keep.id, c.sku || keep.sku, c.barcode || keep.barcode, c.name, c.brand || keep.brand, c.option || keep.option, c.corp, c.type,
-          raw.cost === '' || raw.cost == null ? keep.cost : c.cost, raw.price === '' || raw.price == null ? keep.price : c.price,
-          keep.stock, raw.safety === '' || raw.safety == null ? keep.safety : c.safety, c.loc || keep.loc, c.memo || keep.memo, now, me.name];
-        if (keep.cost !== all[i][8]) logs.push(['원가이력', [now, keep.id, all[i][1], c.name, keep.cost, all[i][8], me.name]]);
-        updated++; break;
-      }
-      return;
+      var before = hit.cost;
+      ['sku', 'barcode', 'brand', 'option', 'loc', 'memo'].forEach(function (k) { if (c[k]) hit[k] = c[k]; });
+      hit.name = c.name; hit.corp = c.corp; hit.type = c.type;
+      ['cost', 'price', 'safety'].forEach(function (k) { if (has(raw, k)) hit[k] = c[k]; });
+      hit.updatedAt = now; hit.updatedBy = me.name;
+      if (before !== hit.cost) logs.push(['원가이력', [now, hit.id, hit.sku, hit.name, before, hit.cost, me.name]]);
+      updated++; return;
     }
-    var id = 'P' + Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyMMddHHmmss') + hubRandom_(4);
-    var stock = hubNum_(raw.stock);
-    var nrow = [id, c.sku, c.barcode, c.name, c.brand, c.option, c.corp, c.type, c.cost, c.price, stock, c.safety, c.loc, c.memo, now, me.name];
-    out.push(nrow); added++;
-    var nk = hubProductObj_(nrow); if (c.barcode) byKey['b:' + c.barcode] = nk; if (c.sku) byKey['s:' + c.sku] = nk;
-    if (stock) logs.push(['재고이력', [now, id, c.sku, c.name, '기초재고', stock, stock, '엑셀 가져오기', me.name]]);
+    var n = Object.assign({ id: hubNewId_(), stock: hubNum_(raw.stock), updatedAt: now, updatedBy: me.name }, c);
+    list.push(n); added++;
+    if (c.barcode) byKey['b:' + c.barcode] = n; if (c.sku) byKey['s:' + c.sku] = n;
+    if (n.stock) logs.push(['재고이력', [now, n.id, c.sku, c.name, '기초재고', n.stock, n.stock, '엑셀 가져오기', me.name]]);
   });
-  var fm = hubFormats_();
-  if (all.length) sh.getRange(2, 1, all.length, fm.length).setNumberFormats(all.map(function () { return fm; })).setValues(all);
-  if (out.length) sh.getRange(sh.getLastRow() + 1, 1, out.length, fm.length).setNumberFormats(out.map(function () { return fm; })).setValues(out);
+  hubWriteAll_(list);
+  hubWriteLogs_(logs);
+  return { ok: true, added: added, updated: updated, skipped: skipped, products: hubProducts_() };
+}
+function hubWriteAll_(list) {
+  var sh = hubSheet_('상품'), fm = hubFormats_(), w = fm.length;
+  var rows = list.map(hubRow_);
+  var last = sh.getLastRow();
+  if (last > 1) sh.getRange(2, 1, last - 1, Math.max(w, sh.getLastColumn())).clearContent();
+  if (rows.length) {
+    if (sh.getMaxRows() < rows.length + 1) sh.insertRowsAfter(sh.getMaxRows(), rows.length + 1 - sh.getMaxRows());
+    sh.getRange(2, 1, rows.length, w).setNumberFormats(rows.map(function () { return fm; })).setValues(rows);
+  }
+}
+function hubWriteLogs_(logs) {
   ['재고이력', '원가이력'].forEach(function (tab) {
     var rs = logs.filter(function (l) { return l[0] === tab; }).map(function (l) { return l[1]; });
     if (rs.length) { var s = hubSheet_(tab); s.getRange(s.getLastRow() + 1, 1, rs.length, rs[0].length).setValues(rs); }
   });
-  return { ok: true, added: added, updated: updated, skipped: skipped, products: hubProducts_() };
+}
+
+/* ===================== 사방넷 동기화 =====================
+ * 지금: Claude가 사방넷 관리자 화면(로그인)에서 단품 목록을 읽어 앱으로 전달
+ * 나중: 사방넷 API로 같은 rows를 만들어 이 함수에 넣으면 그대로 동작 (구조 동일)
+ * rows: [{sbnPrd, sbnSku, barcode, name, option, brand, cost, price, stock, safety, img, sbnStatus, corp}]
+ * 규칙: 사방넷상품코드+단품코드가 같은 상품을 찾아 갱신(없으면 바코드로), 없으면 새로 등록.
+ *       재고는 사방넷 현재고로 맞추고 차이는 재고이력에 '사방넷동기화'로 남김.
+ *       앱에서 직접 입력한 위치·메모·법인·구분은 유지.
+ */
+function hubSbnSync_(rows, me) {
+  if (!rows || !rows.length) return { error: '가져올 행이 없습니다' };
+  var list = hubProducts_(), byKey = {}, byBar = {}, now = hubNow_(), logs = [], added = 0, updated = 0, stockChanged = 0;
+  list.forEach(function (p) { if (p.sbnPrd) byKey[p.sbnPrd + '-' + p.sbnSku] = p; if (p.barcode) byBar[p.barcode] = p; });
+  rows.forEach(function (r) {
+    var key = hubStr_(r.sbnPrd, 30) + '-' + hubStr_(r.sbnSku, 20);
+    if (!r.sbnPrd || !r.name) return;
+    var bar = hubStr_(r.barcode, 60);
+    var hit = byKey[key] || (bar && byBar[bar]);
+    var stock = Math.round(hubNum_(r.stock)), cost = hubNum_(r.cost);
+    if (hit) {
+      if (hit.cost !== cost) logs.push(['원가이력', [now, hit.id, hit.sku, hit.name, hit.cost, cost, '사방넷']]);
+      if (hit.stock !== stock) { logs.push(['재고이력', [now, hit.id, hit.sku, hit.name, '사방넷동기화', stock - hit.stock, stock, '사방넷 현재고로 맞춤', me.name]]); stockChanged++; }
+      Object.assign(hit, {
+        sbnPrd: hubStr_(r.sbnPrd, 30), sbnSku: hubStr_(r.sbnSku, 20), barcode: bar || hit.barcode, sku: hit.sku || key,
+        name: hubStr_(r.name, 150), option: hubStr_(r.option, 80), brand: hubStr_(r.brand, 60) || hit.brand,
+        cost: cost, price: hubNum_(r.price), stock: stock, safety: hubNum_(r.safety), img: hubStr_(r.img, 300) || hit.img,
+        sbnStatus: hubStr_(r.sbnStatus, 20), updatedAt: now, updatedBy: '사방넷'
+      });
+      updated++;
+    } else {
+      var n = {
+        id: hubNewId_(), sku: key, barcode: bar, name: hubStr_(r.name, 150), brand: hubStr_(r.brand, 60), option: hubStr_(r.option, 80),
+        corp: r.corp === '겐더샵' ? '겐더샵' : '셀렉트인', type: '사입', cost: cost, price: hubNum_(r.price), stock: stock,
+        safety: hubNum_(r.safety), loc: '', memo: '', updatedAt: now, updatedBy: '사방넷',
+        sbnPrd: hubStr_(r.sbnPrd, 30), sbnSku: hubStr_(r.sbnSku, 20), img: hubStr_(r.img, 300), sbnStatus: hubStr_(r.sbnStatus, 20)
+      };
+      list.push(n); byKey[key] = n; if (bar && !byBar[bar]) byBar[bar] = n; added++;
+    }
+  });
+  hubWriteAll_(list);
+  hubWriteLogs_(logs);
+  hubConfigSet_('sbn_sync', '추가 ' + added + ' · 갱신 ' + updated + ' · 재고변경 ' + stockChanged, me);
+  return { ok: true, added: added, updated: updated, stockChanged: stockChanged };
 }
 
 /* ===================== 재고 ===================== */

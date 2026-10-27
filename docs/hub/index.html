@@ -253,13 +253,19 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 .more-menu a .ti{color:var(--sub)}
 .more-menu a .soon{margin-left:auto;font-size:12px;color:var(--mute)}
 .hide{display:none!important}
+.th{width:44px;height:44px;border-radius:8px;object-fit:cover;background:var(--bg);flex:none;display:inline-grid;place-items:center;color:var(--mute);border:1px solid var(--line);vertical-align:middle}
+.th.lg{width:96px;height:96px;border-radius:12px}
+.pcell{display:flex;gap:12px;align-items:center}
+.sbn{font-size:12px;color:var(--mute);font-variant-numeric:tabular-nums}
+.prog{height:8px;background:var(--bg);border-radius:4px;overflow:hidden;margin-top:12px}
+.prog i{display:block;height:100%;background:var(--accent);width:0;transition:width .3s}
 </style>
 </head>
 <body>
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-27b';
+var APP_BUILD = '2026-10-27c';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -283,6 +289,9 @@ function stockPill(p){
   if(s==='low') return '<span class="pill a">부족</span>';
   return '';
 }
+function thumb(p,lg){ var c='th'+(lg?' lg':''); return p.img ? '<img class="'+c+'" loading="lazy" referrerpolicy="no-referrer" src="'+esc(p.img)+'" alt="" onerror="this.removeAttribute(\'src\');this.alt=\'\'">' : '<span class="'+c+'"><i class="ti ti-photo"></i></span>'; }
+function sbnLabel(p){ return p.sbnPrd ? '사방넷 '+esc(p.sbnPrd)+(p.sbnSku?'-'+esc(p.sbnSku):'') : ''; }
+function sbnPill(p){ return p.sbnStatus && p.sbnStatus!=='판매' && p.sbnStatus!=='공급중' ? ' <span class="pill">'+esc(p.sbnStatus)+'</span>' : ''; }
 function marginMin(){ var v=Number(S.config.margin_min&&S.config.margin_min.value); return isFinite(v)&&v>0?v:20; }
 function isAdmin(){ return S.me && S.me.role==='관리자'; }
 
@@ -546,23 +555,23 @@ VIEWS.products = {
         if (PF.f==='low' && s!=='low') return false;
         if (PF.f==='out' && s!=='out') return false;
         if (PF.f==='consign' && p.type!=='위탁') return false;
-        var hay = [p.name,p.brand,p.option,p.sku,p.barcode,p.loc].join(' ').toLowerCase();
+        var hay = [p.name,p.brand,p.option,p.sku,p.barcode,p.loc,p.sbnPrd,p.sbnPrd&&p.sbnPrd+'-'+p.sbnSku].join(' ').toLowerCase();
         return toks.every(function(t){ return hay.indexOf(t)>=0; });
       }).sort(function(a,b){ return (a.brand+a.name+a.option).localeCompare(b.brand+b.name+b.option,'ko'); });
       if (!S.products.length){ $('plist').innerHTML = '<div class="empty">아직 등록한 상품이 없어요.<br>[상품 등록] 또는 [엑셀 붙여넣기]로 시작하세요.</div>'; return; }
       if (!L.length){ $('plist').innerHTML = '<div class="empty">조건에 맞는 상품이 없어요</div>'; return; }
       var shown = L.slice(0,300);
       $('plist').innerHTML =
-        '<div class="dtable tblwrap"><table class="tbl"><thead><tr><th>상품</th><th>옵션</th><th>법인 · 구분</th><th>바코드 / 상품코드</th><th class="r">원가</th><th class="r">판매가</th><th class="r">재고</th></tr></thead><tbody>'+
+        '<div class="dtable tblwrap"><table class="tbl"><thead><tr><th>상품</th><th>옵션</th><th>법인 · 구분</th><th>사방넷 · 바코드</th><th class="r">원가</th><th class="r">판매가</th><th class="r">재고</th></tr></thead><tbody>'+
         shown.map(function(p){
-          return '<tr class="click" data-id="'+esc(p.id)+'"><td><div class="nm">'+esc(p.name)+'</div><div class="sm">'+esc(p.brand)+(p.loc?' · 위치 '+esc(p.loc):'')+'</div></td><td>'+esc(p.option)+'</td>'+
+          return '<tr class="click" data-id="'+esc(p.id)+'"><td><div class="pcell">'+thumb(p)+'<div><div class="nm">'+esc(p.name)+'</div><div class="sm">'+esc(p.brand)+(p.loc?' · 위치 '+esc(p.loc):'')+'</div></div></div></td><td>'+esc(p.option)+sbnPill(p)+'</td>'+
             '<td><span class="pill '+(p.corp==='겐더샵'?'b':'g')+'">'+esc(p.corp)+'</span> <span class="pill">'+esc(p.type)+'</span></td>'+
-            '<td class="sm num">'+esc(p.barcode||'—')+'<br>'+esc(p.sku||'—')+'</td>'+
+            '<td class="sm num">'+(p.sbnPrd?esc(p.sbnPrd)+'-'+esc(p.sbnSku):esc(p.sku||'—'))+'<br>'+esc(p.barcode||'—')+'</td>'+
             '<td class="r num">'+won(p.cost)+'</td><td class="r num">'+won(p.price)+'</td>'+
             '<td class="r num"><b>'+(p.type==='위탁'?'—':won(p.stock))+'</b> '+stockPill(p)+'</td></tr>';
         }).join('')+'</tbody></table></div>'+
         '<div class="mcards">'+shown.map(function(p){
-          return '<div class="mc" data-id="'+esc(p.id)+'"><div class="m"><div class="t">'+esc(p.name)+'</div><div class="s">'+esc([p.brand,p.option].filter(Boolean).join(' · '))+'</div><div class="s">'+esc(p.corp)+' · '+esc(p.type)+' · '+won(p.price)+'원</div></div>'+
+          return '<div class="mc" data-id="'+esc(p.id)+'">'+thumb(p)+'<div class="m"><div class="t">'+esc(p.name)+'</div><div class="s">'+esc([p.brand,p.option].filter(Boolean).join(' · '))+'</div><div class="s">'+esc(p.corp)+' · '+won(p.price)+'원'+(p.sbnPrd?' · '+esc(p.sbnPrd)+'-'+esc(p.sbnSku):'')+'</div></div>'+
             '<div class="e">'+(p.type==='위탁'?'<span class="pill">위탁</span>':'<b class="num">'+won(p.stock)+'</b><div>'+stockPill(p)+'</div>')+'</div></div>';
         }).join('')+'</div>'+
         (L.length>300?'<div class="empty">'+won(L.length)+'개 중 300개만 표시 중 — 검색으로 좁혀주세요</div>':'<div class="empty" style="padding-bottom:0">'+won(L.length)+'개</div>');
@@ -639,7 +648,7 @@ function openProduct(id){
     $('dft').classList.toggle('hide', t!=='info');
     if (t==='info'){
       $('dtab').innerHTML =
-        '<div class="sel" style="margin:0 0 18px"><div class="stk" style="margin:0">현재 재고 <b class="num">'+(p.type==='위탁'?'—':won(p.stock))+'</b>'+stockPill(p)+'<span style="margin-left:auto;font-size:12px">수정 '+esc(p.updatedAt||'')+' · '+esc(p.updatedBy||'')+'</span></div></div>'+
+        '<div class="sel" style="margin:0 0 18px;display:flex;gap:14px;align-items:center">'+thumb(p,true)+'<div style="flex:1;min-width:0"><div class="stk" style="margin:0">현재 재고 <b class="num">'+(p.type==='위탁'?'—':won(p.stock))+'</b>'+stockPill(p)+sbnPill(p)+'</div>'+(p.sbnPrd?'<div class="sbn" style="margin-top:4px">'+sbnLabel(p)+'</div>':'')+'<div class="sbn">수정 '+esc(p.updatedAt||'')+' · '+esc(p.updatedBy||'')+'</div></div></div>'+
         productForm(p);
       bindProductForm();
     } else if (t==='hist'){
@@ -760,16 +769,16 @@ VIEWS.stock = {
     if (MV.id && S.products.some(function(p){ return p.id===MV.id; })) drawSel(); else { MV.id=null; setTimeout(function(){ if($('sq') && window.innerWidth>900) $('sq').focus(); },50); }
   }
 };
-function findByCode(code){ code=String(code).trim(); return S.products.filter(function(p){ return p.barcode===code || p.sku===code; })[0]; }
+function findByCode(code){ code=String(code).trim(); return S.products.filter(function(p){ return p.barcode===code || p.sku===code || (p.sbnPrd&&p.sbnPrd+'-'+p.sbnSku===code); })[0]; }
 function searchProducts(q){
   var toks = q.toLowerCase().split(/\s+/).filter(Boolean);
-  return S.products.filter(function(p){ var h=[p.name,p.brand,p.option,p.sku,p.barcode].join(' ').toLowerCase(); return toks.every(function(t){ return h.indexOf(t)>=0; }); });
+  return S.products.filter(function(p){ var h=[p.name,p.brand,p.option,p.sku,p.barcode,p.sbnPrd,p.sbnPrd&&p.sbnPrd+'-'+p.sbnSku].join(' ').toLowerCase(); return toks.every(function(t){ return h.indexOf(t)>=0; }); });
 }
 function drawPick(q){
   if (!q.trim()){ $('spick').innerHTML=''; return; }
   var L = searchProducts(q).slice(0,30);
   $('spick').innerHTML = L.length ? '<div class="pick">'+L.map(function(p){
-    return '<button data-id="'+esc(p.id)+'"><div style="flex:1;min-width:0"><div style="font-weight:600">'+esc(p.name)+'</div><div style="font-size:13px;color:var(--mute)">'+esc([p.brand,p.option,p.barcode||p.sku].filter(Boolean).join(' · '))+'</div></div><b class="num">'+(p.type==='위탁'?'위탁':won(p.stock))+'</b></button>';
+    return '<button data-id="'+esc(p.id)+'">'+thumb(p)+'<div style="flex:1;min-width:0"><div style="font-weight:600">'+esc(p.name)+'</div><div style="font-size:13px;color:var(--mute)">'+esc([p.brand,p.option,p.barcode||p.sku].filter(Boolean).join(' · '))+'</div></div><b class="num">'+(p.type==='위탁'?'위탁':won(p.stock))+'</b></button>';
   }).join('')+'</div>' : '<div class="empty">찾는 상품이 없어요 · <a href="#products">상품 등록하러 가기</a></div>';
   document.querySelectorAll('#spick button').forEach(function(b){ b.onclick = function(){ choose(b.dataset.id); }; });
 }
@@ -784,7 +793,7 @@ function drawSel(){
   var lab = {in:'입고 수량',out:'출고 수량',adjust:'실제 재고 수량'}[MV.type];
   if (MV.type==='adjust' && MV.qty===1) MV.qty = p.stock;
   $('ssel').innerHTML =
-    '<div class="sel"><div style="display:flex;gap:8px;align-items:flex-start"><div style="flex:1;min-width:0"><div class="nm">'+esc(p.name)+'</div><div class="meta">'+esc([p.brand,p.option,p.corp,p.loc?'위치 '+p.loc:''].filter(Boolean).join(' · '))+'</div></div><button class="x" id="sclr" aria-label="선택 취소"><i class="ti ti-x"></i></button></div>'+
+    '<div class="sel"><div style="display:flex;gap:12px;align-items:flex-start">'+thumb(p,true)+'<div style="flex:1;min-width:0"><div class="nm">'+esc(p.name)+'</div><div class="meta">'+esc([p.brand,p.option,p.corp,p.loc?'위치 '+p.loc:''].filter(Boolean).join(' · '))+'</div>'+(p.sbnPrd?'<div class="sbn">'+sbnLabel(p)+(p.barcode?' · '+esc(p.barcode):'')+'</div>':'')+'</div><button class="x" id="sclr" aria-label="선택 취소"><i class="ti ti-x"></i></button></div>'+
     '<div class="stk">현재 재고 <b class="num">'+won(p.stock)+'</b>'+stockPill(p)+'</div>'+
     '<div style="margin-top:14px;font-size:13px;font-weight:600;color:var(--sub)">'+lab+'</div>'+
     '<div class="stepper" style="margin-top:6px"><button id="sm">−</button><input id="sqty" class="num" inputmode="numeric" value="'+MV.qty+'"><button id="sp">+</button></div>'+
@@ -1004,7 +1013,9 @@ VIEWS.settings = {
         '<label class="fld"><span>마진율 기준 (%) — 이보다 낮으면 빨간색으로 표시</span><div class="scanrow"><input class="inp r num" id="mmin" inputmode="numeric" value="'+marginMin()+'"><button class="btn" id="msave">저장</button></div></label>'+
         '<div style="font-size:13px;color:var(--mute)">서버: '+(DEMO?'체험 모드 (이 기기에만 저장)':'연결됨')+' · 버전 '+APP_BUILD+'</div>'+
         (DEMO?'<button class="btn sm dng" style="margin-top:12px" id="dreset">체험 데이터 초기화</button>':'')+
-      '</div></div>';
+      '</div></div>'+
+      '<div class="card" style="margin-top:16px"><h2>사방넷 동기화 <small>'+(S.config.sbn_sync?esc(S.config.sbn_sync.at)+' · '+esc(S.config.sbn_sync.value):'아직 기록 없음')+'</small></h2>'+
+      '<p style="margin:0;color:var(--sub);font-size:14px">사방넷 단품(옵션) 목록을 이미지·사방넷 상품코드·단품코드·바코드·원가·판매가·현재고와 함께 가져옵니다. 같은 사방넷 코드는 새로 만들지 않고 갱신하며, 재고는 사방넷 현재고로 맞춰집니다. 지금은 Claude가 사방넷에 로그인된 화면에서 가져오고, 사방넷 API 연결 후에는 자동으로 바뀝니다.</p></div>';
   },
   bind: function(){
     if (!isAdmin()) return;
@@ -1028,6 +1039,43 @@ function userForm(u){
     var b=this, name=$('un').value.trim(); if(!name) return toast('이름을 입력하세요',true);
     b.disabled = true;
     api('user_save',{name:name,role:$('ur').value,pin:$('up').value.trim(),active:u?$('ua').checked:true}).then(function(j){ S.users=j.users; persist(); closeDrawer(); toast('저장했어요'); route(); }).catch(function(e){ b.disabled=false; fail(e); });
+  };
+}
+
+/* ===================== 사방넷 → 앱 데이터 수신 ===================== */
+var SBN_ORIGIN = 'https://sbadmin11.sabangnet.co.kr', SBN_IN = null;
+window.addEventListener('message', function(e){
+  if (e.origin !== SBN_ORIGIN || !e.data || typeof e.data !== 'object') return;
+  var d = e.data;
+  if (d.type === 'sbn_ping'){ e.source.postMessage({type:'hub_ready', admin:isAdmin()}, SBN_ORIGIN); return; }
+  if (d.type !== 'sbn_rows' || !Array.isArray(d.rows)) return;
+  if (!SBN_IN || SBN_IN.batch !== d.batch) SBN_IN = {batch:d.batch, rows:[], total:d.total};
+  SBN_IN.rows = SBN_IN.rows.concat(d.rows);
+  e.source.postMessage({type:'hub_got', n:SBN_IN.rows.length}, SBN_ORIGIN);
+  if (d.final) openSbnImport();
+});
+function openSbnImport(){
+  if (!S.me) return;
+  if (!isAdmin()) return toast('사방넷 동기화는 관리자만 할 수 있어요',true);
+  var R = SBN_IN.rows, prds = {}; R.forEach(function(r){ prds[r.sbnPrd]=1; });
+  var withImg = R.filter(function(r){ return r.img; }).length;
+  drawer('사방넷에서 상품 가져오기',
+    '<div class="sel" style="margin:0"><div class="nm">단품 '+won(R.length)+'개 · 상품 '+won(Object.keys(prds).length)+'개를 받았어요</div>'+
+    '<div class="meta">이미지 있는 단품 '+won(withImg)+'개 · 사방넷 상품코드·단품코드·바코드·원가·판매가·현재고 포함</div></div>'+
+    '<ul class="plan" style="padding-left:20px;margin:16px 0 0"><li>같은 사방넷 코드(또는 바코드) 상품은 <b>갱신</b>, 없으면 <b>새로 등록</b></li><li>재고는 <b>사방넷 현재고로 맞춤</b> — 차이는 재고 이력에 「사방넷동기화」로 남아요</li><li>앱에서 넣은 보관 위치·메모는 그대로 유지</li></ul>'+
+    '<div class="prog"><i id="sbnbar"></i></div><div class="preview" id="sbnmsg">아래 [가져오기]를 누르면 시작해요</div>',
+    '<button class="btn" onclick="closeDrawer()">취소</button><button class="btn pri" id="sbngo">가져오기</button>');
+  $('sbngo').onclick = function(){
+    var b=this; b.disabled=true;
+    var size=3000, parts=[], i; for(i=0;i<R.length;i+=size) parts.push(R.slice(i,i+size));
+    var tot={added:0,updated:0,stockChanged:0}, k=0;
+    var next=function(){
+      if (k>=parts.length){ $('sbnmsg').innerHTML='완료 · 새로 등록 <b>'+won(tot.added)+'</b> · 갱신 <b>'+won(tot.updated)+'</b> · 재고 변경 <b>'+won(tot.stockChanged)+'</b>'; b.textContent='닫기'; b.disabled=false; b.onclick=function(){ closeDrawer(); boot(); }; return; }
+      $('sbnmsg').textContent='저장 중… '+(k+1)+' / '+parts.length;
+      api('sbn_sync',{rows:parts[k]}).then(function(j){ tot.added+=j.added; tot.updated+=j.updated; tot.stockChanged+=j.stockChanged; k++; $('sbnbar').style.width=(k/parts.length*100)+'%'; next(); })
+        .catch(function(e){ b.disabled=false; fail(e); $('sbnmsg').textContent='중간에 멈췄어요. [가져오기]를 다시 누르면 이어서 갱신돼요'; parts=parts.slice(k); k=0; });
+    };
+    next();
   };
 }
 
