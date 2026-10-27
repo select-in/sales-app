@@ -316,7 +316,9 @@ function hubSbnSync_(rows, me) {
     var key = hubStr_(r.sbnPrd, 30) + '-' + hubStr_(r.sbnSku, 20);
     if (!r.sbnPrd || !r.name) return;
     var bar = hubStr_(r.barcode, 60);
-    var hit = byKey[key] || (bar && byBar[bar]);
+    // 바코드로 찾는 건 앱에서 직접 만든(사방넷 코드 없는) 상품만 — 사방넷 안에 같은 바코드를 쓰는 단품이 있어서
+    var byB = bar && byBar[bar];
+    var hit = byKey[key] || (byB && !byB.sbnPrd ? byB : null);
     var stock = Math.round(hubNum_(r.stock)), cost = hubNum_(r.cost);
     if (hit) {
       if (hit.cost !== cost) logs.push(['원가이력', [now, hit.id, hit.sku, hit.name, hit.cost, cost, '사방넷']]);
