@@ -320,7 +320,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-28g';
+var APP_BUILD = '2026-10-28h';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -983,7 +983,7 @@ var SBQ = {ids:{}, t:null};
 function sbnQueue(p){
   if (!p || DEMO) return; var o = isMoum(p) ? originOf(p) : p;
   if (!o || !o.sbnPrd || stockMode(o)!=='현재고') return;
-  SBQ.ids[o.id] = 1; clearTimeout(SBQ.t); SBQ.t = setTimeout(sbnFlush, 3000);
+  SBQ.ids[o.id] = 1; clearTimeout(SBQ.t); SBQ.t = setTimeout(sbnFlush, 1500);
 }
 function sbnFlush(){
   var ids = Object.keys(SBQ.ids); SBQ.ids = {}; if (!ids.length) return;
@@ -1016,12 +1016,12 @@ function openOptionAdd(p){
 function commitMove(qty, memo){
   if (moving) return; moving = true;
   if ($('sgo')) $('sgo').disabled = true;
-  api('stock_move',{id:MV.id,type:MV.type,qty:qty,memo:memo||''}).then(function(j){
+  api('stock_move',{id:MV.id,type:MV.type,qty:qty,memo:memo||'',sbn:false}).then(function(j){
     moving = false;
     var i = S.products.findIndex(function(x){ return x.id===j.product.id; }); if (i>=0) S.products[i] = j.product;
     S.history.unshift(j.move); persist();
-    var sb=j.sbn, sbOk=sb&&sb.done&&sb.done.length, sbTxt = !sb ? '' : sbOk ? ' · 사방넷 '+sb.done[0].qty+'개 반영' : ' · 사방넷 반영 실패';
-    toast((j.move.type)+' 저장 · '+j.product.name+' → 재고 '+won(j.product.stock)+sbTxt, !!(sb&&!sbOk));
+    toast((j.move.type)+' 저장 · '+j.product.name+' → 재고 '+won(j.product.stock)+(j.product.sbnPrd&&stockMode(j.product)==='현재고'?' · 사방넷 반영 중':''));
+    sbnQueue(j.product);
     if (navigator.vibrate) navigator.vibrate(40);
     if ($('shist')){ $('shist').innerHTML = stockHistHtml(); bindStockHist(); }
     MV.id = null; if ($('ssel')) $('ssel').innerHTML='';
