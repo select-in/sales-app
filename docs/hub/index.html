@@ -64,6 +64,7 @@ main{margin-left:var(--side);min-height:100vh;padding:28px 32px 60px}
 .stchk{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin:-4px 0 12px;font-size:14px}.stchk>span{font-size:13px;font-weight:600;color:var(--sub)}.stchk label{display:flex;align-items:center;gap:5px;cursor:pointer}.stchk small{color:var(--mute)}
 .ptbl tr.grp.open{background:var(--soft)}.ptbl tr.sub td{background:var(--bg);padding-top:8px;padding-bottom:8px}.subnm{padding-left:56px;font-size:14px}.subnm .sku{font-size:12px;color:var(--mute);margin-right:6px}.optc{color:var(--brand);font-weight:600;white-space:nowrap}.optc i{vertical-align:-2px}
 .mcsub{margin:0 0 8px 18px;border-left:2px solid var(--line)}.mcsub .mc{padding-left:12px}
+.hopt{font-size:12.5px;color:var(--sub);margin-top:1px}
 .tabbar{display:none}
 
 .ph{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:20px;flex-wrap:wrap}
@@ -320,7 +321,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-28h';
+var APP_BUILD = '2026-10-28i';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -620,12 +621,15 @@ VIEWS.home = {
     };
   }
 };
+var _HP=null,_HPsrc=null;
+function histProd(id){ if(_HPsrc!==S.products){ _HP={}; S.products.forEach(function(p){ _HP[p.id]=p; }); _HPsrc=S.products; } return _HP[id]; }
 function histList(list, emptyMsg){
   if (!list.length) return '<div class="empty">'+emptyMsg+'</div>';
   return '<div class="list">'+list.map(function(h){
     var cls = h.qty>0?'p':h.qty<0?'m':'';
     var pill = h.type==='입고'||h.type==='기초재고'?'g':h.type==='출고'?'r':'b';
-    return '<div class="li"><span class="pill '+pill+'">'+esc(h.type)+'</span><div class="m"><div class="t">'+esc(h.name)+'</div><div class="s">'+esc(h.at.slice(5))+' · '+esc(h.by)+(h.memo?' · '+esc(h.memo):'')+'</div></div>'+
+    var hp = h.id ? histProd(h.id) : null, opt = hp ? [hp.option||'단품', hp.sbnPrd?hp.sbnPrd+'-'+hp.sbnSku:(hp.barcode||'')].filter(Boolean).join(' · ') : '';
+    return '<div class="li"><span class="pill '+pill+'">'+esc(h.type)+'</span><div class="m"><div class="t">'+esc(h.name)+'</div>'+(opt?'<div class="hopt">'+esc(opt)+'</div>':'')+'<div class="s">'+esc(h.at.slice(5))+' · '+esc(h.by)+(h.memo?' · '+esc(h.memo):'')+'</div></div>'+
       '<div class="e"><div class="qty num '+cls+'">'+(h.qty>0?'+':'')+won(h.qty)+'</div><div class="s num">재고 '+won(h.after)+'</div></div></div>';
   }).join('')+'</div>';
 }
