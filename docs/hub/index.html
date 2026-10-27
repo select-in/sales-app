@@ -331,7 +331,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-28x';
+var APP_BUILD = '2026-10-28y';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -1605,12 +1605,19 @@ function krList(){
           '<td><div class="c2"><b><span class="pill">'+esc(r.account)+'</span></b><span class="ell">'+stSum(g.items)+'</span></div></td>'+
           '<td class="r num">'+c2(won(g.items.length)+'개', split(g.nN,g.nI))+'</td><td class="r num">'+c2(won(g.items.reduce(function(t,x){ return t+(+x.price||0); },0)),'합계')+'</td><td></td>'+
           '<td class="r num">'+c2(won(g.amt),'합계')+'</td><td class="r num">'+c2(esc(g.at.slice(5,10)), esc(g.at.slice(11,16)))+'</td><td class="c num">'+appCell(g.app,null)+'</td></tr>';
-        return h+(open?g.items.map(function(x){
+        var KK=['보관','일반'].filter(function(k){ return g.items.some(function(x){ return krKind(x)===k; }); });
+        return h+(open?KK.map(function(kind){
+          var ki=g.items.filter(function(x){ return krKind(x)===kind; }).sort(function(a,b){ return sizeCmp(a.option,b.option) || String(b.settledAt||b.orderedAt).localeCompare(String(a.settledAt||a.orderedAt)); }), kk=g.k+'|'+kind, ko=!!KF.openK[kk];
+          var kz=ki.map(function(x){ return x.option; }).filter(function(v,i,a){ return v&&a.indexOf(v)===i; });
+          var mid='<tr class="click kmid'+(ko?' open':'')+'" data-kk="'+esc(kk)+'"><td><div class="c2" style="padding-left:12px"><b>'+kpill(kind)+' '+(kind==='보관'?'보관판매':'일반판매')+' <span class="optc"><i class="ti ti-chevron-'+(ko?'up':'down')+'"></i>'+ki.length+'건</span></b><span>'+esc(kz.join(', '))+'</span></div></td>'+
+            '<td><div class="c2"><span class="ell">'+stSum(ki)+'</span></div></td><td class="r num">'+c2(ki.length+'개','')+'</td><td class="r num">'+won(ki.reduce(function(t,x){ return t+(+x.price||0); },0))+'</td><td></td><td class="r num"><b>'+won(ki.reduce(function(t,x){ return t+(+x.payout||0); },0))+'</b></td><td></td><td></td></tr>';
+          return mid+(ko?ki.map(function(x){
           var d=String(KF.tab==='settle'?x.settledAt:x.orderedAt||'');
           return '<tr class="sub"><td><div class="subnm c2"><b>'+esc(x.option||'')+'</b><span>'+esc(x.oid||'')+'</span></div></td>'+
-            '<td><div class="c2"><b>'+kpill(krKind(x))+'</b><span>'+esc(x.status||'')+'</span></div></td><td class="r num">1개</td>'+
+            '<td><div class="c2"><b style="font-weight:500">'+esc(x.status||'')+'</b></div></td><td class="r num">1개</td>'+
             '<td class="r num">'+won(x.price)+'</td><td class="r num">'+(x.fee?won(x.fee):'—')+'</td><td class="r num">'+(x.payout?'<b>'+won(x.payout)+'</b>':'—')+'</td>'+
             '<td class="r num">'+c2(esc(d.slice(5,10)), KF.tab==='settle'&&x.payoutDate?'지급 '+esc(String(x.payoutDate).slice(5)):esc(d.slice(11,16)))+'</td><td class="c num">'+appCell(g.app,x.option)+'</td></tr>';
+          }).join(''):'');
         }).join(''):'');
       }).join('')+'</tbody></table></div>'+
       '<div class="mcards">'+CS.map(function(g){
