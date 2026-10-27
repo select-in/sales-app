@@ -122,7 +122,27 @@
           });
         });
         res.full = full;
-        return res;
+        // 보관판매: 보관 신청 후 크림 창고로 보내야 하는 것(발송 필요)·이동 중(입고 대기)·보관 중 수량
+        msg('보관 현황 읽는 중…');
+        res.inv = []; res.invCount = null;
+        var tabs = ['shipment_required', 'storage_pending'], t = 0;
+        var nextT = function () {
+          if (t >= tabs.length) return res;
+          var tab = tabs[t++], page = 1;
+          var step = function () {
+            return get('inventory/items?page=' + page + '&per_page=100&keyword=&tab=' + tab + '&keyword_type=product_name&date_filter_type=date_requested&start_date=' + ymd(daysAgo(180)) + '&end_date=' + today).then(function (j) {
+              if (j.status_count) res.invCount = j.status_count;
+              (j.items || []).forEach(function (it) {
+                var p = it.product || {}, ii = it.inventory_item || {}, tr = it.tracking || {};
+                res.inv.push({ invId: it.id, oid: it.oid || '', stage: tab, status: ii.status_display || '', style: p.style_code || '', name: p.name_korean || p.name || '', option: it.option || '',
+                  tracking: tr.tracking_code || '', requestedAt: kst(ii.date_stock_requested || it.date_created), updatedAt: kst(it.date_updated) });
+              });
+              if ((j.items || []).length === 100 && page < 20) { page++; return step(); }
+            });
+          };
+          return step().catch(function () {}).then(nextT);
+        };
+        return nextT();
       });
   }
 
@@ -154,7 +174,7 @@
         };
         window.addEventListener('message', on);
         parts.forEach(function (p, i) {
-          w.postMessage({ type: 'krm_rows', batch: batch, account: res.account, asks: i === 0 ? res.asks : null, sales: p, part: i, parts: parts.length }, HUB_ORIGIN);
+          w.postMessage({ type: 'krm_rows', batch: batch, account: res.account, asks: i === 0 ? res.asks : null, inv: i === 0 ? res.inv : null, invCount: i === 0 ? res.invCount : null, sales: p, part: i, parts: parts.length }, HUB_ORIGIN);
         });
         setTimeout(function () { window.removeEventListener('message', on); bad(new Error('OPS 저장 응답이 없어요')); }, 5 * 60 * 1000);
       });

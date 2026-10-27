@@ -24,6 +24,7 @@ var HUB_TABS = {
   설정: ['키', '값', '수정일', '수정자'],
   채널출고: ['일시', '배치', '채널', '계정', '구분', '상품id', 'SKU', '상품명', '옵션', '바코드', '수량', '주문번호', '판매가', '수수료율', '정산예상', '재고반영', '작업자', '메모'],
   크림입찰: ['계정', '입찰id', '주문번호', '상태', '구분', '품번', '상품명', '브랜드', '옵션', '입찰가', '수수료', '정산예정', '최저판매가', '최근거래가', '등록일', '만료일', '동기화', '내순위', '최저가일반', '최저가보관', '체결가일반', '체결가보관'],
+  크림보관: ['계정', '보관id', '주문번호', '단계', '상태', '품번', '상품명', '사이즈', '운송장', '신청일', '수정일', '동기화'],
   크림매핑: ['크림품번', '사방넷상품코드', '컬러', '수정일', '수정자', '사이즈연결'],
   크림판매: ['계정', '주문번호', '입찰id', '상태', '구분', '품번', '상품명', '옵션', '판매가', '수수료', '정산액', '주문일', '정산일', '지급예정일', '동기화']
 };
@@ -504,6 +505,7 @@ function hubChannelList_(limit) {
  *  - 크림판매: 진행중(발송·검수)·정산 내역 — 계정+주문번호 기준으로 갱신/추가
  * req: {account, asks:[...]|null, sales:[...]} */
 var HUB_KRM_A = ['account', 'askId', 'oid', 'status', 'kind', 'style', 'name', 'brand', 'option', 'price', 'fee', 'payout', 'lowest', 'last', 'createdAt', 'expiresAt', 'syncedAt', 'rank', 'lowN', 'lowI', 'lastN', 'lastI'];
+var HUB_KRM_I = ['account', 'invId', 'oid', 'stage', 'status', 'style', 'name', 'option', 'tracking', 'requestedAt', 'updatedAt', 'syncedAt'];
 var HUB_KRM_S = ['account', 'oid', 'askId', 'status', 'kind', 'style', 'name', 'option', 'price', 'fee', 'payout', 'orderedAt', 'settledAt', 'payoutDate', 'syncedAt'];
 function hubKrmRow_(o, keys, acct, now) {
   return keys.map(function (k) {
@@ -514,6 +516,15 @@ function hubKrmRow_(o, keys, acct, now) {
 }
 function hubKrmSync_(req, me) {
   var acct = req.account === '셀렉트인' ? '셀렉트인' : '겐더샵', now = hubNow_(), res = { ok: true, account: acct };
+  if (Array.isArray(req.inv)) {   // 보관판매: 발송 필요·입고 대기 스냅샷 (계정별 통째 교체)
+    var bv = hubRows_('크림보관'), keepB = bv.vals.filter(function (v) { return v[0] !== acct; }), wB = HUB_TABS['크림보관'].length;
+    var addB = req.inv.map(function (o) { return hubKrmRow_(o, HUB_KRM_I, acct, now); });
+    var allB = keepB.concat(addB);
+    if (bv.vals.length) bv.sh.getRange(2, 1, bv.vals.length, wB).clearContent();
+    if (allB.length) bv.sh.getRange(2, 1, allB.length, wB).setValues(allB);
+    res.inv = addB.length;
+    if (req.invCount && typeof req.invCount === 'object') hubConfigSet_('krm_invcnt_' + acct, JSON.stringify(req.invCount), me);
+  }
   if (Array.isArray(req.asks)) {
     var a = hubRows_('크림입찰'), keep = a.vals.filter(function (v) { return v[0] !== acct; });
     var add = req.asks.map(function (o) { return hubKrmRow_(o, HUB_KRM_A, acct, now); });
@@ -546,7 +557,9 @@ function hubKrmList_() {
   var s = hubRows_('크림판매').vals.map(function (v) { var o = {}; HUB_KRM_S.forEach(function (k, i) { o[k] = fmt(v[i]); }); return o; });
   var c = hubConfig_(), synced = {};
   ['겐더샵', '셀렉트인'].forEach(function (n) { var x = c['krm_synced_' + n]; if (x) synced[n] = x.value; });
-  return { asks: a, sales: s, synced: synced, maps: hubKrmMaps_() };
+  var inv = hubRows_('크림보관').vals.map(function (v) { var o = {}; HUB_KRM_I.forEach(function (k, i) { o[k] = fmt(v[i]); }); return o; }), invCount = {};
+  ['겐더샵', '셀렉트인'].forEach(function (n) { var x = c['krm_invcnt_' + n]; if (x) try { invCount[n] = JSON.parse(x.value); } catch (e) {} });
+  return { asks: a, sales: s, synced: synced, maps: hubKrmMaps_(), inv: inv, invCount: invCount };
 }
 /* 크림 품번 ↔ 사방넷 상품코드(+컬러) 연결표 */
 function hubKrmMaps_() {

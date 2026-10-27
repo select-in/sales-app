@@ -53,6 +53,11 @@ a{color:var(--accent)}
 main{margin-left:var(--side);min-height:100vh;padding:28px 32px 60px}
 .wrap{max-width:1120px;margin:0 auto}
 .topbar{display:none}
+.card.cur{margin-top:14px;box-shadow:none;border:1px solid var(--line)}.card.cur h2 i{color:var(--accent)}.curt{min-width:760px}.curt td:first-child{width:38%}
+.todo-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px}.todo-c{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);cursor:pointer;text-align:left}.todo-c span{font-size:12.5px;color:var(--sub)}.todo-c b{font-size:20px}.todo-c b small{font-size:12px;font-weight:500;margin-left:2px;color:var(--mute)}.todo-c>small{font-size:11.5px;color:var(--accent)}.todo-c.has b{color:var(--amber)}.todo-c.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.todo-list{max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:10px}.todo-r{display:flex;gap:10px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line)}.todo-r:last-child{border-bottom:0}.todo-r .m{flex:1;min-width:0}.todo-r .t{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.todo-r .s{font-size:12px;color:var(--mute)}.todo-r .e{font-size:13px;white-space:nowrap}.todo-r i{color:var(--mute)}.todo-r.done{opacity:.55}.todo-r.done i{color:var(--accent)}
+@media (max-width:900px){.todo-grid{grid-template-columns:1fr 1fr}}
+
 .seg.segwrap{display:flex;flex-wrap:wrap;overflow:visible;max-width:100%;flex:1;min-width:0}.seg.segwrap button{flex:none}
 .otabs{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;position:sticky;top:0;z-index:14;background:var(--bg);padding:10px 0 0;border-bottom:1px solid var(--line);max-width:1120px;margin:0 auto 12px}.otabs::-webkit-scrollbar{display:none}.osync{order:99;margin-left:auto;display:inline-flex;align-items:center;gap:6px;flex:none;align-self:center;margin-bottom:6px;padding:6px 12px;border:1px solid var(--accent);border-radius:8px;background:var(--card);color:var(--accent);font-size:13px;font-weight:700;cursor:pointer}.osync small{font-weight:400;color:var(--mute);font-size:11.5px}.osync.busy i{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 .otabs:empty{display:none}
@@ -338,7 +343,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-30b-s3';
+var APP_BUILD = '2026-10-30c';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -1328,12 +1333,17 @@ function krShipPending(acct){   // 크림 일반판매 중 발송해야 하는 �
   if (!KR) return [];
   return KR.sales.filter(function(r){ return r.account===acct && krKind(r)==='일반' && !r.settledAt && (r.status==='판매완료' || /발송/.test(r.status)) && !/완료$/.test(r.status.replace('판매완료','')); });
 }
+function krInboundPending(acct){   // 크림 보관판매: 보관 신청 후 창고로 보내야 하는 것
+  if (!KR || !KR.inv) return [];
+  return KR.inv.filter(function(r){ return r.account===acct && r.stage==='shipment_required'; });
+}
+function krTodo(acct, kind){ return kind==='보관판매' ? krInboundPending(acct) : krShipPending(acct); }
 function krUsedOids(){ var u={}; CH.items.forEach(function(i){ if(i.orderNo) u[i.orderNo]=1; }); (CH_LIST||[]).forEach(function(r){ if(r.orderNo) u[r.orderNo]=1; }); return u; }
 function krOptEq(p, opt){ var a=String(p.option||'').toUpperCase().replace(/\s/g,''), b=String(opt||'').toUpperCase().replace(/\s/g,''); return !!b && (a===b || a.split(/[:\/]/).pop()===b); }
 function krMatchShip(p){   // 스캔한 상품과 품번·사이즈가 같은 크림 발송 대기 주문
-  if (CH.ch!=='KREAM' || CH.kind!=='일반판매') return null;
+  if (CH.ch!=='KREAM') return null;
   var used=krUsedOids(), nm=krNorm(p.name+' '+p.sku+' '+p.memo);
-  return krShipPending(CH.corp).filter(function(r){
+  return krTodo(CH.corp, CH.kind).filter(function(r){
     if (used[r.oid]) return false;
     var mp=krMap(r.style), ok=mp ? krMapProducts(mp).some(function(x){ return x.id===p.id; }) : String(r.style||'').split(/[\/,]/).map(krNorm).some(function(k){ return k.length>=5 && nm.indexOf(k)>=0; });
     if (!ok) return false; var L=[p]; L._style=mp?r.style:''; return krSizeHit(L, r.option).length>0;
@@ -1377,15 +1387,21 @@ function chDraw(){
     el.querySelectorAll('input[data-k]').forEach(function(inp){ inp.onchange=function(){ it[inp.dataset.k]= inp.dataset.k==='price' ? inp.value.replace(/[^\d]/g,'') : inp.value.trim(); chSave(); if(inp.dataset.k==='price') chDraw(); }; });
   });
 }
-function chKrDraw(){   // 크림 일반판매 발송 대기 목록 (스캔하면 자동 매칭)
-  var el=$('chkr'); if(!el) return;
-  if (CH.ch!=='KREAM' || CH.kind!=='일반판매'){ el.innerHTML=''; return; }
-  if (!KR){ el.innerHTML='<div class="s" style="margin-top:12px;color:var(--mute)">크림 발송 대기 불러오는 중…</div>'; return; }
-  var L=krShipPending(CH.corp), used=krUsedOids();
-  if (!L.length){ el.innerHTML='<div class="s" style="margin-top:12px;color:var(--mute)">크림 '+esc(CH.corp)+' 발송 대기 주문 없음'+(KR.synced&&KR.synced[CH.corp]?'':' (이 계정은 아직 동기화 전)')+'</div>'; return; }
-  var done=L.filter(function(r){ return used[r.oid]; }).length;
-  el.innerHTML='<details class="chb" style="margin-top:12px"'+(done<L.length?' open':'')+'><summary><b>크림 발송 대기 '+L.length+'건</b> · 스캔 매칭 '+done+'건 <span class="s">품번·사이즈가 같으면 스캔 때 주문번호가 자동으로 들어가요</span></summary>'+
-    L.map(function(r){ var u=used[r.oid]; return '<div class="s" style="padding:4px 0;display:flex;gap:8px;align-items:center"><i class="ti ti-'+(u?'circle-check" style="color:var(--accent)':'circle-dashed')+'"></i><span style="flex:1">'+esc(r.name)+' <b>'+esc(r.option)+'</b> · '+esc(r.style)+'</span><span class="num">'+esc(r.oid)+'</span></div>'; }).join('')+'</details>';
+function chKrDraw(){   // 크림 출고 대상 (일반판매 발송 · 보관판매 창고 발송) — 계정별, 스캔하면 자동 매칭
+  var el=$('chtodo')||$('chkr'); if(!el) return;
+  if (CH.ch!=='KREAM'){ el.innerHTML='<div class="s" style="margin:4px 0 10px;color:var(--mute)">포이즌 출고 대상은 포이즌 판매자센터 연결 후 보여요</div>'; return; }
+  if (!KR){ el.innerHTML='<div class="s" style="margin:4px 0 10px;color:var(--mute)">크림 출고 대상 불러오는 중…</div>'; return; }
+  var used=krUsedOids();
+  var cnt=function(a,k){ var L=krTodo(a,k); return [L.length, L.filter(function(r){ return used[r.oid]; }).length]; };
+  var sum='<div class="todo-grid">'+CH_CORPS.map(function(a){ return ['일반판매','보관판매'].map(function(k){ var c=cnt(a,k), on=CH.corp===a&&CH.kind===k;
+      return '<button class="todo-c'+(on?' on':'')+(c[0]-c[1]>0?' has':'')+'" data-ta="'+a+'" data-tk="'+k+'"><span>'+a+' · '+(k==='일반판매'?'일반 발송':'보관 입고')+'</span><b class="num">'+(c[0]-c[1])+'<small>건 남음</small></b>'+(c[1]?'<small>스캔 '+c[1]+'/'+c[0]+'</small>':'')+'</button>'; }).join(''); }).join('')+'</div>';
+  var L=krTodo(CH.corp, CH.kind).slice().sort(function(a,b){ return String(a.style).localeCompare(String(b.style)) || sizeCmp(a.option,b.option); });
+  var ic=(KR.invCount||{})[CH.corp]||{}, inv=CH.kind==='보관판매'?'<div class="s" style="margin:6px 0;color:var(--mute)">이동 중(입고 대기) '+won(ic.storage_pending||0)+'건 · 보관 중 '+won(ic.in_storage||0)+'개 · 보관 실패 '+won(ic.storage_failed||0)+'건</div>':'';
+  var stk=function(r){ var ps=krAppMatch(r.style); if(!ps.length) return '<span class="sm">미연결</span>'; var h=krSizeHit(ps, r.option); if(!h.length) return '<span class="sm">옵션 없음</span>'; var p=h[0]; return '<b>'+won(Math.max(0,effStock(p)))+'</b>'+(p.loc?' <span class="sm">'+esc(p.loc)+'</span>':''); };
+  var list = L.length ? '<div class="todo-list">'+L.map(function(r){ var u=used[r.oid]; return '<div class="todo-r'+(u?' done':'')+'"><i class="ti ti-'+(u?'circle-check':'circle-dashed')+'"></i><div class="m"><div class="t">'+esc(r.name)+' <b>'+esc(r.option)+'</b></div><div class="s">'+esc(r.style)+' · '+esc(r.oid)+(r.tracking?' · 송장 '+esc(r.tracking):'')+'</div></div><div class="e num">앱 재고 '+stk(r)+'</div></div>'; }).join('')+'</div>'
+    : '<div class="s" style="margin:8px 0;color:var(--mute)">크림 '+esc(CH.corp)+' '+(CH.kind==='일반판매'?'일반판매 발송':'보관판매 입고(발송)')+' 대상 없음'+(KR.synced&&KR.synced[CH.corp]?' · 동기화 '+esc(krFmtAt(KR.synced[CH.corp])):' (이 계정은 아직 동기화 전)')+'</div>';
+  el.innerHTML='<div class="sec" style="margin:2px 0 8px"><i class="ti ti-list-check"></i>출고 대상 <small>크림에서 끌어온 목록 · 스캔하면 주문번호가 자동으로 들어가요</small></div>'+sum+inv+list;
+  el.querySelectorAll('[data-ta]').forEach(function(b){ b.onclick=function(){ CH.corp=b.dataset.ta; CH.kind=b.dataset.tk; chSave(); route(); }; });
 }
 function chHist(){
   if (!CH_LIST){ $('chhist').innerHTML='<div class="empty">불러오는 중…</div>'; return; }
@@ -1407,16 +1423,16 @@ VIEWS.channel = {
         '<div class="chsel"><span>계정 (법인)</span><div class="seg" id="chcorp">'+CH_CORPS.map(function(c){ return '<button data-v="'+c+'" class="'+(CH.corp===c?'on':'')+'">'+c+'</button>'; }).join('')+'</div></div>'+
         '<div class="chsel"><span>구분</span>'+
         '<div class="seg" id="chkind">'+['일반판매','보관판매'].map(function(k){ return '<button data-v="'+k+'" class="'+(CH.kind===k?'on':'')+'">'+(k==='일반판매'?'일반판매 발송':'보관판매 입고')+'</button>'; }).join('')+'</div></div>'+
+        '<div id="chtodo"></div>'+
         '<div class="scanrow" style="margin-top:6px"><div class="search"><i class="ti ti-barcode"></i><input class="inp" id="chq" placeholder="바코드 입력 후 Enter (스캐너 총도 가능)" autocomplete="off"></div><button class="btn pri" id="chscan"><i class="ti ti-scan"></i><span>스캔</span></button></div>'+
         '<div id="chcart" style="margin-top:14px"></div>'+
-        '<div id="chkr"></div>'+
         '<div class="chbar"><div id="chsum"></div><div style="display:flex;gap:8px"><button class="btn" id="chclr">비우기</button><button class="btn pri" id="chgo"><i class="ti ti-truck-delivery"></i>출고 확정</button></div></div>'+
       '</div>'+
       '<div class="card"><h2>최근 출고 <small>채널출고 기록</small></h2><div id="chhist"></div></div></div>';
   },
   bind: function(){
     chDraw(); chHist();
-    if (!KR) krLoad().then(function(){ if($('chkr')) chKrDraw(); }).catch(function(){});
+    if (!KR) krLoad().then(function(){ if($('chtodo')) chKrDraw(); }).catch(function(){});
     if (!CH_LIST) api('channel_list',{}).then(function(j){ CH_LIST=j.rows||[]; if($('chhist')) chHist(); }).catch(function(){ CH_LIST=[]; if($('chhist')) chHist(); });
     [['chch','ch'],['chcorp','corp']].forEach(function(g){ document.querySelectorAll('#'+g[0]+' button').forEach(function(b){ b.onclick=function(){ CH[g[1]]=b.dataset.v; chSave(); document.querySelectorAll('#'+g[0]+' button').forEach(function(x){ x.classList.toggle('on',x===b); }); chDraw(); }; }); });
     document.querySelectorAll('#chkind button').forEach(function(b){ b.onclick=function(){ CH.kind=b.dataset.v; chSave(); document.querySelectorAll('#chkind button').forEach(function(x){ x.classList.toggle('on',x===b); }); chKrDraw(); }; });
@@ -1448,7 +1464,7 @@ function sizeKey(v){
 }
 function sizeCmp(a,b){ var x=sizeKey(a), y=sizeKey(b); return x[0]-y[0] || x[1]-y[1] || String(x[2]).localeCompare(String(y[2])); }
 /* ---------- 크림 판매자센터 (입찰 · 진행 · 정산) ---------- */
-var KR = null, KF = {acct:'전체', kind:'전체', link:'전체', tab:'live', q:'', page:1, open:{}, openK:{}, allOpen:false};
+var KR = null, KF = {acct:'전체', kind:'전체', link:'전체', tab:'cur', q:'', page:1, open:{}, openK:{}, allOpen:false};
 var KR_BM = "javascript:(function(){var s=document.createElement('script');s.src='https://select-in.github.io/sales-app/hub/kream.js?'+Date.now();document.body.appendChild(s);})()";
 function krLoad(force){
   if (KR && !force) return Promise.resolve(KR);
@@ -1613,8 +1629,8 @@ function krDraw(){
   var nN=A.filter(function(r){ return krKind(r)==='일반'; }).length, nI=A.length-nN;
   var first=A.filter(function(r){ return Number(r.rank)===1; }).length;
   var syn=Object.keys(KR.synced||{}).map(function(k){ return k+' '+krFmtAt(KR.synced[k]); }).join(' · ');
-  var cnt=function(t){ var o=KF.tab; KF.tab=t; var n=krTabRows().length; KF.tab=o; return n; };
-  var tabs=[['live','입찰중'],['prog','진행중'],['settle','정산'],['cancel','취소']];
+  var cnt=function(t){ if(t==='cur') return ''; var o=KF.tab; KF.tab=t; var n=krTabRows().length; KF.tab=o; return n; };
+  var tabs=[['cur','추천'],['live','입찰중'],['prog','진행중'],['settle','정산'],['cancel','취소']];
   box.innerHTML =
     '<div class="grid g4">'+
       '<div class="kpi"><div class="k"><i class="ti ti-gavel"></i>체결수량</div><div class="v num">'+won(A.length)+'<small>개</small></div><div class="sm">일반 '+won(nN)+' · 보관 '+won(nI)+' · 1위 '+won(first)+'</div></div>'+
@@ -1627,7 +1643,7 @@ function krDraw(){
         '<div class="seg" id="kra">'+['전체','겐더샵','셀렉트인'].map(function(c){ return '<button data-v="'+c+'" class="'+(KF.acct===c?'on':'')+'">'+c+'</button>'; }).join('')+'</div>'+
         '<div class="seg" id="krk">'+[['전체','일반+보관'],['일반','일반판매'],['보관','보관판매']].map(function(c){ return '<button data-v="'+c[0]+'" class="'+(KF.kind===c[0]?'on':'')+'">'+c[1]+'</button>'; }).join('')+'</div>'+
         '<div class="seg" id="krl">'+(function(){ var st={}, n={연결:0,미연결:0}; krTabRows().forEach(function(r){ var k=r.account+'|'+r.style; if(st[k]==null){ st[k]=krAppMatch(r.style).length>0; n[st[k]?'연결':'미연결']++; } }); return [['전체','사방넷 전체'],['연결','연결됨'],['미연결','미연결']].map(function(c){ return '<button data-v="'+c[0]+'" class="'+(KF.link===c[0]?'on':'')+'">'+c[1]+(c[0]!=='전체'?' <small class="num">'+won(n[c[0]])+'</small>':'')+'</button>'; }).join(''); })()+'</div>'+
-        '<div class="seg" id="krt">'+tabs.map(function(t){ return '<button data-v="'+t[0]+'" class="'+(KF.tab===t[0]?'on':'')+'">'+t[1]+' <small class="num">'+won(cnt(t[0]))+'</small></button>'; }).join('')+'</div>'+
+        '<div class="seg" id="krt">'+tabs.map(function(t){ return '<button data-v="'+t[0]+'" class="'+(KF.tab===t[0]?'on':'')+'">'+(t[0]==='cur'?'<i class="ti ti-sparkles"></i> ':'')+t[1]+(t[0]==='cur'?'':' <small class="num">'+won(cnt(t[0]))+'</small>')+'</button>'; }).join('')+'</div>'+
         '<div class="search" style="flex:1;min-width:200px"><i class="ti ti-search"></i><input class="inp" id="krq" placeholder="품번, 상품명, 사이즈, 주문번호" value="'+esc(KF.q)+'"></div></div>'+
       '<p style="margin:0 0 10px;font-size:12px;color:var(--mute)">마지막 동기화: '+esc(syn||'없음')+(KF.tab==='live'?' · 크림 최저가·최근 체결가는 크림이 주는 <b>상품 전체(전 사이즈) 기준</b> · 순위 1 = 그 사이즈에서 내가 최저가':'')+'</p>'+
       '<div id="krlist"></div></div>';
@@ -1648,6 +1664,7 @@ function krSoldMap(){   // 품번+사이즈+구분별 내 최근 체결가 · 30
 }
 function krList(){
   var el=$('krlist'); if(!el) return;
+  if (KF.tab==='cur') return krCuration(el);
   var toks=KF.q.toLowerCase().split(/\s+/).filter(Boolean);
   var L=krTabRows().filter(function(r){ var h=[r.style,r.name,r.brand,r.option,r.oid,r.account,r.status,r.kind].join(' ').toLowerCase(); return toks.every(function(t){ return h.indexOf(t)>=0; }); });
   if (KF.link!=='전체'){ var lk={}; L=L.filter(function(r){ if(lk[r.style]==null) lk[r.style]=krAppMatch(r.style).length>0; return KF.link==='연결'?lk[r.style]:!lk[r.style]; }); }
@@ -1781,6 +1798,47 @@ function krList(){
   bindPager(el, function(n){ KF.page=n; krList(); });
 }
 
+/* 크림 추천 · 큐레이션: 요즘 뜨는 상품 / 가격 조정 필요 / 재고 있는데 안 건 상품 / 내가 최저가 */
+function krCuration(el){
+  XL_CUR=null;
+  var acctF=function(r){ return KF.acct==='전체'||r.account===KF.acct; }, kindF=function(r){ return KF.kind==='전체'||krKind(r)===KF.kind; };
+  var now=Date.now(), dAgo=function(n){ return new Date(now-n*864e5+9*3600e3).toISOString().slice(0,10); }, d7=dAgo(7), d30=dAgo(30), d60=dAgo(60);
+  var sold=KR.sales.filter(function(r){ return acctF(r)&&kindF(r)&&!/취소|반송|실패/.test(r.status); });
+  var A=KR.asks.filter(function(r){ return acctF(r)&&kindF(r); });
+  var rate={}; ['겐더샵','셀렉트인'].forEach(function(a){ var L=KR.sales.filter(function(r){ return r.account===a && +r.payout && +r.price; }).slice(-300); var p=L.reduce(function(t,r){ return t+(+r.price); },0); rate[a]=p?L.reduce(function(t,r){ return t+(+r.payout); },0)/p:0.88; });
+  // 품번별 판매 집계
+  var P={}; sold.forEach(function(r){ var at=String(r.orderedAt||r.settledAt||'').slice(0,10); if(at<d60) return; var k=r.account+'|'+r.style, o=P[k]||(P[k]={k:k, acct:r.account, style:r.style, name:r.name, n7:0, n30:0, n60:0, last:0, lastAt:'', sizes:{}}); if(at>=d7) o.n7++; if(at>=d30) o.n30++; o.n60++; if(at>o.lastAt){ o.lastAt=at; o.last=+r.price||0; } o.sizes[r.option]=(o.sizes[r.option]||0)+(at>=d30?1:0); });
+  var live={}; A.forEach(function(r){ var k=r.account+'|'+r.style; (live[k]=live[k]||[]).push(r); });
+  var costOf=function(style, opt){ var ps=krAppMatch(style); if(!ps.length) return 0; var h=opt?krSizeHit(ps,opt):ps; h=h.filter(function(p){ return +p.cost>0; }); return h.length?+h[0].cost:0; };
+  var margin=function(acct, price, cost){ if(!price||!cost) return null; return Math.round(price*rate[acct]-cost); };
+  var mTxt=function(m){ return m==null?'<span class="sm">원가 없음</span>':'<b style="color:'+(m>=0?'var(--accent)':'var(--red)')+'">'+(m>=0?'+':'')+won(m)+'</b>'; };
+  var appQ=function(style){ var ps=krAppMatch(style); return ps.length?ps.reduce(function(t,p){ return t+Math.max(0,effStock(p)); },0):null; };
+  // 1) 요즘 뜨는 상품: 최근 7일 판매가 30일 평균보다 빠른 순
+  var hot=Object.keys(P).map(function(k){ var o=P[k]; o.trend=o.n30? (o.n7/7)/(o.n30/30) : 0; return o; }).filter(function(o){ return o.n7>=2; }).sort(function(a,b){ return (b.n7*b.trend)-(a.n7*a.trend); }).slice(0,12);
+  // 2) 가격 조정 필요: 내 입찰가 > 크림 최저가, 잘 팔리는 순
+  var adj=[]; Object.keys(live).forEach(function(k){ var L=live[k], r=L[0], by={}; L.forEach(function(x){ var kk=x.option+'|'+krKind(x); var o=by[kk]||(by[kk]={option:x.option, kind:krKind(x), pmin:Infinity, n:0, rank:Infinity}); o.n++; o.pmin=Math.min(o.pmin,+x.price||Infinity); if(+x.rank) o.rank=Math.min(o.rank,+x.rank); });
+    Object.keys(by).forEach(function(kk){ var o=by[kk], low=+(o.kind==='보관'?(r.lowI||r.lowest):(r.lowN||r.lowest))||0; if(low && o.pmin>low && o.rank!==1){ adj.push({acct:r.account, style:r.style, name:r.name, option:o.option, kind:o.kind, n:o.n, mine:o.pmin, low:low, diff:o.pmin-low, s30:(P[k]&&P[k].sizes[o.option])||0, m:margin(r.account, low, costOf(r.style,o.option))}); } }); });
+  adj.sort(function(a,b){ return b.s30-a.s30 || a.diff-b.diff; }); adj=adj.slice(0,15);
+  // 3) 재고 있는데 안 건 상품: 앱 재고 > 0 이고 최근 60일 팔린 사이즈인데 지금 입찰 없음
+  var idle=[]; Object.keys(P).forEach(function(k){ var o=P[k], ps=krAppMatch(o.style); if(!ps.length) return; var L=live[k]||[];
+    Object.keys(o.sizes).forEach(function(z){ if(L.some(function(x){ return krSizeNorm(x.option)===krSizeNorm(z); })) return; var h=krSizeHit(ps,z), q=h.reduce(function(t,p){ return t+Math.max(0,effStock(p)); },0); if(q>0) idle.push({acct:o.acct, style:o.style, name:o.name, option:z, q:q, last:o.last, s30:o.sizes[z], m:margin(o.acct, o.last, h[0]&&+h[0].cost) }); }); });
+  idle.sort(function(a,b){ return b.s30-a.s30 || b.q-a.q; }); idle=idle.slice(0,15);
+  // 4) 내가 최저가(1위)인 사이즈가 많은 상품
+  var first=Object.keys(live).map(function(k){ var L=live[k], z={}; L.forEach(function(x){ if(+x.rank===1) z[x.option+'|'+krKind(x)]=1; }); return {acct:L[0].account, style:L[0].style, name:L[0].name, n:Object.keys(z).length, sizes:Object.keys(z).map(function(x){ return x.split('|')[0]; }).sort(sizeCmp), s30:(P[k]&&P[k].n30)||0}; }).filter(function(o){ return o.n; }).sort(function(a,b){ return b.n-a.n || b.s30-a.s30; }).slice(0,12);
+  var card=function(ic, title, sub, rows, head){ return '<div class="card cur"><h2><i class="ti ti-'+ic+'"></i> '+title+' <small>'+sub+'</small></h2>'+(rows.length?'<div class="tblwrap"><table class="tbl ktbl curt"><thead><tr>'+head+'</tr></thead><tbody>'+rows.join('')+'</tbody></table></div>':'<div class="empty">해당 상품이 없어요</div>')+'</div>'; };
+  var nm=function(o, extra){ return '<td><div class="c2 nm2"><b title="'+esc(o.name)+'">'+esc(o.name)+'</b><span>'+esc(o.acct)+' · '+esc(o.style)+(extra?' · '+extra:'')+'</span></div></td>'; };
+  el.innerHTML =
+    card('flame','요즘 뜨는 상품','최근 7일 판매가 30일 평균보다 빠른 순', hot.map(function(o){ var q=appQ(o.style), lv=(live[o.k]||[]).length; return '<tr>'+nm(o)+'<td class="r num">'+c2_(o.n7+'개', '30일 '+o.n30+'개')+'</td><td class="r num">'+c2_((o.trend>=1.2?'<em class="ok">↑ ':'<em>')+o.trend.toFixed(1)+'배</em>','판매 속도')+'</td><td class="r num">'+c2_(won(o.last), esc(o.lastAt.slice(5)))+'</td><td class="r num">'+c2_(lv+'개','걸어둔 수량')+'</td><td class="r num">'+(q==null?'<span class="sm">미연결</span>':c2_(won(q)+'개','앱 재고'))+'</td></tr>'; }),
+      '<th>상품</th><th>7일 판매</th><th>추세</th><th>최근 체결</th><th>입찰</th><th>앱 재고</th>')+
+    card('alert-triangle','가격 조정 필요','내 입찰가가 크림 최저가보다 높음 · 최근 잘 팔린 사이즈부터', adj.map(function(o){ return '<tr>'+nm(o, '<b>'+esc(o.option)+'</b> '+o.kind)+'<td class="r num">'+c2_(won(o.mine),o.n+'개 걸림')+'</td><td class="r num">'+c2_(won(o.low),'크림 최저')+'</td><td class="r num">'+c2_('<em class="wn">'+(o.acct==='셀렉트인'?'셀':'겐')+' +'+won(o.diff)+' ↑</em>','')+'</td><td class="r num">'+c2_(o.s30+'개','30일 판매')+'</td><td class="r num">'+c2_(mTxt(o.m),'최저가로 팔면')+'</td></tr>'; }),
+      '<th>상품 · 사이즈</th><th>내 입찰가</th><th>크림 최저가</th><th>차이</th><th>판매</th><th>예상 마진</th>')+
+    card('package','재고 있는데 안 걸어둔 상품','앱 현재고가 있고 최근 팔렸는데 지금 입찰이 없는 사이즈', idle.map(function(o){ return '<tr>'+nm(o, '<b>'+esc(o.option)+'</b>')+'<td class="r num">'+c2_(won(o.q)+'개','앱 재고')+'</td><td class="r num">'+c2_(o.s30+'개','30일 판매')+'</td><td class="r num">'+c2_(won(o.last),'최근 체결')+'</td><td class="r num">'+c2_(mTxt(o.m),'그 가격이면')+'</td><td></td></tr>'; }),
+      '<th>상품 · 사이즈</th><th>앱 재고</th><th>판매</th><th>최근 체결가</th><th>예상 마진</th><th></th>')+
+    card('trophy','내가 최저가인 상품','1위(최저가)로 걸려 있는 사이즈가 많은 순', first.map(function(o){ return '<tr>'+nm(o)+'<td class="r num">'+c2_(o.n+'개','1위 사이즈')+'</td><td class="c" style="white-space:normal"><span class="sm">'+esc(o.sizes.join(', '))+'</span></td><td class="r num">'+c2_(o.s30+'개','30일 판매')+'</td><td></td><td></td></tr>'; }),
+      '<th>상품</th><th>1위</th><th>사이즈</th><th>판매</th><th></th><th></th>')+
+    '<p class="sm" style="margin:8px 0 0">예상 마진 = 가격 × 실제 정산률('+Object.keys(rate).map(function(a){ return a+' '+Math.round(rate[a]*100)+'%'; }).join(' · ')+') − 앱 원가 · 크림 최저가는 상품 전체 기준</p>';
+}
+function c2_(a,b){ return '<div class="c2"><b>'+a+'</b>'+(b?'<span>'+b+'</span>':'')+'</div>'; }
 /* ---------- 크림 판매자센터 → 앱 데이터 수신 (kream.js) ---------- */
 var KRM_ORIGIN = 'https://partner.kream.co.kr', KRM_IN = {};
 window.addEventListener('message', function(e){
@@ -1791,7 +1849,7 @@ window.addEventListener('message', function(e){
   var B = KRM_IN[d.batch] || (KRM_IN[d.batch] = {got:0, q:Promise.resolve(), tot:{asks:0,salesAdded:0,salesUpdated:0}, err:null});
   B.q = B.q.then(function(){
     if (B.err) return;
-    return api('krm_sync',{account:d.account, asks:d.asks, sales:d.sales}).then(function(j){
+    return api('krm_sync',{account:d.account, asks:d.asks, inv:d.inv, invCount:d.invCount, sales:d.sales}).then(function(j){
       if (j.asks!=null) B.tot.asks=j.asks; B.tot.salesAdded+=j.salesAdded||0; B.tot.salesUpdated+=j.salesUpdated||0;
     }).catch(function(x){ B.err = (x&&x.message)||'저장 실패'; });
   }).then(function(){
