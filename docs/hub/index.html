@@ -324,7 +324,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-28p';
+var APP_BUILD = '2026-10-28q';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -1136,12 +1136,28 @@ function chAdd(code){
   if (L.length > 1){ chPickMany(code, L); return 'pick'; }
   chPush(L[0]); return true;
 }
+function krShipPending(acct){   // 크림 일반판매 중 발송해야 하는 주문
+  if (!KR) return [];
+  return KR.sales.filter(function(r){ return r.account===acct && r.kind!=='보관' && !r.settledAt && (r.status==='판매완료' || /발송/.test(r.status)) && !/완료$/.test(r.status.replace('판매완료','')); });
+}
+function krUsedOids(){ var u={}; CH.items.forEach(function(i){ if(i.orderNo) u[i.orderNo]=1; }); (CH_LIST||[]).forEach(function(r){ if(r.orderNo) u[r.orderNo]=1; }); return u; }
+function krOptEq(p, opt){ var a=String(p.option||'').toUpperCase().replace(/\s/g,''), b=String(opt||'').toUpperCase().replace(/\s/g,''); return !!b && (a===b || a.split(/[:\/]/).pop()===b); }
+function krMatchShip(p){   // 스캔한 상품과 품번·사이즈가 같은 크림 발송 대기 주문
+  if (CH.ch!=='KREAM' || CH.kind!=='일반판매') return null;
+  var used=krUsedOids(), nm=krNorm(p.name+' '+p.sku+' '+p.memo);
+  return krShipPending(CH.corp).filter(function(r){
+    if (used[r.oid]) return false;
+    var ok=String(r.style||'').split(/[\/,]/).map(krNorm).some(function(k){ return k.length>=5 && nm.indexOf(k)>=0; });
+    return ok && krOptEq(p, r.option);
+  })[0] || null;
+}
 function chPush(p){
   if (isMoum(p)){ var o=originOf(p); if(!o){ toast('모음전인데 원본('+p.link+')이 앱에 없어요', true); return; } p = o; }
-  var ex = CH.items.filter(function(i){ return i.id===p.id && !i.orderNo; })[0];
-  if (ex) ex.qty++; else CH.items.unshift({id:p.id, qty:1, orderNo:'', price:''});
+  var km = krMatchShip(p);
+  var ex = km ? null : CH.items.filter(function(i){ return i.id===p.id && !i.orderNo; })[0];
+  if (ex) ex.qty++; else CH.items.unshift({id:p.id, qty:1, orderNo:km?km.oid:'', price:km&&km.price?String(km.price):''});
   chSave(); if (navigator.vibrate) navigator.vibrate(40);
-  toast('담음 · '+p.name.slice(0,22)+(p.option?' ('+p.option+')':''));
+  toast((km?'크림 주문 '+km.oid+' 매칭 · ':'담음 · ')+p.name.slice(0,22)+(p.option?' ('+p.option+')':''));
   if ($('chcart')) chDraw();
 }
 function chPickMany(code, L){
@@ -1165,12 +1181,23 @@ function chDraw(){
   $('chcart').innerHTML = CH.items.length ? rows : '<div class="empty">아래 [스캔]으로 출고할 상품 바코드를 연속으로 찍으세요.<br>같은 상품을 또 찍으면 수량이 늘어나요.</div>';
   $('chsum').innerHTML = '<b class="num">'+won(CH.items.length)+'</b>종 · <b class="num">'+won(tq)+'</b>개'+(ts?' · 정산 예상 <b class="num">'+won(ts)+'</b>원 (수수료 '+Math.round(fee*100)+'%)':'');
   $('chgo').disabled = !CH.items.length;
+  chKrDraw();
   document.querySelectorAll('#chcart .chi').forEach(function(el){
     var it = CH.items[+el.dataset.i];
     el.querySelectorAll('[data-d]').forEach(function(b){ b.onclick=function(){ it.qty=Math.max(1,it.qty+(+b.dataset.d)); chSave(); chDraw(); }; });
     el.querySelector('[data-del]').onclick = function(){ CH.items.splice(+el.dataset.i,1); chSave(); chDraw(); };
     el.querySelectorAll('input[data-k]').forEach(function(inp){ inp.onchange=function(){ it[inp.dataset.k]= inp.dataset.k==='price' ? inp.value.replace(/[^\d]/g,'') : inp.value.trim(); chSave(); if(inp.dataset.k==='price') chDraw(); }; });
   });
+}
+function chKrDraw(){   // 크림 일반판매 발송 대기 목록 (스캔하면 자동 매칭)
+  var el=$('chkr'); if(!el) return;
+  if (CH.ch!=='KREAM' || CH.kind!=='일반판매'){ el.innerHTML=''; return; }
+  if (!KR){ el.innerHTML='<div class="s" style="margin-top:12px;color:var(--mute)">크림 발송 대기 불러오는 중…</div>'; return; }
+  var L=krShipPending(CH.corp), used=krUsedOids();
+  if (!L.length){ el.innerHTML='<div class="s" style="margin-top:12px;color:var(--mute)">크림 '+esc(CH.corp)+' 발송 대기 주문 없음'+(KR.synced&&KR.synced[CH.corp]?'':' (이 계정은 아직 동기화 전)')+'</div>'; return; }
+  var done=L.filter(function(r){ return used[r.oid]; }).length;
+  el.innerHTML='<details class="chb" style="margin-top:12px"'+(done<L.length?' open':'')+'><summary><b>크림 발송 대기 '+L.length+'건</b> · 스캔 매칭 '+done+'건 <span class="s">품번·사이즈가 같으면 스캔 때 주문번호가 자동으로 들어가요</span></summary>'+
+    L.map(function(r){ var u=used[r.oid]; return '<div class="s" style="padding:4px 0;display:flex;gap:8px;align-items:center"><i class="ti ti-'+(u?'circle-check" style="color:var(--accent)':'circle-dashed')+'"></i><span style="flex:1">'+esc(r.name)+' <b>'+esc(r.option)+'</b> · '+esc(r.style)+'</span><span class="num">'+esc(r.oid)+'</span></div>'; }).join('')+'</details>';
 }
 function chHist(){
   if (!CH_LIST){ $('chhist').innerHTML='<div class="empty">불러오는 중…</div>'; return; }
@@ -1194,15 +1221,17 @@ VIEWS.channel = {
         '<div class="seg" id="chkind">'+['일반판매','보관판매'].map(function(k){ return '<button data-v="'+k+'" class="'+(CH.kind===k?'on':'')+'">'+(k==='일반판매'?'일반판매 발송':'보관판매 입고')+'</button>'; }).join('')+'</div></div>'+
         '<div class="scanrow" style="margin-top:6px"><div class="search"><i class="ti ti-barcode"></i><input class="inp" id="chq" placeholder="바코드 입력 후 Enter (스캐너 총도 가능)" autocomplete="off"></div><button class="btn pri" id="chscan"><i class="ti ti-scan"></i><span>스캔</span></button></div>'+
         '<div id="chcart" style="margin-top:14px"></div>'+
+        '<div id="chkr"></div>'+
         '<div class="chbar"><div id="chsum"></div><div style="display:flex;gap:8px"><button class="btn" id="chclr">비우기</button><button class="btn pri" id="chgo"><i class="ti ti-truck-delivery"></i>출고 확정</button></div></div>'+
       '</div>'+
       '<div class="card"><h2>최근 출고 <small>채널출고 기록</small></h2><div id="chhist"></div></div></div>';
   },
   bind: function(){
     chDraw(); chHist();
+    if (!KR) krLoad().then(function(){ if($('chkr')) chKrDraw(); }).catch(function(){});
     if (!CH_LIST) api('channel_list',{}).then(function(j){ CH_LIST=j.rows||[]; if($('chhist')) chHist(); }).catch(function(){ CH_LIST=[]; if($('chhist')) chHist(); });
     [['chch','ch'],['chcorp','corp']].forEach(function(g){ document.querySelectorAll('#'+g[0]+' button').forEach(function(b){ b.onclick=function(){ CH[g[1]]=b.dataset.v; chSave(); document.querySelectorAll('#'+g[0]+' button').forEach(function(x){ x.classList.toggle('on',x===b); }); chDraw(); }; }); });
-    document.querySelectorAll('#chkind button').forEach(function(b){ b.onclick=function(){ CH.kind=b.dataset.v; chSave(); document.querySelectorAll('#chkind button').forEach(function(x){ x.classList.toggle('on',x===b); }); }; });
+    document.querySelectorAll('#chkind button').forEach(function(b){ b.onclick=function(){ CH.kind=b.dataset.v; chSave(); document.querySelectorAll('#chkind button').forEach(function(x){ x.classList.toggle('on',x===b); }); chKrDraw(); }; });
     $('chq').onkeydown = function(e){ if(e.key!=='Enter') return; var v=this.value.trim(); if(!v) return; this.value=''; chAdd(v); };
     $('chscan').onclick = function(){ var a=chAcct(); openScanner('연속 스캔 · '+a[0]+' '+a[1]+' '+(CH.kind==='일반판매'?'발송':'입고'), function(code){ var r=chAdd(code); return r==='pick' ? 'stop' : 'continue'; }); };
     $('chclr').onclick = function(){ if(CH.items.length && confirm('담은 상품을 모두 비울까요?')){ CH.items=[]; chSave(); chDraw(); } };
@@ -1228,8 +1257,10 @@ function krLoad(force){
 }
 function krNorm(s){ return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
 var KR_IDX = null;
-function krAppMatch(style){   // 앱 상품명·SKU·메모에 크림 품번이 들어 있는 상품
-  var k=krNorm(style); if (k.length<5) return [];
+function krAppMatch(style){   // 앱 상품명·SKU·메모에 크림 품번이 들어 있는 상품 (품번이 'A/B'면 둘 다 시도)
+  var parts=String(style||'').split(/[\/,]/).map(krNorm).filter(function(x){ return x.length>=5; });
+  if (parts.length>1){ var seen={}, out=[]; parts.forEach(function(x){ krAppMatch(x).forEach(function(p){ if(!seen[p.id]){ seen[p.id]=1; out.push(p); } }); }); return out; }
+  var k=parts[0]||''; if (k.length<5) return [];
   if (!KR_IDX || KR_IDX.n!==S.products.length){ KR_IDX={n:S.products.length, c:{}, rows:S.products.map(function(p){ return [krNorm(p.name+' '+p.sku+' '+p.memo), p]; })}; }
   if (KR_IDX.c[k]) return KR_IDX.c[k];
   return (KR_IDX.c[k] = KR_IDX.rows.filter(function(r){ return r[0].indexOf(k)>=0; }).map(function(r){ return r[1]; }));
