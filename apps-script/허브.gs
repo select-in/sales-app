@@ -506,7 +506,12 @@ function hubStockMove_(req, me) {
   hit.sh.getRange(hit.row, 15, 1, 2).setValues([[now, me.name]]);
   hubSheet_('재고이력').appendRow([now, hit.p.id, hit.p.sku, hit.p.name, type, delta, after, hubStr_(req.memo, 200), me.name]);
   hit.p.stock = after; hit.p.updatedAt = now; hit.p.updatedBy = me.name;
-  return { ok: true, product: hit.p, move: { at: now, id: hit.p.id, sku: hit.p.sku, name: hit.p.name, type: type, qty: delta, after: after, memo: hubStr_(req.memo, 200), by: me.name } };
+  // 사방넷 재고 바로 반영 (현재고 상품만 · 실패해도 입출고 저장은 유지)
+  var sbn = null;
+  if (hit.p.sbnPrd && hit.p.stocMng !== 'N' && hit.p.type !== '위탁' && req.sbn !== false) {
+    try { sbn = hubSbnStockPush_([hit.p.id], me); } catch (e) { sbn = { error: String(e.message || e).slice(0, 200) }; }
+  }
+  return { ok: true, product: hit.p, sbn: sbn, move: { at: now, id: hit.p.id, sku: hit.p.sku, name: hit.p.name, type: type, qty: delta, after: after, memo: hubStr_(req.memo, 200), by: me.name } };
 }
 function hubHistory_(id, limit) {
   var vals = hubRows_('재고이력').vals, out = [];
