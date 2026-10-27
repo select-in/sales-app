@@ -78,7 +78,7 @@
   function payoutsAll(from, to) {   // 주문별 정산 — page 페이지
     var out = [], page = 1;
     var step = function () {
-      return get('business/payouts/orders?date_column=date_settled&date_start=' + from + 'T00:00:00.000Z&date_end=' + to + 'T23:59:59.000Z&search_category=product_name&per_page=500&page=' + page).then(function (j) {
+      return get('business/payouts/orders?date_column=date_settled&date_start=' + from + 'T00:00:00.000Z&date_end=' + to + 'T00:00:00.000Z&search_category=product_name&per_page=500&page=' + page).then(function (j) {
         var items = j.items || []; out = out.concat(items);
         if (items.length === 500 && out.length < (j.total || 0) && page < 40) { page++; return step(); }
         return out;
@@ -99,7 +99,7 @@
         var next = function () {
           if (k >= sts.length) return;
           var st = sts[k++]; msg('진행중 거래 읽는 중… (' + k + '/' + sts.length + ')');
-          return asksAll('start_date=' + from + '&end_date=' + today + '&status=' + st + '&date_column=transaction_date_created')
+          return asksAll('start_date=' + from + '&end_date=' + today + '&status=' + st + (st === 'canceled' ? '' : '&date_column=transaction_date_created'))
             .then(function (items) { items.forEach(function (it) { var a = askRow(it); res.sales.push({ oid: a.oid, askId: a.askId, status: a.status, kind: a.kind, style: a.style, name: a.name, option: a.option, price: a.price, fee: a.fee, payout: a.payout, orderedAt: a.orderedAt }); }); })
             .catch(function () { /* 상태 하나 실패해도 계속 */ })
             .then(next);
@@ -108,7 +108,7 @@
       })
       .then(function () {
         msg('정산 내역 읽는 중…' + (full ? ' (처음이라 1년치)' : ''));
-        return payoutsAll(ymd(daysAgo(full ? 364 : 40)), today);
+        return payoutsAll(ymd(daysAgo(full ? 364 : 40)), ymd(daysAgo(-1)));
       })
       .then(function (items) {
         items.forEach(function (it) {
