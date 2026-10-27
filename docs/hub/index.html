@@ -90,6 +90,8 @@ html,body{max-width:100%;overflow-x:hidden}
 .list .li,.todo,.mc{min-width:0}
 .list .li .e,.mc .e{max-width:40%}
 .g4{grid-template-columns:repeat(4,1fr)}
+.salesbars{display:flex;gap:2px;align-items:flex-end;height:110px;margin:12px 0 4px;overflow-x:auto;scrollbar-width:none}.salesbars::-webkit-scrollbar{display:none}.salesbars .sb{flex:1 0 14px;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end}.salesbars .sb i{display:block;width:100%;background:var(--line);border-radius:3px 3px 0 0}.salesbars .sb.on i{background:var(--accent)}.salesbars .sb span{font-size:10px;color:var(--mute);margin-top:2px;white-space:nowrap}
+.sbar{position:relative;height:18px;background:var(--bg);border-radius:4px;overflow:hidden}.sbar i{display:block;height:100%;background:var(--accent);opacity:.25}.sbar span{position:absolute;left:6px;top:0;font-size:12px;line-height:18px}
 .g2{grid-template-columns:1fr 1fr}
 .g3{grid-template-columns:repeat(3,1fr)}
 .kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;text-decoration:none;color:inherit;display:block}
@@ -324,7 +326,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-28r';
+var APP_BUILD = '2026-10-28s';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -598,6 +600,71 @@ window.addEventListener('hashchange', route);
 /* ===================== 화면들 ===================== */
 var VIEWS = {};
 
+/* ---------- 홈 매출 (데일리매출판 읽기) ---------- */
+var SALES = null, SF = (function(){ var o={corp:'전체', per:'month'}; try{ var x=JSON.parse(localStorage.getItem('hubSalesF')||'{}'); if(x.corp) o.corp=x.corp; if(x.per) o.per=x.per; }catch(e){} return o; })();
+function salesLoad(force){
+  if (SALES && !force && Date.now()-SALES._t<5*60e3) return Promise.resolve(SALES);
+  return api('sales',{}).then(function(j){ SALES=j; SALES._t=Date.now(); return j; });
+}
+function ymdAdd(d, k){ var x=new Date(d+'T00:00:00Z'); x.setUTCDate(x.getUTCDate()+k); return x.toISOString().slice(0,10); }
+function salesRange(per, td){
+  var y=td.slice(0,4), m=td.slice(0,7), wd=(new Date(td+'T00:00:00Z').getUTCDay()+6)%7;
+  var pm=new Date(Date.UTC(+y, +td.slice(5,7)-2, 1)).toISOString().slice(0,7), pmEnd=ymdAdd(m+'-01',-1);
+  var ppm=new Date(Date.UTC(+y, +td.slice(5,7)-3, 1)).toISOString().slice(0,7);
+  var dayOfM=+td.slice(8,10);
+  switch(per){
+    case 'today': return {a:td,b:td, pa:ymdAdd(td,-7), pb:ymdAdd(td,-7), cmp:'지난주 같은 요일'};
+    case 'yday': return {a:ymdAdd(td,-1),b:ymdAdd(td,-1), pa:ymdAdd(td,-8), pb:ymdAdd(td,-8), cmp:'지난주 같은 요일'};
+    case 'week': return {a:ymdAdd(td,-wd),b:td, pa:ymdAdd(td,-wd-7), pb:ymdAdd(td,-7), cmp:'지난주 같은 기간'};
+    case 'month': return {a:m+'-01',b:td, pa:pm+'-01', pb:(function(){ var e=ymdAdd(pm+'-01',dayOfM-1); return e>pmEnd?pmEnd:e; })(), cmp:'지난달 같은 기간'};
+    case 'pmonth': return {a:pm+'-01',b:pmEnd, pa:ppm+'-01', pb:ymdAdd(pm+'-01',-1), cmp:'전전달'};
+    default: return {a:y+'-01-01',b:td, pa:null, pb:null, cmp:''};
+  }
+}
+function salesHtml(){ return '<div class="card" id="hsales" style="margin-bottom:16px"><div class="empty">매출 불러오는 중…</div></div>'; }
+function salesDraw(){
+  var el=$('hsales'); if(!el || !SALES) return;
+  var R=SALES.rows, td=SALES.today||today(), rg=salesRange(SF.per, td);
+  var cf=function(r){ return SF.corp==='전체' || r[1]===SF.corp; };
+  var inR=function(a,b){ return function(r){ return r[0]>=a && r[0]<=b && cf(r); }; };
+  var cur=R.filter(inR(rg.a,rg.b)), prev=rg.pa?R.filter(inR(rg.pa,rg.pb)):[];
+  var sum=function(L,i){ return L.reduce(function(t,r){ return t+(+r[i]||0); },0); };
+  var amt=sum(cur,5), cnt=sum(cur,4), st=sum(cur,6), pf=sum(cur,7), pamt=sum(prev,5);
+  var chg=pamt? Math.round((amt-pamt)/pamt*1000)/10 : null;
+  var man=function(v){ return v>=1e8?(v/1e8).toFixed(2)+'<small>억</small>':won(Math.round(v/1e4))+'<small>만원</small>'; };
+  // 플랫폼별
+  var P={}; cur.forEach(function(r){ var k=r[3]+'|'+(SF.corp==='전체'?r[1]:''); var o=P[k]||(P[k]={pf:r[3], corp:r[1], grp:r[2], cnt:0, amt:0, st:0, profit:0}); o.cnt+=+r[4]||0; o.amt+=+r[5]||0; o.st+=+r[6]||0; o.profit+=+r[7]||0; });
+  var PL=Object.keys(P).map(function(k){ return P[k]; }).filter(function(o){ return o.amt||o.cnt; }).sort(function(a,b){ return b.amt-a.amt; });
+  var mx=PL.length?PL[0].amt:1;
+  // 그룹별 (사방넷/스마트스토어/리셀/도소매…)
+  var GR={}; cur.forEach(function(r){ GR[r[2]]=(GR[r[2]]||0)+(+r[5]||0); });
+  var grs=Object.keys(GR).sort(function(a,b){ return GR[b]-GR[a]; });
+  // 일별 추이 (최근 30일 또는 기간)
+  var ta=SF.per==='today'||SF.per==='yday'||SF.per==='week'?ymdAdd(td,-29):rg.a, tb=rg.b, days=[], D={};
+  R.forEach(function(r){ if(r[0]>=ta && r[0]<=tb && cf(r)) D[r[0]]=(D[r[0]]||0)+(+r[5]||0); });
+  if (SF.per==='year'){ var M={}; Object.keys(D).forEach(function(d){ M[d.slice(0,7)]=(M[d.slice(0,7)]||0)+D[d]; }); days=Object.keys(M).sort().map(function(k){ return [k.slice(5)+'월', M[k], false]; }); }
+  else for(var d=ta; d<=tb; d=ymdAdd(d,1)) days.push([d.slice(8)*1+'', D[d]||0, d>=rg.a&&d<=rg.b]);
+  var dmx=Math.max.apply(null, days.map(function(x){ return x[1]; }).concat([1]));
+  var pers=[['today','오늘'],['yday','어제'],['week','이번 주'],['month','이번 달'],['pmonth','지난 달'],['year','올해']];
+  el.innerHTML =
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:12px"><h2 style="margin:0">매출 <small>'+esc(rg.a===rg.b?rg.a:rg.a+' ~ '+rg.b)+'</small></h2>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><div class="seg" id="sfc">'+['전체','겐더샵','셀렉트인'].map(function(c){ return '<button data-v="'+c+'" class="'+(SF.corp===c?'on':'')+'">'+c+'</button>'; }).join('')+'</div>'+
+      '<div class="seg" id="sfp">'+pers.map(function(p){ return '<button data-v="'+p[0]+'" class="'+(SF.per===p[0]?'on':'')+'">'+p[1]+'</button>'; }).join('')+'</div></div></div>'+
+    '<div class="grid g4">'+
+      '<div class="kpi"><div class="k"><i class="ti ti-chart-bar"></i>매출</div><div class="v num">'+man(amt)+'</div><div class="sm">'+(chg==null?'&nbsp;':'<b style="color:'+(chg>=0?'var(--accent)':'var(--red)')+'">'+(chg>=0?'▲':'▼')+Math.abs(chg)+'%</b> '+esc(rg.cmp)+' 대비')+'</div></div>'+
+      '<div class="kpi"><div class="k"><i class="ti ti-receipt"></i>주문</div><div class="v num">'+won(cnt)+'<small>건</small></div><div class="sm">객단가 '+(cnt?won(Math.round(amt/cnt)):'—')+'원</div></div>'+
+      '<div class="kpi"><div class="k"><i class="ti ti-wallet"></i>정산 예정</div><div class="v num">'+man(st)+'</div><div class="sm">수수료 차감 후</div></div>'+
+      '<div class="kpi"><div class="k"><i class="ti ti-trending-up"></i>이익</div><div class="v num">'+man(pf)+'</div><div class="sm">'+(st?'이익률 '+(pf/amt*100).toFixed(1)+'%':'&nbsp;')+' · 원가 미입력 건은 원가 0으로 계산</div></div>'+
+    '</div>'+
+    (grs.length?'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 4px">'+grs.map(function(g){ return '<span class="pill">'+esc(g||'기타')+' <b class="num">'+won(Math.round(GR[g]/1e4))+'만</b> · '+(amt?Math.round(GR[g]/amt*100):0)+'%</span>'; }).join('')+'</div>':'')+
+    '<div class="salesbars" title="일별 매출">'+days.map(function(x){ return '<div class="sb'+(x[2]?' on':'')+'" title="'+esc(x[0])+' · '+won(x[1])+'원"><i style="height:'+Math.max(2,Math.round(x[1]/dmx*100))+'%"></i><span>'+esc(x[0])+'</span></div>'; }).join('')+'</div>'+
+    (PL.length ? '<div class="tblwrap" style="margin-top:8px"><table class="tbl"><thead><tr><th>플랫폼</th>'+(SF.corp==='전체'?'<th>법인</th>':'')+'<th class="r">주문</th><th class="r">매출</th><th style="width:28%">비중</th><th class="r">정산 예정</th></tr></thead><tbody>'+
+      PL.map(function(o){ return '<tr><td><b>'+esc(o.pf)+'</b> <span class="sm">'+esc(o.grp)+'</span></td>'+(SF.corp==='전체'?'<td><span class="pill">'+esc(o.corp)+'</span></td>':'')+'<td class="r num">'+won(o.cnt)+'</td><td class="r num"><b>'+won(o.amt)+'</b></td><td><div class="sbar"><i style="width:'+Math.max(1,Math.round(o.amt/mx*100))+'%"></i><span>'+(amt?(o.amt/amt*100).toFixed(1):0)+'%</span></div></td><td class="r num">'+(o.st?won(o.st):'—')+'</td></tr>'; }).join('')+
+      '</tbody></table></div>' : '<div class="empty">이 기간 매출 기록이 없어요</div>')+
+    '<p style="margin:10px 0 0;font-size:12px;color:var(--mute)">「데일리매출판」 기준 · 어제까지는 확정, 오늘은 사방넷·스마트스토어 실시간'+(SALES.liveAt?' ('+esc(SALES.liveAt)+' 갱신)':'')+' · 크림·포이즌·도소매는 다음날 반영</p>';
+  [['sfc','corp'],['sfp','per']].forEach(function(g){ el.querySelectorAll('#'+g[0]+' button').forEach(function(b){ b.onclick=function(){ SF[g[1]]=b.dataset.v; try{ localStorage.setItem('hubSalesF', JSON.stringify(SF)); }catch(e){} salesDraw(); }; }); });
+}
+
 /* ---------- 홈 ---------- */
 VIEWS.home = {
   html: function(){
@@ -612,6 +679,7 @@ VIEWS.home = {
     var d = new Date(Date.now()+9*36e5), wd='일월화수목금토'.charAt(d.getUTCDay());
     return '<div class="ph"><div><h1>'+esc(S.me.name)+'님, 안녕하세요</h1><p>'+td.replace(/-/g,'.')+' ('+wd+') · 오늘 확인할 것부터 정리했어요</p></div>'+
       '<div class="acts"><a class="btn pri" href="#stock"><i class="ti ti-barcode"></i>입출고 시작</a></div></div>'+
+      salesHtml()+
       '<div class="grid g4">'+
         '<a class="kpi" href="#products"><div class="k"><i class="ti ti-package"></i>등록 상품</div><div class="v num">'+won(P.length)+'<small>개</small></div></a>'+
         '<a class="kpi amber" href="#products?f=low"><div class="k"><i class="ti ti-alert-triangle"></i>재고 부족</div><div class="v num">'+won(low.length)+'<small>개</small></div></a>'+
@@ -632,6 +700,8 @@ VIEWS.home = {
       '<div class="card" style="margin-top:16px"><h2>자주 쓰는 프로그램</h2><div class="grid g3">'+toolCards(true)+'</div></div>';
   },
   bind: function(){
+    if (SALES) salesDraw();
+    salesLoad().then(salesDraw).catch(function(e){ if($('hsales')) $('hsales').innerHTML='<div class="empty">매출을 불러오지 못했어요 · '+esc(e&&e.message||'')+'</div>'; });
     $('schk').onclick = function(){
       this.disabled = true;
       api('config_set',{key:'scheduler_check',value:'ok'}).then(function(j){ S.config=j.config; persist(); toast('사방넷 스케줄러 점검 완료로 기록했어요'); route(); }).catch(function(e){ fail(e); route(); });

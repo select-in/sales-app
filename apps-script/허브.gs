@@ -54,6 +54,7 @@ function doPost(e) {
       case 'channel_list': return hubOut_({ rows: hubChannelList_(req.limit || 400) });
       case 'krm_sync': return hubOut_(hubLocked_(function () { return hubKrmSync_(req, me); }));
       case 'krm_list': return hubOut_(hubKrmList_());
+      case 'sales': return hubOut_(hubSales_());
       case 'krm_req': return hubOut_(hubLocked_(function () { hubConfigSet_('krm_req', String(Date.now()), me); return { ok: true }; }));   // 휴대폰에서 [지금 동기화] → PC 크림 창이 받아서 실행
       case 'krm_poll': var kc = hubConfig_(); return hubOut_({ req: kc.krm_req ? Number(kc.krm_req.value) || 0 : 0, by: kc.krm_req ? kc.krm_req.by : '' });
       case 'sbn_get': if (!admin) return hubOut_({ error: '관리자만 조회할 수 있습니다' });   // 읽기 전용 (GET)
@@ -542,6 +543,34 @@ function hubKrmList_() {
   var c = hubConfig_(), synced = {};
   ['겐더샵', '셀렉트인'].forEach(function (n) { var x = c['krm_synced_' + n]; if (x) synced[n] = x.value; });
   return { asks: a, sales: s, synced: synced };
+}
+
+/* ===================== 매출 (홈) =====================
+ * 기존 「셀렉트인_데일리매출판」 시트를 읽기만 함 (쓰기 없음)
+ *  - 일별입력: 날짜·법인·채널그룹·플랫폼별 주문건수·매출·원가·정산예정·이익 (어제까지)
+ *  - 오늘현황: 오늘 실시간 주문 (사방넷·스마트스토어) — 일별입력에 오늘 행이 없을 때만 사용 */
+var HUB_SALES_ID = '1TSYSFjgcqo1Gu1Ryq9CHjdNN1Fm1QYmASKlV77xsjl0';
+function hubSales_() {
+  var ss = SpreadsheetApp.openById(HUB_SALES_ID), tz = 'Asia/Seoul', today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  var ymd = function (v) { if (v instanceof Date) return Utilities.formatDate(v, tz, 'yyyy-MM-dd'); var m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[0] : ''; };
+  var n = function (v) { return typeof v === 'number' ? v : hubNum_(v); };
+  var sh = ss.getSheetByName('일별입력'), last = sh.getLastRow(), rows = [], hasToday = false;
+  if (last >= 3) sh.getRange(3, 1, last - 2, 21).getValues().forEach(function (r) {
+    var d = ymd(r[0]); if (!d) return;
+    if (d === today) hasToday = true;
+    rows.push([d, String(r[4] || '').trim() || '확인필요', String(r[5] || r[1] || '').trim(), String(r[20] || r[2] || r[1] || '').trim(), n(r[6]), n(r[7]), n(r[13]), n(r[14]), n(r[8])]);
+  });
+  var live = [], at = '';
+  if (!hasToday) {
+    var th = ss.getSheetByName('오늘현황');
+    if (th) th.getRange(13, 1, 488, 9).getValues().forEach(function (r) {
+      if (String(r[0]).trim() !== '주문' || ymd(r[8]) !== today) return;
+      var grp = String(r[1] || '').trim();
+      live.push([today, String(r[2] || '').trim() || '확인필요', grp === '사방넷' ? '사방넷' : '스마트스토어', String(r[3] || '').trim(), n(r[5]), n(r[6]), 0, 0, 0]);
+      var t = r[7] instanceof Date ? Utilities.formatDate(r[7], tz, 'HH:mm') : String(r[7] || '').slice(11, 16); if (t > at) at = t;
+    });
+  }
+  return { cols: ['date', 'corp', 'group', 'platform', 'cnt', 'amt', 'settle', 'profit', 'cost'], rows: rows.concat(live), today: today, liveAt: at, liveRows: live.length };
 }
 
 /* ===================== 재고 ===================== */
