@@ -608,19 +608,23 @@ function hubSales_(me) {
     rows.push(row);
   });
   // 오늘 실시간 (일별입력에 아직 없는 채널그룹만)
+  //  - 사방넷: 사방넷 API로 바로 조회 (5분 캐시) → 오늘현황 시트 갱신(하루 몇 번)을 기다리지 않음. 실패하면 오늘현황 사용
   var live = [], at = { sabang: '', store: '' }, th = ss.getSheetByName('오늘현황');
+  var apiLive = todayGroups['사방넷'] ? null : hubSalesSbnToday_(ss, today, tz);
+  if (apiLive) { apiLive.rows.forEach(function (row) { if (admin) row.push('', 0); live.push(row); }); }
   if (th && th.getLastRow() >= 1) {
     var tv = th.getRange(1, 1, Math.min(th.getLastRow(), 600), 9).getValues();
     tv.forEach(function (r) {
       if (String(r[0]).trim().indexOf('주문 매출') === 0) { at.sabang = hubSalesHm_(r[4], tz); at.store = hubSalesHm_(r[5], tz); }
       if (String(r[0]).trim() !== '주문' || hubSalesYmd_(r[8], tz) !== today) return;
       var g = String(r[1] || '').trim() === '사방넷' ? '사방넷' : '스마트스토어';
-      if (todayGroups[g]) return;
+      if (todayGroups[g] || (g === '사방넷' && apiLive)) return;
       var row = [today, String(r[2] || '').trim() || '확인필요', g, String(r[3] || '').trim(), hubNum_(r[5]), hubNum_(r[6]), 0, 0, 0, 1];
       if (admin) row.push('', 0);
       live.push(row);
     });
   }
+  if (apiLive) at.sabang = apiLive.at;
   // 매출판 대시보드와 대조 (월 선택이 '이번달'일 때만: 월초 ~ 어제 확정 합계)
   var verify = null;
   try {
@@ -637,6 +641,32 @@ function hubSales_(me) {
     rows: rows.concat(live), today: today, liveAt: at.sabang, live: at, liveRows: live.length,
     last: last, verify: verify, skipped: skipped, at: Utilities.formatDate(new Date(), tz, 'HH:mm')
   };
+}
+/** 오늘 사방넷 주문 (주문일 기준) — 매출판과 같은 규칙: 취소 제외·반품/교환 재생성행 제외·설정 ③ 쇼핑몰ID→법인('제외' 빼기). 조회 전용(updateOrderStsYn N) */
+function hubSalesSbnToday_(ss, today, tz) {
+  var cache = CacheService.getScriptCache(), hit = cache.get('sales_sbn_today');
+  if (hit) { try { var c = JSON.parse(hit); if (c.today === today) return c; } catch (e) {} }
+  try {
+    var corp = {};
+    ss.getSheetByName('설정').getRange('A57:B120').getValues().forEach(function (r) { var id = String(r[0]).trim(); if (id) corp[id] = String(r[1]).trim(); });
+    var d = today.replace(/-/g, ''), all = [], page = 1;
+    while (page <= 20) {
+      var r = hubSbnCall_('POST', '/v3/sb/order', { dateSearchCondition: 2, startDate: d, endDate: d, updateOrderStsYn: 'N', page: page, perPage: 1000,
+        responseItems: ['SB_ORD_NO', 'ORDER_STATUS', 'SHOP_NM', 'SHOP_LOGIN_ID', 'ORDER_TOT_AMT', 'ORD_CNT', 'ORG_SB_ORD_NO'] });
+      var dt = (r && r.data) || {}; all = all.concat(dt.results || []); if (!dt.hasNext) break; page++;
+    }
+    var g = {};
+    all.forEach(function (x) {
+      if (/CANCEL/i.test(String(x.ORDER_STATUS))) return;
+      if (x.ORG_SB_ORD_NO && String(x.ORG_SB_ORD_NO) !== '0') return;
+      var id = String(x.SHOP_LOGIN_ID || '').trim(), c = corp[id] || '확인필요'; if (c === '제외') return;
+      var k = c + '|' + String(x.SHOP_NM || '').trim(), o = g[k] || (g[k] = [today, c, '사방넷', String(x.SHOP_NM || '').trim(), 0, 0, 0, 0, 0, 1]);
+      o[4]++; o[5] += Number(x.ORDER_TOT_AMT) || 0;
+    });
+    var out = { today: today, at: Utilities.formatDate(new Date(), tz, 'HH:mm'), rows: Object.keys(g).map(function (k) { return g[k]; }) };
+    cache.put('sales_sbn_today', JSON.stringify(out), 300);
+    return out;
+  } catch (e) { return null; }
 }
 function hubSalesHm_(x, tz) { return x instanceof Date ? Utilities.formatDate(x, tz, 'HH:mm') : String(x || '').trim(); }
 
