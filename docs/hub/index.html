@@ -343,7 +343,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-30e';
+var APP_BUILD = '2026-10-30f';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -564,6 +564,7 @@ var MENU = [
     {k:'barcode',t:'바코드 점검',ic:'barcode-off'}]},
   {grp:'업무', items:[
     {k:'kream',t:'크림 판매 관리',ic:'gavel'},
+    {k:'poizon',t:'포이즌 판매 관리',ic:'brand-shopee'},
     {k:'channel',t:'크림 · 포이즌 출고',ic:'shoe'},
     {k:'orders',t:'주문 · 발주 · 송장',ic:'truck-delivery',soon:1},
     {k:'gonggu',t:'공동구매',ic:'users-group',soon:1},
@@ -1603,7 +1604,7 @@ function krAutoMatch(style){   // 앱 상품명·SKU·메모에 크림 품번이
   if (KR_IDX.c[k]) return KR_IDX.c[k];
   return (KR_IDX.c[k] = KR_IDX.rows.filter(function(r){ return r[0].indexOf(k)>=0; }).map(function(r){ return r[1]; }));
 }
-function krMap(style){ var M=(KR&&KR.maps)||[]; for(var i=0;i<M.length;i++) if(M[i].style===String(style||'')) return M[i]; return null; }
+function krMap(style){ var M=(KR&&KR.maps)||(PZ&&PZ.maps)||[]; for(var i=0;i<M.length;i++) if(M[i].style===String(style||'')) return M[i]; return null; }
 function krColorOf(p){ var o=String(p.option||''); return o.indexOf(':')>=0 ? o.split(':')[0] : ''; }
 function krMapProducts(m){ return S.products.filter(function(p){ return String(p.sbnPrd)===String(m.sbnPrd) && (!m.color || krColorOf(p).indexOf(m.color)>=0); }); }
 function krAppMatch(style){   // 연결표가 있으면 그 사방넷 상품코드(+컬러), 없으면 품번 자동 찾기
@@ -1629,7 +1630,7 @@ function krOptStock(ps, opt){
 /* 크림 상품 ↔ 사방넷 상품 연결 */
 function krMapOpen(style, name, acct){
   var cur=krMap(style), sizes=[], seen={};
-  (KR.asks.concat(KR.sales)).forEach(function(r){ if(r.style===style && r.option && !seen[r.option]){ seen[r.option]=1; sizes.push(r.option); } }); sizes.sort(sizeCmp);
+  ((KR?KR.asks.concat(KR.sales):[]).concat(PZ?PZ.rows:[])).forEach(function(r){ if(r.style===style && r.option && !seen[r.option]){ seen[r.option]=1; sizes.push(r.option); } }); sizes.sort(sizeCmp);
   var digits=(String(style).match(/\d{4,}/g)||[]);
   var cand=function(q){
     var t=String(q||'').trim().toLowerCase(), G={};
@@ -1962,6 +1963,72 @@ function krCuration(el){
     '<p class="sm" style="margin:8px 0 0">예상 마진 = 가격 × 실제 정산률('+Object.keys(rate).map(function(a){ return a+' '+Math.round(rate[a]*100)+'%'; }).join(' · ')+') − 앱 원가 · 크림 최저가는 상품 전체 기준</p>';
 }
 function c2_(a,b){ return '<div class="c2"><b>'+a+'</b>'+(b?'<span>'+b+'</span>':'')+'</div>'; }
+/* ---------- 포이즌 판매 관리 (poizon.js가 가져온 주문) ---------- */
+var PF2 = {acct:'전체', tab:'WAIT_SHIPPING', q:'', page:1, open:{}, allOpen:false};
+VIEWS.poizon = {
+  html: function(){
+    return '<div class="ph"><div><h1>포이즌 판매 관리</h1><p>발송 대기 · 발송 완료 · 거래 성공 · 앱 재고와 품번으로 연결</p></div>'+
+      '<div class="acts"><button class="btn" data-xl="1"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button>'+(KR_MOBILE()?'':'<button class="btn" id="pzhow"><i class="ti ti-bookmark"></i>PC 동기화 설정</button>')+'</div></div><div id="pzbody"><div class="empty">포이즌 데이터를 불러오는 중…</div></div>';
+  },
+  bind: function(){
+    if ($('pzhow')) $('pzhow').onclick = krHow;
+    Promise.all([pzLoad(), krLoad().catch(function(){})]).then(pzDraw).catch(function(e){ if($('pzbody')) $('pzbody').innerHTML='<div class="empty">불러오지 못했어요 · '+esc(e&&e.message||'')+'</div>'; });
+  }
+};
+function pzDraw(){
+  var box=$('pzbody'); if(!box) return;
+  if (!PZ.rows.length){ box.innerHTML='<div class="card"><div class="empty">아직 가져온 포이즌 주문이 없어요.<br>PC에서 [PC 동기화 설정]의 「OPS 포이즌 동기화」 북마크를 포이즌 판매자센터에서 눌러 주세요.</div></div>'; return; }
+  var A=PZ.rows.filter(function(r){ return PF2.acct==='전체'||r.account===PF2.acct; });
+  var ym=new Date(Date.now()+9*3600e3).toISOString().slice(0,7);
+  var wait=A.filter(function(r){ return r.tab==='WAIT_SHIPPING'; }), ship=A.filter(function(r){ return r.tab==='SHIPPED'; }), succ=A.filter(function(r){ return r.tab==='TRADE_SUCCEED'||r.tab==='SUCCESS'; });
+  var mon=succ.filter(function(r){ return String(r.orderedAt).slice(0,7)===ym; });
+  var sum=function(L,k){ return L.reduce(function(t,r){ return t+(+r[k]||0); },0); };
+  var rate=sum(succ,'price')?sum(succ,'payout')/sum(succ,'price'):0;
+  var syn=Object.keys(PZ.synced||{}).map(function(k){ return k+' '+krFmtAt(PZ.synced[k]); }).join(' · ');
+  var tabs=[['WAIT_SHIPPING','발송 대기',wait.length],['SHIPPED','발송 완료',ship.length],['TRADE_SUCCEED','거래 성공',succ.length],['ALL','전체',A.length]];
+  box.innerHTML='<div class="grid g4">'+
+      '<div class="kpi '+(wait.length?'amber':'')+'"><div class="k"><i class="ti ti-truck"></i>발송 대기</div><div class="v num">'+won(wait.length)+'<small>건</small></div><div class="sm">'+(wait.length?'가장 빠른 기한 '+esc(String(wait.map(function(r){ return r.deadline; }).sort()[0]||'').slice(5,16)):'&nbsp;')+'</div></div>'+
+      '<div class="kpi"><div class="k"><i class="ti ti-plane"></i>발송 완료 (검수·이동)</div><div class="v num">'+won(ship.length)+'<small>건</small></div><div class="sm">정산 예정 '+won(sum(ship,'payout'))+'원</div></div>'+
+      '<div class="kpi"><div class="k"><i class="ti ti-coin"></i>이번 달 거래 성공</div><div class="v num">'+won(Math.round(sum(mon,'payout')/1e4))+'<small>만원</small></div><div class="sm">'+won(mon.length)+'건 · 판매가 '+won(Math.round(sum(mon,'price')/1e4))+'만원</div></div>'+
+      '<div class="kpi"><div class="k"><i class="ti ti-percentage"></i>실제 정산률</div><div class="v num">'+(rate?Math.round(rate*100):'—')+'<small>%</small></div><div class="sm">정산액 ÷ 판매가 (수수료 차감 후)</div></div>'+
+    '</div><div class="card" style="margin-top:16px"><div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:center">'+
+      '<div class="seg" id="pza">'+['전체','겐더샵','셀렉트인'].map(function(c){ return '<button data-v="'+c+'" class="'+(PF2.acct===c?'on':'')+'">'+c+'</button>'; }).join('')+'</div>'+
+      '<div class="seg" id="pzt">'+tabs.map(function(t){ return '<button data-v="'+t[0]+'" class="'+(PF2.tab===t[0]?'on':'')+'">'+t[1]+' <small class="num">'+won(t[2])+'</small></button>'; }).join('')+'</div>'+
+      '<div class="search" style="flex:1;min-width:200px"><i class="ti ti-search"></i><input class="inp" id="pzq" placeholder="품번, 상품명, 사이즈, 주문번호" value="'+esc(PF2.q)+'"></div></div>'+
+      '<p style="margin:0 0 10px;font-size:12px;color:var(--mute)">마지막 동기화: '+esc(syn||'없음')+' · 정산액은 포이즌이 보여주는 실제 금액(수수료 차감 후)</p><div id="pzlist"></div></div>';
+  [['pza','acct'],['pzt','tab']].forEach(function(g){ document.querySelectorAll('#'+g[0]+' button').forEach(function(b){ b.onclick=function(){ PF2[g[1]]=b.dataset.v; PF2.page=1; pzDraw(); }; }); });
+  $('pzq').oninput=function(){ PF2.q=this.value; PF2.page=1; pzList(); };
+  pzList();
+}
+function pzList(){
+  var el=$('pzlist'); if(!el) return;
+  var toks=PF2.q.toLowerCase().split(/\s+/).filter(Boolean);
+  var L=PZ.rows.filter(function(r){ return (PF2.acct==='전체'||r.account===PF2.acct) && (PF2.tab==='ALL'||r.tab===PF2.tab||(PF2.tab==='TRADE_SUCCEED'&&r.tab==='SUCCESS')) && toks.every(function(t){ return [r.style,r.name,r.brand,r.option,r.orderNo,r.status].join(' ').toLowerCase().indexOf(t)>=0; }); });
+  XL_CUR=function(){ return {file:'포이즌_'+PF2.tab, sheets:[{name:'포이즌', head:['계정','상태','품번','상품명','브랜드','사이즈','판매가','수수료','정산액','주문일','발송기한','주문번호'], rows:L.map(function(r){ return [r.account,r.status,r.style,r.name,r.brand,r.option,+r.price||'',+r.fee||'',+r.payout||'',r.orderedAt,r.deadline,r.orderNo]; })}]}; };
+  if (!L.length){ el.innerHTML='<div class="empty">해당하는 주문이 없어요</div>'; return; }
+  var G=[], gi={}; L.forEach(function(r){ var k=r.account+'|'+(r.style||r.name); if(!gi[k]){ gi[k]={k:k,items:[]}; G.push(gi[k]); } gi[k].items.push(r); });
+  G.forEach(function(g){ g.r=g.items[0]; g.app=krAppMatch(g.r.style); g.amt=g.items.reduce(function(t,x){ return t+(+x.payout||0); },0); g.at=g.items.reduce(function(t,x){ return String(x.orderedAt)>t?String(x.orderedAt):t; },''); g.items.sort(function(a,b){ return sizeCmp(a.option,b.option); }); });
+  G.sort(function(a,b){ return PF2.tab==='WAIT_SHIPPING' ? String(a.items[0].deadline).localeCompare(String(b.items[0].deadline)) : b.at.localeCompare(a.at); });
+  var pages=Math.max(1,Math.ceil(G.length/PG.size)); if(PF2.page>pages) PF2.page=pages; var CS=G.slice((PF2.page-1)*PG.size, PF2.page*PG.size);
+  var appCell=function(ps,opt){ if(!ps.length) return '<span class="sm">미연결</span>'; var n=opt==null?ps.reduce(function(t,p){ return t+Math.max(0,effStock(p)); },0):krOptStock(ps,opt); return n==null?'<span class="sm">—</span>':'<b>'+won(n)+'</b>'; };
+  var c2=function(a,b){ return '<div class="c2"><b>'+a+'</b>'+(b?'<span>'+b+'</span>':'')+'</div>'; };
+  el.innerHTML=grpBar(G)+'<div class="dtable tblwrap"><table class="tbl ptbl ktbl"><colgroup><col style="width:44px"><col><col style="width:110px"><col style="width:90px"><col style="width:110px"><col style="width:110px"><col style="width:120px"><col style="width:84px"></colgroup>'+
+    '<thead><tr><th class="c">No</th><th>상품 · 사이즈</th><th>계정 · 상태</th><th>수량</th><th>판매가</th><th>정산액</th><th>'+(PF2.tab==='WAIT_SHIPPING'?'발송 기한':'주문일')+'</th><th class="c">앱 재고</th></tr></thead><tbody>'+
+    CS.map(function(g,i){ var r=g.r, open=(!!PF2.allOpen)!==(!!PF2.open[g.k]);
+      var st={}; g.items.forEach(function(x){ st[x.status]=(st[x.status]||0)+1; });
+      var h='<tr class="click grp'+(open?' open':'')+'" data-g="'+esc(g.k)+'"><td class="c num krno">'+((PF2.page-1)*PG.size+i+1)+'</td><td><div class="c2 nm2"><b title="'+esc(r.name)+'">'+esc(r.name)+'</b><span>'+esc([r.brand,r.style].filter(Boolean).join(' · '))+' · <b class="optc"><i class="ti ti-chevron-'+(open?'up':'down')+'"></i>'+g.items.length+'건</b> '+esc(g.items.map(function(x){ return x.option; }).filter(function(v,j,a){ return a.indexOf(v)===j; }).join(', '))+'</span></div></td>'+
+        '<td>'+c2('<span class="pill">'+esc(r.account)+'</span>', Object.keys(st).map(function(k){ return esc(k)+' '+st[k]; }).join(' · '))+'</td><td class="r num">'+c2(g.items.length+'개','')+'</td><td class="r num">'+c2(won(g.items.reduce(function(t,x){ return t+(+x.price||0); },0)),'합계')+'</td><td class="r num">'+c2(won(g.amt),'합계')+'</td>'+
+        '<td class="r num">'+c2(esc(String(PF2.tab==='WAIT_SHIPPING'?g.items[0].deadline:g.at).slice(5,10)), esc(String(PF2.tab==='WAIT_SHIPPING'?g.items[0].deadline:g.at).slice(11,16)))+'</td>'+
+        '<td class="c num"><div class="c2" style="align-items:center"><b>'+appCell(g.app,null)+'</b><span><a href="#" class="kmap" data-st="'+esc(r.style)+'" data-nm="'+esc(r.name)+'" data-ac="'+esc(r.account)+'">'+(krMap(r.style)?esc(krMap(r.style).sbnPrd):'연결')+'</a></span></div></td></tr>';
+      return h+(open?g.items.map(function(x){ var d=String(PF2.tab==='WAIT_SHIPPING'?x.deadline:x.orderedAt);
+        return '<tr class="sub"><td></td><td><div class="subnm c2"><b>'+esc(x.option)+'</b><span>'+esc(x.orderNo)+'</span></div></td><td>'+c2('<span style="font-weight:500">'+esc(x.status)+'</span>','')+'</td><td class="r num">1개</td><td class="r num">'+won(x.price)+'</td><td class="r num">'+c2(won(x.payout), x.fee?'수수료 '+won(x.fee):'')+'</td><td class="r num">'+c2(esc(d.slice(5,10)),esc(d.slice(11,16)))+'</td><td class="c num">'+appCell(g.app,x.option)+'</td></tr>'; }).join(''):'');
+    }).join('')+'</tbody></table></div>'+
+    '<div class="mcards">'+CS.map(function(g){ var r=g.r, open=(!!PF2.allOpen)!==(!!PF2.open[g.k]); return '<div class="mc grp" data-g="'+esc(g.k)+'"><div class="m"><div class="t">'+esc(r.name)+'</div><div class="s">'+esc([r.account,r.style].join(' · '))+' · <b class="optc">'+g.items.length+'건 '+(open?'▲':'▼')+'</b></div></div><div class="e num"><b>'+won(g.amt)+'</b><div class="s">정산액</div></div></div>'+(open?'<div class="mcsub">'+g.items.map(function(x){ return '<div class="mc"><div class="m"><div class="t" style="font-size:14px"><b>'+esc(x.option)+'</b> <span class="sm">'+esc(x.status)+'</span></div><div class="s num">판매 '+won(x.price)+' · 정산 '+won(x.payout)+' · '+esc(String(x.deadline||x.orderedAt).slice(5,16))+'</div></div></div>'; }).join('')+'</div>':''); }).join('')+'</div>'+
+    pagerHtml(G.length, PF2.page, PG.size).replace('개 ·','개 품번 ·');
+  el.querySelectorAll('[data-g]').forEach(function(r){ r.onclick=function(){ PF2.open[r.dataset.g]=!PF2.open[r.dataset.g]; pzList(); }; });
+  el.querySelectorAll('.kmap').forEach(function(a){ a.onclick=function(e){ e.preventDefault(); e.stopPropagation(); krMapOpen(a.dataset.st, a.dataset.nm, a.dataset.ac); }; });
+  bindGrpBar(el, PF2, pzList); bindPager(el, function(n){ PF2.page=n; pzList(); });
+}
 /* ---------- 포이즌 판매자센터 → 앱 데이터 수신 (poizon.js) ---------- */
 var PZN_ORIGIN = 'https://seller.poizon.com';
 window.addEventListener('message', function(e){
@@ -1971,7 +2038,7 @@ window.addEventListener('message', function(e){
   if (d.type!=='pzn_rows' || !S.me) return;
   api('pzn_sync',{account:d.account, rows:d.rows, waitNos:d.waitNos, waitOk:!!d.waitOk}).then(function(j){
     src.postMessage({type:'pzn_saved', batch:d.batch, added:j.added, updated:j.updated}, PZN_ORIGIN);
-    PZ=null; if((location.hash||'').indexOf('#channel')===0) pzLoad(true).then(function(){ route(); }).catch(function(){});
+    PZ=null; if(/^#(channel|poizon)/.test(location.hash||'')) pzLoad(true).then(function(){ route(); }).catch(function(){});
     toast('포이즌 '+d.account+' 동기화 · 발송 대기 '+(d.waitNos||[]).length+'건');
   }).catch(function(x){ src.postMessage({type:'pzn_error', batch:d.batch, message:(x&&x.message)||'저장 실패'}, PZN_ORIGIN); });
 });
