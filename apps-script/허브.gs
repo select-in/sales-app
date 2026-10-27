@@ -17,13 +17,13 @@
  */
 
 var HUB_TABS = {
-  상품: ['id', 'SKU', '바코드', '상품명', '브랜드', '옵션', '법인', '구분', '원가', '판매가', '재고', '안전재고', '위치', '메모', '수정일', '수정자', '사방넷상품코드', '단품코드', '이미지', '사방넷상태', '카테고리', '등록상태', '등록정보'],
+  상품: ['id', 'SKU', '바코드', '상품명', '브랜드', '옵션', '법인', '구분', '원가', '판매가', '재고', '안전재고', '위치', '메모', '수정일', '수정자', '사방넷상품코드', '단품코드', '이미지', '사방넷상태', '카테고리', '등록상태', '등록정보', '바코드반영대기'],
   재고이력: ['일시', '상품id', 'SKU', '상품명', '구분', '수량', '변경후재고', '메모', '작업자'],
   원가이력: ['일시', '상품id', 'SKU', '상품명', '이전원가', '새원가', '작업자'],
   직원: ['이름', '권한', 'PIN', '사용', '등록일'],
   설정: ['키', '값', '수정일', '수정자']
 };
-var HUB_P_FIELDS = ['id', 'sku', 'barcode', 'name', 'brand', 'option', 'corp', 'type', 'cost', 'price', 'stock', 'safety', 'loc', 'memo', 'updatedAt', 'updatedBy', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg'];
+var HUB_P_FIELDS = ['id', 'sku', 'barcode', 'name', 'brand', 'option', 'corp', 'type', 'cost', 'price', 'stock', 'safety', 'loc', 'memo', 'updatedAt', 'updatedBy', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg', 'barPending'];
 var HUB_TOKEN_DAYS = 90;
 
 /* ===================== 진입점 ===================== */
@@ -45,6 +45,7 @@ function doPost(e) {
         return hubOut_(hubLocked_(function () { return hubSbnSync_(req.rows, me, req.final); }));
       case 'photo_upload': return hubOut_(hubPhotoUpload_(req, me));
       case 'ai_fill': return hubOut_(hubAiFill_(req));
+      case 'barcode_set': return hubOut_(hubLocked_(function () { return hubBarcodeSet_(req, me); }));
       case 'reg_save': return hubOut_(hubLocked_(function () { return hubRegSave_(req, me); }));
       case 'stock_move': return hubOut_(hubLocked_(function () { return hubStockMove_(req, me); }));
       case 'history': return hubOut_({ history: hubHistory_(req.id, 300) });
@@ -197,7 +198,7 @@ function hubProductObj_(v) {
   var o = {};
   HUB_P_FIELDS.forEach(function (f, i) { o[f] = v[i] instanceof Date ? Utilities.formatDate(v[i], 'Asia/Seoul', 'yyyy-MM-dd HH:mm') : v[i]; });
   ['cost', 'price', 'stock', 'safety'].forEach(function (f) { o[f] = hubNum_(o[f]); });
-  ['id', 'sku', 'barcode', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg'].forEach(function (f) { o[f] = String(o[f] == null ? '' : o[f]); });
+  ['id', 'sku', 'barcode', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg', 'barPending'].forEach(function (f) { o[f] = String(o[f] == null ? '' : o[f]); });
   return o;
 }
 function hubProducts_() {
@@ -238,6 +239,7 @@ function hubProductSave_(raw, me) {
     var p = hit.p;
     if (p.cost !== c.cost) hubSheet_('원가이력').appendRow([now, p.id, c.sku, c.name, p.cost, c.cost, me.name]);
     var o = Object.assign({}, p, c, { updatedAt: now, updatedBy: me.name });
+    if (p.sbnPrd && c.barcode !== p.barcode) o.barPending = hubPendingAfter_(p, c.barcode);
     var row = hubRow_(o);
     sh.getRange(hit.row, 1, 1, row.length).setNumberFormats(fm).setValues([row]);
     return { ok: true, product: hubProductObj_(row) };
@@ -327,8 +329,10 @@ function hubSbnSync_(rows, me) {
     if (hit) {
       if (hit.cost !== cost) logs.push(['원가이력', [now, hit.id, hit.sku, hit.name, hit.cost, cost, '사방넷']]);
       if (hit.stock !== stock) { logs.push(['재고이력', [now, hit.id, hit.sku, hit.name, '사방넷동기화', stock - hit.stock, stock, '사방넷 현재고로 맞춤', me.name]]); stockChanged++; }
+      var keepBar = hit.barPending && bar !== hit.barcode;   // 앱에서 바꾼 바코드가 아직 사방넷에 반영 전이면 앱 값 유지
+      if (hit.barPending && bar === hit.barcode) hit.barPending = '';
       Object.assign(hit, {
-        sbnPrd: hubStr_(r.sbnPrd, 30), sbnSku: hubStr_(r.sbnSku, 20), barcode: bar || hit.barcode, sku: hit.sku || key,
+        sbnPrd: hubStr_(r.sbnPrd, 30), sbnSku: hubStr_(r.sbnSku, 20), barcode: keepBar ? hit.barcode : (bar || hit.barcode), sku: hit.sku || key,
         name: hubStr_(r.name, 150), option: hubStr_(r.option, 80), brand: hubStr_(r.brand, 60) || hit.brand,
         cost: cost, price: hubNum_(r.price), stock: stock, safety: hubNum_(r.safety), img: hubStr_(r.img, 300) || hit.img,
         sbnStatus: hubStr_(r.sbnStatus, 20), cat: hubStr_(r.cat, 60), corp: r.corp === '셀렉트인' ? '셀렉트인' : '겐더샵',
@@ -383,6 +387,29 @@ function hubCostHistory_(id) {
   return hubRows_('원가이력').vals.filter(function (v) { return String(v[1]) === String(id); }).reverse().map(function (v) {
     return { at: v[0] instanceof Date ? Utilities.formatDate(v[0], 'Asia/Seoul', 'yyyy-MM-dd HH:mm') : String(v[0]), before: v[4] === '' ? null : hubNum_(v[4]), after: hubNum_(v[5]), by: String(v[6]) };
   });
+}
+
+/* ===================== 바코드 점검 =====================
+ * 앱에서 사방넷 단품의 바코드를 바꾸면 '바코드반영대기'에 사방넷에 있던 원래 바코드를 남김 → 사방넷 반영 후 동기화하면 자동으로 지워짐 */
+function hubPendingAfter_(p, newBar) {
+  var orig = p.barPending || p.barcode;          // 사방넷에 실제로 들어있는 값
+  return newBar === orig ? '' : orig;
+}
+function hubBarcodeSet_(req, me) {
+  var bar = hubStr_(req.barcode, 60).replace(/\s+/g, '');
+  if (!/^[0-9A-Za-z\-]{4,40}$/.test(bar)) return { error: '바코드 형식이 올바르지 않습니다: ' + bar };
+  var list = hubProducts_(), hit = null, dup = null;
+  list.forEach(function (p) { if (p.id === req.id) hit = p; else if (p.barcode === bar) dup = dup || p; });
+  if (!hit) return { error: '상품을 찾을 수 없습니다' };
+  if (dup) return { error: '이미 다른 상품이 쓰는 바코드예요: ' + dup.name + (dup.option ? ' (' + dup.option + ')' : '') + (dup.sbnPrd ? ' · 사방넷 ' + dup.sbnPrd + '-' + dup.sbnSku : '') };
+  if (hit.barcode === bar) return { ok: true, product: hit };
+  var row = hubFindProduct_(hit.id), now = hubNow_();
+  var o = Object.assign({}, hit, { barcode: bar, updatedAt: now, updatedBy: me.name });
+  if (hit.sbnPrd) o.barPending = hubPendingAfter_(hit, bar);
+  var vals = hubRow_(o);
+  row.sh.getRange(row.row, 1, 1, vals.length).setNumberFormats([hubFormats_()]).setValues([vals]);
+  hubSheet_('재고이력').appendRow([now, hit.id, hit.sku, hit.name, '바코드변경', 0, hit.stock, hit.barcode + ' → ' + bar, me.name]);
+  return { ok: true, product: hubProductObj_(vals) };
 }
 
 /* ===================== 사방넷 등록서 (사진 → AI 정리 → 등록 요청) ===================== */

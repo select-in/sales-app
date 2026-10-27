@@ -79,6 +79,7 @@ html,body{max-width:100%;overflow-x:hidden}
 .g3{grid-template-columns:repeat(3,1fr)}
 .kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;text-decoration:none;color:inherit;display:block}
 a.kpi:hover{border-color:var(--line2)}
+.kpi{width:100%}
 .kpi .k{font-size:13px;color:var(--sub);display:flex;align-items:center;gap:6px}
 .kpi .v{font-size:28px;font-weight:700;letter-spacing:-.6px;margin-top:4px}
 .kpi .v small{font-size:15px;font-weight:500;color:var(--sub);margin-left:2px}
@@ -300,7 +301,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-27j';
+var APP_BUILD = '2026-10-27k';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -351,7 +352,7 @@ function isAdmin(){ return S.me && S.me.role==='관리자'; }
 /* ===================== 서버 / 체험 모드 ===================== */
 function api(action, body){
   body = body || {}; body.action = action;
-  if (DEMO) return Promise.resolve(demoApi(body));
+  if (DEMO){ var dj = demoApi(body); return dj && dj.error ? Promise.reject({message:dj.error}) : Promise.resolve(dj); }
   body.token = lsGetRaw(LS_TOKEN);
   return fetch(API,{method:'POST',body:JSON.stringify(body),redirect:'follow',cache:'no-store'})
     .then(function(r){ return r.json(); })
@@ -414,6 +415,7 @@ function demoApi(b){
       var mv={at:t,id:p.id,sku:p.sku,name:p.name,type:ty,qty:aft-bef,after:aft,memo:b.memo||'',by:me.name}; d.history.unshift(mv); save();
       return {ok:true,product:p,move:mv};
     }
+    case 'barcode_set': { var bp=find(b.id); if(!bp) return {error:'상품을 찾을 수 없습니다'}; var du=d.products.filter(function(x){ return x.id!==b.id&&x.barcode===b.barcode; })[0]; if(du) return {error:'이미 다른 상품이 쓰는 바코드예요: '+du.name}; if(bp.sbnPrd){ var o=bp.barPending||bp.barcode; bp.barPending=b.barcode===o?'':o; } bp.barcode=b.barcode; save(); return {ok:true,product:bp}; }
     case 'history': return {history:d.history.filter(function(h){ return !b.id||h.id===b.id; })};
     case 'cost_history': return {costs:d.costs[b.id]||[]};
     case 'config_set': d.config[b.key]={value:String(b.value),at:t,by:me.name}; save(); return {ok:true,config:d.config};
@@ -484,7 +486,8 @@ var MENU = [
     {k:'products',t:'상품 관리',ic:'package'},
     {k:'stock',t:'재고 입출고',ic:'barcode'},
     {k:'cost',t:'원가 · 마진',ic:'calculator'},
-    {k:'register',t:'사방넷 등록',ic:'cloud-upload'}]},
+    {k:'register',t:'사방넷 등록',ic:'cloud-upload'},
+    {k:'barcode',t:'바코드 점검',ic:'barcode-off'}]},
   {grp:'업무', items:[
     {k:'orders',t:'주문 · 발주 · 송장',ic:'truck-delivery',soon:1},
     {k:'gonggu',t:'공동구매',ic:'users-group',soon:1},
@@ -1067,6 +1070,81 @@ function openReg(id){
     if (!String(F.price.value).replace(/[^\d]/g,'')) return toast('판매가를 입력하세요',true);
     send('request', this);
   };
+}
+
+/* ---------- 바코드 점검 ---------- */
+var BF = {tab:'auto', q:'', stock:true, corp:'all', page:1};
+function barKind(p){
+  var b = String(p.barcode||'');
+  if (!/^[0-9A-Za-z\-]{8,40}$/.test(b)) return 'odd';
+  if (/^21\d{11}$/.test(b)) return 'auto';
+  return 'ok';
+}
+function barGroups(){
+  var P = S.products.filter(function(p){ return p.sbnPrd; }), m = {};
+  P.forEach(function(p){ if(p.barcode) (m[p.barcode]=m[p.barcode]||[]).push(p); });
+  var dup = {}; Object.keys(m).forEach(function(k){ if(m[k].length>1) m[k].forEach(function(p){ dup[p.id]=1; }); });
+  return {
+    auto: P.filter(function(p){ return !p.barPending && barKind(p)==='auto'; }),
+    dup: P.filter(function(p){ return !p.barPending && dup[p.id]; }).sort(function(a,b){ return a.barcode.localeCompare(b.barcode); }),
+    odd: P.filter(function(p){ return !p.barPending && barKind(p)==='odd'; }),
+    pending: S.products.filter(function(p){ return p.barPending; })
+  };
+}
+VIEWS.barcode = {
+  html: function(){
+    var G = barGroups();
+    var tabs = [['auto','사방넷 자동 바코드','21로 시작 · 실제 바코드로 교체 필요'],['dup','중복 바코드','두 상품이 같은 바코드'],['odd','이상한 값','짧거나 형식이 맞지 않음'],['pending','사방넷 반영 대기','바꿨지만 아직 사방넷엔 옛 값']];
+    return '<div class="ph"><div><h1>바코드 점검</h1><p>실물 태그를 스캔해서 바코드를 고치면, 모아서 사방넷에 반영하고 쇼핑몰로 송신해요</p></div></div>'+
+      '<div class="grid g4">'+tabs.map(function(t){ return '<button class="kpi'+(t[0]==='pending'?' amber':t[0]==='dup'||t[0]==='odd'?' red':'')+'" data-bt="'+t[0]+'" style="text-align:left;cursor:pointer;font:inherit;'+(BF.tab===t[0]?'border:2px solid var(--brand);':'')+'"><div class="k">'+t[1]+'</div><div class="v num">'+won(G[t[0]].length)+'<small>개</small></div><div class="k" style="margin-top:4px;font-size:12px">'+t[2]+'</div></button>'; }).join('')+'</div>'+
+      '<div class="card" style="margin-top:16px">'+
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">'+
+          '<div class="search"><i class="ti ti-search"></i><input class="inp" id="bq" placeholder="상품명, 브랜드, 사방넷코드, 바코드" value="'+esc(BF.q)+'"></div>'+
+          '<div class="seg" id="bcorp">'+['all','셀렉트인','겐더샵'].map(function(c){ return '<button data-v="'+c+'" class="'+(BF.corp===c?'on':'')+'">'+(c==='all'?'전체 법인':c)+'</button>'; }).join('')+'</div>'+
+          (BF.tab!=='pending'?'<label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--sub)"><input type="checkbox" id="bstock"'+(BF.stock?' checked':'')+'> 재고 있는 것만 (창고에서 바로 스캔 가능)</label>':'')+
+        '</div>'+
+        (BF.tab==='pending'?'<div class="demo" style="margin-bottom:12px"><i class="ti ti-info-circle"></i><span>바꾼 바코드는 아직 앱에만 있어요. Claude에게 <b>「바코드 반영해줘」</b>라고 말하면 사방넷에 한 번에 반영하고, 쇼핑몰 수정 송신까지 안내해요.</span></div>':'')+
+        '<div id="blist"></div></div>';
+  },
+  bind: function(){
+    var draw = function(){
+      var G = barGroups(), toks = BF.q.toLowerCase().split(/\s+/).filter(Boolean);
+      var L = G[BF.tab].filter(function(p){
+        if (BF.corp!=='all' && p.corp!==BF.corp) return false;
+        if (BF.tab!=='pending' && BF.stock && !(p.stock>0)) return false;
+        var h=[p.name,p.brand,p.option,p.barcode,p.sbnPrd,p.sbnPrd+'-'+p.sbnSku].join(' ').toLowerCase();
+        return toks.every(function(t){ return h.indexOf(t)>=0; });
+      });
+      var pages=Math.max(1,Math.ceil(L.length/PG.size)); if(BF.page>pages) BF.page=pages;
+      var shown=L.slice((BF.page-1)*PG.size, BF.page*PG.size);
+      if (!L.length){ $('blist').innerHTML='<div class="empty">'+(BF.tab==='pending'?'반영 대기 중인 바코드가 없어요':'해당하는 상품이 없어요'+(BF.stock&&BF.tab!=='pending'?' · 「재고 있는 것만」을 끄면 전체를 볼 수 있어요':''))+'</div>'; return; }
+      $('blist').innerHTML = '<div class="list">'+shown.map(function(p){
+        var cur = BF.tab==='pending' ? '<span class="sbn">사방넷 '+esc(p.barPending)+'</span> → <b class="num">'+esc(p.barcode)+'</b>' : '<b class="num" style="color:'+(BF.tab==='auto'?'var(--mute)':'var(--red)')+'">'+esc(p.barcode||'(없음)')+'</b>';
+        return '<div class="li">'+thumb(p)+'<div class="m"><div class="t">'+esc(p.name)+'</div><div class="s">'+esc([p.option,p.corp,'재고 '+won(p.stock)].filter(Boolean).join(' · '))+' · <span class="num">'+esc(p.sbnPrd)+'-'+esc(p.sbnSku)+'</span></div><div class="s">'+cur+'</div></div>'+
+          '<div class="e"><button class="btn pri sm" data-scan="'+esc(p.id)+'"><i class="ti ti-scan"></i>'+(BF.tab==='pending'?'다시':'스캔')+'</button></div></div>';
+      }).join('')+'</div>'+pagerHtml(L.length, BF.page, PG.size);
+      $('blist').querySelectorAll('[data-scan]').forEach(function(b){ b.onclick=function(){ scanFix(b.dataset.scan, draw); }; });
+      bindPager($('blist'), function(n){ BF.page=n; draw(); });
+    };
+    document.querySelectorAll('[data-bt]').forEach(function(b){ b.onclick=function(){ BF.tab=b.dataset.bt; BF.page=1; route(); }; });
+    $('bq').oninput=function(){ BF.q=this.value; BF.page=1; draw(); };
+    document.querySelectorAll('#bcorp button').forEach(function(b){ b.onclick=function(){ BF.corp=b.dataset.v; BF.page=1; document.querySelectorAll('#bcorp button').forEach(function(x){ x.classList.toggle('on',x===b); }); draw(); }; });
+    if ($('bstock')) $('bstock').onchange=function(){ BF.stock=this.checked; BF.page=1; draw(); };
+    draw();
+  }
+};
+function scanFix(id, after){
+  var p = S.products.filter(function(x){ return x.id===id; })[0]; if (!p) return;
+  openScanner('새 바코드 스캔 · '+p.name.slice(0,18)+(p.option?' ('+p.option+')':''), function(code){
+    if (code===p.barcode){ toast('지금 바코드와 같아요'); return 'stop'; }
+    if (navigator.vibrate) navigator.vibrate(40);
+    api('barcode_set',{id:id, barcode:code}).then(function(j){
+      var i=S.products.findIndex(function(x){ return x.id===id; }); if(i>=0) S.products[i]=j.product; persist();
+      toast('바코드 저장 · '+code+' → 사방넷 반영 대기');
+      if (after) after(); else route();
+    }).catch(fail);
+    return 'stop';
+  });
 }
 
 /* ---------- 원가 · 마진 ---------- */
