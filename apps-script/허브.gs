@@ -56,6 +56,8 @@ function doPost(e) {
       case 'krm_sync': return hubOut_(hubLocked_(function () { return hubKrmSync_(req, me); }));
       case 'krm_list': return hubOut_(hubKrmList_());
       case 'krm_map_set': return hubOut_(hubLocked_(function () { return hubKrmMapSet_(req, me); }));
+      case 'sbn_sales_check': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 사방넷 API(주문일) 기준 일별·법인·쇼핑몰 집계 — 매출판 대조용 (읽기 전용)
+        return hubOut_(hubSbnSalesRange_(req.from, req.to));
       case 'sales': return hubOut_(hubSales_(me));
       case 'krm_req': return hubOut_(hubLocked_(function () { hubConfigSet_('krm_req', String(Date.now()), me); return { ok: true }; }));   // 휴대폰에서 [지금 동기화] → PC 크림 창이 받아서 실행
       case 'krm_poll': var kc = hubConfig_(); return hubOut_({ req: kc.krm_req ? Number(kc.krm_req.value) || 0 : 0, by: kc.krm_req ? kc.krm_req.by : '' });
@@ -667,6 +669,27 @@ function hubSalesSbnToday_(ss, today, tz) {
     cache.put('sales_sbn_today', JSON.stringify(out), 300);
     return out;
   } catch (e) { return null; }
+}
+function hubSbnSalesRange_(from, to) {
+  var ss = SpreadsheetApp.openById(HUB_SALES_ID), corp = {};
+  ss.getSheetByName('설정').getRange('A57:B120').getValues().forEach(function (r) { var id = String(r[0]).trim(); if (id) corp[id] = String(r[1]).trim(); });
+  var a = String(from || '').replace(/-/g, ''), b = String(to || '').replace(/-/g, ''); if (!/^\d{8}$/.test(a) || !/^\d{8}$/.test(b)) return { error: '날짜 형식' };
+  var all = [], page = 1;
+  while (page <= 30) {
+    var r = hubSbnCall_('POST', '/v3/sb/order', { dateSearchCondition: 2, startDate: a, endDate: b, updateOrderStsYn: 'N', page: page, perPage: 1000,
+      responseItems: ['SB_ORD_NO', 'ORDER_STATUS', 'ORDER_DT', 'SHOP_NM', 'SHOP_LOGIN_ID', 'ORDER_TOT_AMT', 'ORG_SB_ORD_NO'] });
+    var dt = (r && r.data) || {}; all = all.concat(dt.results || []); if (!dt.hasNext) break; page++;
+  }
+  var g = {};
+  all.forEach(function (x) {
+    if (/CANCEL/i.test(String(x.ORDER_STATUS))) return;
+    if (x.ORG_SB_ORD_NO && String(x.ORG_SB_ORD_NO) !== '0') return;
+    var id = String(x.SHOP_LOGIN_ID || '').trim(), c = corp[id] || '확인필요'; if (c === '제외') return;
+    var d = String(x.ORDER_DT || '').replace(/^(\d{4})(\d{2})(\d{2}).*/, '$1-$2-$3').slice(0, 10);
+    var k = d + '|' + c + '|' + String(x.SHOP_NM || '').trim(), o = g[k] || (g[k] = [d, c, String(x.SHOP_NM || '').trim(), 0, 0]);
+    o[3]++; o[4] += Number(x.ORDER_TOT_AMT) || 0;
+  });
+  return { n: all.length, rows: Object.keys(g).sort().map(function (k) { return g[k]; }) };
 }
 function hubSalesHm_(x, tz) { return x instanceof Date ? Utilities.formatDate(x, tz, 'HH:mm') : String(x || '').trim(); }
 
