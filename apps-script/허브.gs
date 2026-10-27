@@ -332,6 +332,7 @@ function hubSbnSync_(rows, me) {
         name: hubStr_(r.name, 150), option: hubStr_(r.option, 80), brand: hubStr_(r.brand, 60) || hit.brand,
         cost: cost, price: hubNum_(r.price), stock: stock, safety: hubNum_(r.safety), img: hubStr_(r.img, 300) || hit.img,
         sbnStatus: hubStr_(r.sbnStatus, 20), cat: hubStr_(r.cat, 60), corp: r.corp === '셀렉트인' ? '셀렉트인' : '겐더샵',
+        regStatus: hit.regStatus === '등록요청' ? '등록완료' : hit.regStatus,
         updatedAt: now, updatedBy: '사방넷'
       });
       updated++;
