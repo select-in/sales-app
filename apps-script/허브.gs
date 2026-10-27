@@ -45,6 +45,9 @@ function doPost(e) {
         return hubOut_(hubLocked_(function () { return hubSbnSync_(req.rows, me, req.final); }));
       case 'photo_upload': return hubOut_(hubPhotoUpload_(req, me));
       case 'ai_fill': return hubOut_(hubAiFill_(req));
+      case 'barsheet_export': return hubOut_(hubLocked_(function () { return hubBarSheetExport_(req, me); }));
+      case 'barsheet_match': return hubOut_(hubLocked_(function () { return hubBarSheetMatch_(); }));
+      case 'barsheet_apply': return hubOut_(hubLocked_(function () { return hubBarSheetApply_(me); }));
       case 'barcode_set': return hubOut_(hubLocked_(function () { return hubBarcodeSet_(req, me); }));
       case 'reg_save': return hubOut_(hubLocked_(function () { return hubRegSave_(req, me); }));
       case 'stock_move': return hubOut_(hubLocked_(function () { return hubStockMove_(req, me); }));
@@ -410,6 +413,107 @@ function hubBarcodeSet_(req, me) {
   row.sh.getRange(row.row, 1, 1, vals.length).setNumberFormats([hubFormats_()]).setValues([vals]);
   hubSheet_('재고이력').appendRow([now, hit.id, hit.sku, hit.name, '바코드변경', 0, hit.stock, hit.barcode + ' → ' + bar, me.name]);
   return { ok: true, product: hubProductObj_(vals) };
+}
+
+/* ===================== 바코드 일괄 작업 (시트) =====================
+ * 바코드작업 탭: 앱에서 내보낸 목록 → '새 바코드' 칸 채우기(직접 또는 공급처바코드로 자동) → 앱에서 [시트 내용 반영]
+ * 공급처바코드 탭: 공급처·브랜드 리스트를 붙여넣는 곳 (품번 · 색상 · 사이즈 · 바코드) */
+var HUB_BS_HEAD = ['상품id', '사방넷코드', '법인', '상품명', '옵션', '재고', '현재 바코드', '새 바코드', '결과'];
+var HUB_SUP_HEAD = ['품번', '색상', '사이즈', '바코드', '메모'];
+function hubBsSheet_() {
+  var ss = hubBook_(), sh = ss.getSheetByName('바코드작업');
+  if (!sh) {
+    sh = ss.insertSheet('바코드작업');
+    sh.setFrozenRows(1); sh.hideColumns(1);
+  }
+  sh.getRange(1, 1, 1, HUB_BS_HEAD.length).setValues([HUB_BS_HEAD]).setFontWeight('bold').setBackground('#e8f5ef');
+  sh.getRange(1, 8).setBackground('#fff4e0');
+  return sh;
+}
+function hubSupSheet_() {
+  var ss = hubBook_(), sh = ss.getSheetByName('공급처바코드');
+  if (!sh) {
+    sh = ss.insertSheet('공급처바코드');
+    sh.getRange(1, 1, 1, HUB_SUP_HEAD.length).setValues([HUB_SUP_HEAD]).setFontWeight('bold').setBackground('#e8f0fd');
+    sh.setFrozenRows(1); sh.getRange('A:D').setNumberFormat('@');
+  }
+  return sh;
+}
+function hubSheetUrl_(sh) { return sh.getParent().getUrl() + '#gid=' + sh.getSheetId(); }
+function hubBarSheetExport_(req, me) {
+  var ids = req.ids || []; if (!ids.length) return { error: '내보낼 상품이 없습니다' };
+  if (ids.length > 15000) return { error: '한 번에 15,000개까지 내보낼 수 있습니다' };
+  var want = {}; ids.forEach(function (id) { want[id] = 1; });
+  var rows = hubProducts_().filter(function (p) { return want[p.id]; }).map(function (p) {
+    return [p.id, p.sbnPrd ? p.sbnPrd + '-' + p.sbnSku : '', p.corp, p.name, p.option, p.stock, p.barcode, '', ''];
+  });
+  var sh = hubBsSheet_(), last = sh.getLastRow();
+  if (last > 1) sh.getRange(2, 1, last - 1, HUB_BS_HEAD.length).clearContent().setBackground(null);
+  if (rows.length) {
+    if (sh.getMaxRows() < rows.length + 1) sh.insertRowsAfter(sh.getMaxRows(), rows.length + 1 - sh.getMaxRows());
+    sh.getRange(2, 1, rows.length, HUB_BS_HEAD.length).setNumberFormat('@').setValues(rows);
+    sh.getRange(2, 8, rows.length, 1).setBackground('#fffaf0');
+  }
+  hubSupSheet_();
+  hubConfigSet_('barsheet', rows.length + '개 내보냄', me);
+  return { ok: true, n: rows.length, url: hubSheetUrl_(sh), supUrl: hubSheetUrl_(hubSupSheet_()) };
+}
+function hubNorm_(v) { return String(v == null ? '' : v).toUpperCase().replace(/[\s\-_\/().,:]/g, ''); }
+function hubSizeOf_(opt) { var parts = String(opt).split(':'); return hubNorm_(String(parts[parts.length - 1]).split('(')[0]); }
+/** 공급처바코드 탭 → 바코드작업 탭의 빈 '새 바코드' 자동 채우기 (품번 필수, 색상·사이즈로 좁힘) */
+function hubBarSheetMatch_() {
+  var sup = hubSupSheet_(), sl = sup.getLastRow();
+  if (sl < 2) return { error: '공급처바코드 탭에 리스트를 먼저 붙여넣어 주세요 (품번 · 색상 · 사이즈 · 바코드)' };
+  var S = sup.getRange(2, 1, sl - 1, 4).getValues().filter(function (r) { return r[0] && r[3]; });
+  var sh = hubBsSheet_(), last = sh.getLastRow(); if (last < 2) return { error: '바코드작업 탭이 비어 있어요. 앱에서 먼저 내보내기 하세요' };
+  var W = sh.getRange(2, 1, last - 1, HUB_BS_HEAD.length).getValues();
+  var filled = 0, multi = 0;
+  var hay = W.map(function (w) { return hubNorm_(w[3] + ' ' + w[4]); });
+  W.forEach(function (w, i) {
+    if (String(w[7]).trim()) return;
+    var opt = String(w[4]), optN = hubNorm_(opt), size = hubSizeOf_(opt);
+    var cand = S.filter(function (r) {
+      var model = hubNorm_(r[0]); if (model.length < 3 || hay[i].indexOf(model) < 0) return false;
+      var c = hubNorm_(r[1]); if (c && optN.indexOf(c) < 0 && hay[i].indexOf(c) < 0) return false;
+      var z = hubNorm_(r[2]); if (z && z !== size) return false;   // 사이즈는 정확히 같아야 (L이 XL에 섞이지 않게)
+      return true;
+    });
+    var bars = cand.map(function (r) { return String(r[3]).trim(); }).filter(function (b, k, a) { return a.indexOf(b) === k; });
+    if (bars.length === 1) { w[7] = bars[0]; w[8] = '자동매칭 — 확인 후 반영'; filled++; }
+    else if (bars.length > 1) { w[8] = '후보 ' + bars.length + '개 — 직접 확인 (' + bars.slice(0, 3).join(', ') + ')'; multi++; }
+  });
+  sh.getRange(2, 8, W.length, 2).setNumberFormat('@').setValues(W.map(function (w) { return [w[7], w[8]]; }));
+  return { ok: true, filled: filled, multi: multi, url: hubSheetUrl_(sh) };
+}
+/** 바코드작업 탭의 '새 바코드' 검사 후 반영 → 사방넷 반영 대기 */
+function hubBarSheetApply_(me) {
+  var sh = hubBsSheet_(), last = sh.getLastRow(); if (last < 2) return { error: '바코드작업 탭이 비어 있어요' };
+  var W = sh.getRange(2, 1, last - 1, HUB_BS_HEAD.length).getValues();
+  var list = hubProducts_(), byId = {}, byBar = {};
+  list.forEach(function (p) { byId[p.id] = p; if (p.barcode) (byBar[p.barcode] = byBar[p.barcode] || []).push(p.id); });
+  var inSheet = {};
+  W.forEach(function (w) { var b = String(w[7]).replace(/\s+/g, ''); if (b) inSheet[b] = (inSheet[b] || 0) + 1; });
+  var now = hubNow_(), ok = 0, bad = 0, logs = [];
+  W.forEach(function (w) {
+    var b = String(w[7]).replace(/\s+/g, ''); if (!b) return;
+    var p = byId[w[0]];
+    var err = !p ? '앱에서 상품을 찾을 수 없음'
+      : !/^[0-9A-Za-z\-]{8,40}$/.test(b) ? '형식 오류 (8자리 이상 숫자·영문)'
+      : inSheet[b] > 1 ? '시트 안에 같은 바코드가 ' + inSheet[b] + '개'
+      : (byBar[b] || []).some(function (id) { return id !== p.id; }) ? '다른 상품이 이미 사용: ' + byId[(byBar[b] || []).filter(function (id) { return id !== p.id; })[0]].name
+      : '';
+    if (err) { w[8] = '✗ ' + err; bad++; return; }
+    if (p.barcode === b) { w[8] = '변경 없음'; return; }
+    var old = p.barcode;
+    if (p.sbnPrd) p.barPending = hubPendingAfter_(p, b);
+    (byBar[old] || []).splice((byBar[old] || []).indexOf(p.id), 1);
+    p.barcode = b; p.updatedAt = now; p.updatedBy = me.name; (byBar[b] = byBar[b] || []).push(p.id);
+    logs.push(['재고이력', [now, p.id, p.sku, p.name, '바코드변경', 0, p.stock, old + ' → ' + b + ' (시트)', me.name]]);
+    w[8] = '✓ 반영됨 (사방넷 반영 대기)'; ok++;
+  });
+  if (ok) { hubWriteAll_(list); hubWriteLogs_(logs); }
+  sh.getRange(2, 9, W.length, 1).setValues(W.map(function (w) { return [w[8]]; }));
+  return { ok: true, applied: ok, failed: bad, url: hubSheetUrl_(sh) };
 }
 
 /* ===================== 사방넷 등록서 (사진 → AI 정리 → 등록 요청) ===================== */
