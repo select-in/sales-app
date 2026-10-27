@@ -24,7 +24,7 @@ var HUB_TABS = {
   설정: ['키', '값', '수정일', '수정자'],
   채널출고: ['일시', '배치', '채널', '계정', '구분', '상품id', 'SKU', '상품명', '옵션', '바코드', '수량', '주문번호', '판매가', '수수료율', '정산예상', '재고반영', '작업자', '메모'],
   크림입찰: ['계정', '입찰id', '주문번호', '상태', '구분', '품번', '상품명', '브랜드', '옵션', '입찰가', '수수료', '정산예정', '최저판매가', '최근거래가', '등록일', '만료일', '동기화', '내순위', '최저가일반', '최저가보관', '체결가일반', '체결가보관'],
-  크림매핑: ['크림품번', '사방넷상품코드', '컬러', '수정일', '수정자'],
+  크림매핑: ['크림품번', '사방넷상품코드', '컬러', '수정일', '수정자', '사이즈연결'],
   크림판매: ['계정', '주문번호', '입찰id', '상태', '구분', '품번', '상품명', '옵션', '판매가', '수수료', '정산액', '주문일', '정산일', '지급예정일', '동기화']
 };
 var HUB_P_FIELDS = ['id', 'sku', 'barcode', 'name', 'brand', 'option', 'corp', 'type', 'cost', 'price', 'stock', 'safety', 'loc', 'memo', 'updatedAt', 'updatedBy', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg', 'barPending', 'stocMng', 'vstock', 'owner', 'link', 'setDiv'];
@@ -549,7 +549,8 @@ function hubKrmList_() {
 /* 크림 품번 ↔ 사방넷 상품코드(+컬러) 연결표 */
 function hubKrmMaps_() {
   return hubRows_('크림매핑').vals.filter(function (v) { return v[0]; }).map(function (v) {
-    return { style: String(v[0]), sbnPrd: String(v[1]), color: String(v[2] || ''), at: v[3] instanceof Date ? Utilities.formatDate(v[3], 'Asia/Seoul', 'yyyy-MM-dd HH:mm') : String(v[3] || ''), by: String(v[4] || '') };
+    var sz = {}; try { sz = JSON.parse(String(v[5] || '{}')) || {}; } catch (e) { sz = {}; }
+    return { style: String(v[0]), sbnPrd: String(v[1]), color: String(v[2] || ''), at: v[3] instanceof Date ? Utilities.formatDate(v[3], 'Asia/Seoul', 'yyyy-MM-dd HH:mm') : String(v[3] || ''), by: String(v[4] || ''), sizes: sz };
   });
 }
 function hubKrmMapSet_(req, me) {
@@ -558,8 +559,9 @@ function hubKrmMapSet_(req, me) {
   var r = hubRows_('크림매핑'), row = -1;
   for (var i = 0; i < r.vals.length; i++) if (String(r.vals[i][0]) === style) { row = i + 2; break; }
   if (!prd) { if (row > 0) r.sh.deleteRow(row); return { ok: true, maps: hubKrmMaps_() }; }   // 연결 해제 (연결표 한 줄만 지움)
-  var vals = [[style, "'" + prd, color, hubNow_(), me.name]];
-  if (row > 0) r.sh.getRange(row, 1, 1, 5).setValues(vals); else r.sh.getRange(r.vals.length + 2, 1, 1, 5).setValues(vals);
+  var sz = {}; if (req.sizes && typeof req.sizes === 'object') Object.keys(req.sizes).slice(0, 80).forEach(function (k) { var v = hubStr_(req.sizes[k], 10).replace(/\D/g, ''); if (v) sz[hubStr_(k, 30)] = v; });   // 크림 사이즈 → 사방넷 단품코드
+  var vals = [[style, "'" + prd, color, hubNow_(), me.name, JSON.stringify(sz)]];
+  if (row > 0) r.sh.getRange(row, 1, 1, 6).setValues(vals); else r.sh.getRange(r.vals.length + 2, 1, 1, 6).setValues(vals);
   return { ok: true, maps: hubKrmMaps_() };
 }
 

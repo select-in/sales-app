@@ -141,7 +141,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 .tbl .nm{font-weight:600}
 .tbl .sm{font-size:12.5px;color:var(--mute)}
 .tblwrap{overflow-x:auto;margin:0 -20px;padding:0 20px}
-.ktbl{table-layout:fixed;min-width:960px}.ktbl th,.ktbl td.r,.ktbl td.c,.ktbl td:nth-child(2){text-align:center!important}.ktbl td.r .c2,.ktbl td.c .c2,.ktbl td:nth-child(2) .c2{align-items:center}.ktbl th:first-child{text-align:left!important}.ktbl td{white-space:nowrap}.ktbl td:first-child{white-space:normal}
+.ktbl{table-layout:fixed;min-width:960px}.ktbl th,.ktbl td.r,.ktbl td.c,.ktbl td:nth-child(3){text-align:center!important}.ktbl td.r .c2,.ktbl td.c .c2,.ktbl td:nth-child(3) .c2{align-items:center}.ktbl th:nth-child(2){text-align:left!important}.krno{color:var(--mute);font-weight:600}.kmap2{text-decoration:none!important;color:inherit}.ktbl td{white-space:nowrap}.ktbl td:first-child{white-space:normal}
 .c2{display:flex;flex-direction:column;gap:2px;line-height:1.3;min-width:0}.c2>b{font-weight:700;white-space:nowrap}.c2>span{font-size:12px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tbl .r .c2{align-items:flex-end}
 .nm2>b{overflow:hidden;text-overflow:ellipsis;font-weight:600}.c2 .ell{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .c2 em{font-style:normal;font-weight:600}.c2 em.ok,em.ok{color:var(--accent);font-style:normal}.c2 em.wn,em.wn{color:var(--amber);font-style:normal}
@@ -331,7 +331,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-29s';
+var APP_BUILD = '2026-10-29t';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -1290,7 +1290,7 @@ function krMatchShip(p){   // 스캔한 상품과 품번·사이즈가 같은 �
   return krShipPending(CH.corp).filter(function(r){
     if (used[r.oid]) return false;
     var mp=krMap(r.style), ok=mp ? krMapProducts(mp).some(function(x){ return x.id===p.id; }) : String(r.style||'').split(/[\/,]/).map(krNorm).some(function(k){ return k.length>=5 && nm.indexOf(k)>=0; });
-    return ok && krSizeNorm(p.option)===krSizeNorm(r.option);
+    if (!ok) return false; var L=[p]; L._style=mp?r.style:''; return krSizeHit(L, r.option).length>0;
   })[0] || null;
 }
 function chPush(p){
@@ -1422,14 +1422,23 @@ function krMap(style){ var M=(KR&&KR.maps)||[]; for(var i=0;i<M.length;i++) if(M
 function krColorOf(p){ var o=String(p.option||''); return o.indexOf(':')>=0 ? o.split(':')[0] : ''; }
 function krMapProducts(m){ return S.products.filter(function(p){ return String(p.sbnPrd)===String(m.sbnPrd) && (!m.color || krColorOf(p).indexOf(m.color)>=0); }); }
 function krAppMatch(style){   // 연결표가 있으면 그 사방넷 상품코드(+컬러), 없으면 품번 자동 찾기
-  var m=krMap(style); if (m) return krMapProducts(m);
-  return krAutoMatch(style);
+  var m=krMap(style), L=m?krMapProducts(m):krAutoMatch(style).slice();
+  L._style=String(style||''); return L;
 }
 function krSizeNorm(v){ var s=String(v==null?'':v).toUpperCase().replace(/\s/g,'').split(/[:\/]/).pop(); s=s.replace(/(\d)[*X×](\d)/g,'$1x$2'); s=s.replace(/^([2-5])XL$/,function(m,n){ return new Array(+n+1).join('X')+'L'; }); return s; }
+function krSizeKeys(v){   // 'S(95)' → S, 95 · '250(US7)' → 250, US7
+  var s=krSizeNorm(v), out=[s], o=s.replace(/\(.*?\)|\[.*?\]/g,''), i=(s.match(/\((.*?)\)/)||[])[1];
+  if (o && o!==s) out.push(krSizeNorm(o)); if (i) out.push(krSizeNorm(i));
+  return out.filter(Boolean);
+}
+function krSizeHit(ps, opt){   // 크림 사이즈 → 사방넷 단품 (연결표에 사이즈 지정이 있으면 그걸 우선)
+  var m=krMap(ps._style), ov=m&&m.sizes&&m.sizes[opt];
+  if (ov) return ps.filter(function(p){ return String(p.sbnSku)===String(ov); });
+  var k=krSizeKeys(opt); if(!k.length) return [];
+  return ps.filter(function(p){ return krSizeKeys(p.option).some(function(x){ return k.indexOf(x)>=0; }); });
+}
 function krOptStock(ps, opt){
-  var o=krSizeNorm(opt); if(!o) return null;
-  var hit=ps.filter(function(p){ return krSizeNorm(p.option)===o; });
-  if(!hit.length) return null;
+  var hit=krSizeHit(ps, opt); if(!hit.length) return null;
   return hit.reduce(function(t,p){ return t+Math.max(0,effStock(p)); },0);
 }
 /* 크림 상품 ↔ 사방넷 상품 연결 */
@@ -1442,7 +1451,7 @@ function krMapOpen(style, name){
     S.products.forEach(function(p){ if(!p.sbnPrd) return; var h=(p.name+' '+p.sbnPrd+' '+p.brand+' '+p.option).toLowerCase(), ok = t ? t.split(/\s+/).every(function(w){ return h.indexOf(w)>=0; }) : digits.some(function(d){ return h.indexOf(d)>=0; }); if(ok){ var g=G[p.sbnPrd]||(G[p.sbnPrd]={prd:p.sbnPrd, name:p.name, corp:p.corp, n:0, colors:{}}); g.n++; var c=krColorOf(p); if(c) g.colors[c]=1; } });
     return Object.keys(G).map(function(k){ return G[k]; }).slice(0,30);
   };
-  var sel={prd:cur?cur.sbnPrd:'', color:cur?cur.color:''};
+  var sel={prd:cur?cur.sbnPrd:'', color:cur?cur.color:'', sizes:Object.assign({}, (cur&&cur.sizes)||{})};
   drawer('사방넷 상품 연결',
     '<div class="sel" style="margin:0"><div class="nm">'+esc(name)+'</div><div class="meta">크림 품번 <b>'+esc(style)+'</b> · 사이즈 '+esc(sizes.join(', '))+'</div></div>'+
     '<label class="fld" style="margin-top:14px"><span>사방넷 상품 찾기 (상품코드·상품명)</span><input class="inp" id="kmq" placeholder="예) 100439 또는 디키즈 85283" value="'+esc(sel.prd)+'"></label>'+
@@ -1451,7 +1460,7 @@ function krMapOpen(style, name){
   var drawC=function(){
     var L=cand($('kmq').value);
     $('kmc').innerHTML = L.length ? L.map(function(g){ return '<button data-prd="'+esc(g.prd)+'" class="'+(g.prd===sel.prd?'on':'')+'"><div style="flex:1;min-width:0;text-align:left"><div style="font-weight:600">'+esc(g.name)+'</div><div style="font-size:13px;color:var(--mute)">'+esc(g.prd)+' · '+esc(g.corp)+' · 단품 '+g.n+(Object.keys(g.colors).length?' · '+esc(Object.keys(g.colors).join(', ')):'')+'</div></div></button>'; }).join('') : '<div class="empty">찾는 상품이 없어요 · 상품코드나 상품명 일부로 찾아보세요</div>';
-    $('kmc').querySelectorAll('[data-prd]').forEach(function(b){ b.onclick=function(){ if(sel.prd!==b.dataset.prd){ sel.prd=b.dataset.prd; sel.color=''; } drawC(); drawP(); }; });
+    $('kmc').querySelectorAll('[data-prd]').forEach(function(b){ b.onclick=function(){ if(sel.prd!==b.dataset.prd){ sel.prd=b.dataset.prd; sel.color=''; sel.sizes={}; } drawC(); drawP(); }; });
   };
   var drawP=function(){
     if(!sel.prd){ $('kmp').innerHTML=''; $('kmsave').disabled=true; return; }
@@ -1460,12 +1469,14 @@ function krMapOpen(style, name){
     var ps=krMapProducts({sbnPrd:sel.prd, color:sel.color});
     $('kmp').innerHTML = (cols.length>1?'<div class="chsel" style="margin-top:12px"><span>컬러</span><div class="seg" id="kmcol">'+['(전체)'].concat(cols).map(function(c){ var v=c==='(전체)'?'':c; return '<button data-v="'+esc(v)+'" class="'+(sel.color===v?'on':'')+'">'+esc(c)+'</button>'; }).join('')+'</div></div>':'')+
       '<div class="sec" style="margin-top:12px"><i class="ti ti-arrows-left-right"></i>사이즈 맞춰보기</div><div class="tblwrap" style="margin:0"><table class="tbl"><thead><tr><th>크림 사이즈</th><th>사방넷 옵션</th><th class="r">앱 재고</th></tr></thead><tbody>'+
-      sizes.map(function(z){ var h=ps.filter(function(p){ return krSizeNorm(p.option)===krSizeNorm(z); }); return '<tr><td><b>'+esc(z)+'</b></td><td>'+(h.length?esc(h.map(function(p){ return p.sbnPrd+'-'+p.sbnSku+' '+p.option; }).join(', ')):'<span class="sm" style="color:var(--amber)">없음</span>')+'</td><td class="r num">'+(h.length?won(h.reduce(function(t,p){ return t+Math.max(0,effStock(p)); },0)):'—')+'</td></tr>'; }).join('')+'</tbody></table></div>';
+      sizes.map(function(z){ ps._style=''; var auto=krSizeHit(ps, z)[0], cur=sel.sizes[z]!=null?sel.sizes[z]:(auto?String(auto.sbnSku):''); sel.sizes[z]=cur; var h=ps.filter(function(p){ return String(p.sbnSku)===cur; })[0];
+        return '<tr><td><b>'+esc(z)+'</b></td><td><select class="inp" data-z="'+esc(z)+'" style="padding:6px 8px;min-width:180px"><option value="">— 연결 안 함 —</option>'+ps.map(function(p){ return '<option value="'+esc(p.sbnSku)+'"'+(String(p.sbnSku)===cur?' selected':'')+'>'+esc(p.sbnSku+' · '+p.option)+'</option>'; }).join('')+'</select></td><td class="r num">'+(h?won(Math.max(0,effStock(h))):'—')+'</td></tr>'; }).join('')+'</tbody></table></div><p class="sm" style="margin-top:6px">사이즈 표기가 달라도 여기서 골라두면 그대로 연결돼요</p>';
     $('kmsave').disabled=false;
-    document.querySelectorAll('#kmcol button').forEach(function(b){ b.onclick=function(){ sel.color=b.dataset.v; drawP(); }; });
+    document.querySelectorAll('#kmp select[data-z]').forEach(function(x){ x.onchange=function(){ sel.sizes[x.dataset.z]=x.value; drawP(); }; });
+    document.querySelectorAll('#kmcol button').forEach(function(b){ b.onclick=function(){ sel.color=b.dataset.v; sel.sizes={}; drawP(); }; });
   };
   $('kmq').oninput=drawC; drawC(); drawP();
-  var save=function(prd, color){ var b=$('kmsave'); b.disabled=true; api('krm_map_set',{style:style, sbnPrd:prd, color:color}).then(function(j){ KR.maps=j.maps; KR_IDX=null; closeDrawer(); toast(prd?'연결했어요 · '+style+' → '+prd+(color?' '+color:''):'연결을 해제했어요'); krList(); }).catch(function(e){ b.disabled=false; fail(e); }); };
+  var save=function(prd, color){ var b=$('kmsave'); b.disabled=true; api('krm_map_set',{style:style, sbnPrd:prd, color:color, sizes:prd?sel.sizes:{}}).then(function(j){ KR.maps=j.maps; KR_IDX=null; closeDrawer(); toast(prd?'연결했어요 · '+style+' → '+prd+(color?' '+color:''):'연결을 해제했어요'); krList(); }).catch(function(e){ b.disabled=false; fail(e); }); };
   $('kmsave').onclick=function(){ save(sel.prd, sel.color); };
   if ($('kmdel')) $('kmdel').onclick=function(){ if(confirm('이 연결을 해제할까요?')) save('', ''); };
 }
@@ -1636,11 +1647,11 @@ function krList(){
       // 지금 안 걸려 있는 사이즈 체결도 포함
       var pre=g.r.account+'|'+g.r.style+'|'; Object.keys(SM).forEach(function(k){ if(k.indexOf(pre)===0 && !g.rows.some(function(o){ return pre+o.option+'|'+o.kind===k; })){ n+=SM[k].n30; if(SM[k].at>at){ at=SM[k].at; pr=SM[k].price; } } });
       return {n:n, at:at, price:pr}; };
-    html='<div class="dtable tblwrap"><table class="tbl ptbl ktbl"><colgroup><col><col style="width:96px"><col style="width:112px"><col style="width:120px"><col style="width:120px"><col style="width:120px"><col style="width:120px"><col style="width:84px"></colgroup>'+
-      '<thead><tr><th>상품 · 사이즈</th><th>계정</th><th class="r">체결수량</th><th class="r">내 입찰가</th><th class="r">크림 최저가</th><th class="r">크림 최근 체결가</th><th class="r">30일 판매</th><th class="c">앱 재고</th></tr></thead><tbody>'+
-      CS.map(function(g){
+    html='<div class="dtable tblwrap"><table class="tbl ptbl ktbl"><colgroup><col style="width:44px"><col><col style="width:96px"><col style="width:112px"><col style="width:120px"><col style="width:120px"><col style="width:120px"><col style="width:120px"><col style="width:84px"></colgroup>'+
+      '<thead><tr><th class="c">No</th><th>상품 · 사이즈</th><th>계정</th><th class="r">체결수량</th><th class="r">내 입찰가</th><th class="r">크림 최저가</th><th class="r">크림 최근 체결가</th><th class="r">30일 판매</th><th class="c">앱 재고</th></tr></thead><tbody>'+
+      CS.map(function(g, gi_){
         var r=g.r, open=(!!KF.allOpen)!==(!!KF.open[g.k]), gs=gSold(g);
-        var h='<tr class="click grp'+(open?' open':'')+'" data-g="'+esc(g.k)+'">'+
+        var h='<tr class="click grp'+(open?' open':'')+'" data-g="'+esc(g.k)+'"><td class="c num krno">'+((KF.page-1)*PG.size+gi_+1)+'</td>'+
           '<td>'+nameCell(r.name, esc([r.brand,r.style].filter(Boolean).join(' · '))+' · <b class="optc"><i class="ti ti-chevron-'+(open?'up':'down')+'"></i>사이즈 '+g.rows.length+'</b>')+'</td>'+
           '<td><span class="pill">'+esc(r.account)+'</span></td>'+
           '<td class="r num">'+c2(won(g.items.length)+'개', split(g.nN,g.nI))+'</td>'+
@@ -1654,18 +1665,18 @@ function krList(){
           var kr=g.rows.filter(function(o){ return o.kind===kind; }), kk=g.k+'|'+kind, ko=!!KF.openK[kk], m=mkt(r,kind);
           var kn=kr.reduce(function(t,x){ return t+x.n; },0), k1=kr.filter(function(x){ return x.rank===1; }).length;
           var ks=kr.reduce(function(t,x){ return t+(x.sold?x.sold.n30:0); },0), kmin=Math.min.apply(null,kr.map(function(x){ return x.pmin; }));
-          var mid='<tr class="click kmid'+(ko?' open':'')+'" data-kk="'+esc(kk)+'"><td><div class="c2" style="padding-left:12px"><b>'+kpill(kind)+' '+(kind==='보관'?'보관판매':'일반판매')+' <span class="optc"><i class="ti ti-chevron-'+(ko?'up':'down')+'"></i>사이즈 '+kr.length+'</span></b><span>'+esc(kr.map(function(x){ return x.option; }).join(', '))+'</span></div></td><td></td>'+
+          var mid='<tr class="click kmid'+(ko?' open':'')+'" data-kk="'+esc(kk)+'"><td></td><td><div class="c2" style="padding-left:12px"><b>'+kpill(kind)+' '+(kind==='보관'?'보관판매':'일반판매')+' <span class="optc"><i class="ti ti-chevron-'+(ko?'up':'down')+'"></i>사이즈 '+kr.length+'</span></b><span>'+esc(kr.map(function(x){ return x.option; }).join(', '))+'</span></div></td><td></td>'+
             '<td class="r num">'+c2(kn+'개','')+'</td><td class="r num">'+c2(won(kmin)+'~', k1?'<em class="ok">1위 '+k1+'/'+kr.length+'</em>':'1위 없음')+'</td>'+
             '<td class="r num">'+c2(m.low?won(m.low):'—','')+'</td><td class="r num">'+c2(m.last?won(m.last):'—','')+'</td><td class="r num">'+c2(ks+'개','')+'</td><td></td></tr>';
           return mid+(ko?kr.map(function(o){
             var diff=m.low?o.pmin-m.low:null;
-            return '<tr class="sub"><td><div class="subnm c2"><b>'+esc(o.option)+'</b></div></td><td></td>'+
+            return '<tr class="sub"><td></td><td><div class="subnm c2"><b>'+esc(o.option)+'</b></div></td><td></td>'+
               '<td class="r num">'+c2(o.n+'개','')+'</td>'+
               '<td class="r num">'+c2(price(o), rankTxt(o))+'</td>'+
               '<td class="r num">'+c2(m.low?won(m.low):'—', krDiff(diff, r.account))+'</td>'+
               '<td class="r num">'+c2(m.last?won(m.last):'—','')+'</td>'+
               '<td class="r num">'+(o.sold?c2(o.sold.n30+'개', won(o.sold.price)+' · '+esc(o.sold.at.slice(5,10))):c2('0개','체결 없음'))+'</td>'+
-              '<td class="c num">'+appCell(g.app,o.option)+'</td></tr>';
+              '<td class="c num"><a href="#" class="kmap kmap2" data-st="'+esc(r.style)+'" data-nm="'+esc(r.name)+'" title="사방넷 단품 연결">'+appCell(g.app,o.option)+'</a></td></tr>';
           }).join(''):'');
         }).join(''):'');
       }).join('')+'</tbody></table></div>'+
@@ -1679,12 +1690,12 @@ function krList(){
       }).join('')+'</div>';
   } else {
     var stSum=function(L){ var c={}, o=[]; L.forEach(function(x){ var k=x.status||'—'; if(!c[k]){ c[k]=0; o.push(k); } c[k]++; }); return o.map(function(k){ return esc(k)+' '+c[k]; }).join(' · '); };
-    html='<div class="dtable tblwrap"><table class="tbl ptbl ktbl"><colgroup><col><col style="width:150px"><col style="width:100px"><col style="width:110px"><col style="width:96px"><col style="width:110px"><col style="width:110px"><col style="width:76px"></colgroup>'+
-      '<thead><tr><th>상품 · 사이즈</th><th>계정 · 상태</th><th class="r">수량</th><th class="r">판매가</th><th class="r">수수료</th><th class="r">정산액</th><th class="r">'+(KF.tab==='settle'?'정산일':'주문일')+'</th><th class="c">앱 재고</th></tr></thead><tbody>'+
-      CS.map(function(g){
+    html='<div class="dtable tblwrap"><table class="tbl ptbl ktbl"><colgroup><col style="width:44px"><col><col style="width:150px"><col style="width:100px"><col style="width:110px"><col style="width:96px"><col style="width:110px"><col style="width:110px"><col style="width:76px"></colgroup>'+
+      '<thead><tr><th class="c">No</th><th>상품 · 사이즈</th><th>계정 · 상태</th><th class="r">수량</th><th class="r">판매가</th><th class="r">수수료</th><th class="r">정산액</th><th class="r">'+(KF.tab==='settle'?'정산일':'주문일')+'</th><th class="c">앱 재고</th></tr></thead><tbody>'+
+      CS.map(function(g, gi_){
         var r=g.r, open=(!!KF.allOpen)!==(!!KF.open[g.k]);
         var sizes=g.items.map(function(x){ return x.option; }).filter(function(v,i,a){ return v&&a.indexOf(v)===i; }).sort(sizeCmp);
-        var h='<tr class="click grp'+(open?' open':'')+'" data-g="'+esc(g.k)+'">'+
+        var h='<tr class="click grp'+(open?' open':'')+'" data-g="'+esc(g.k)+'"><td class="c num krno">'+((KF.page-1)*PG.size+gi_+1)+'</td>'+
           '<td>'+nameCell(r.name, esc([r.brand,r.style].filter(Boolean).join(' · '))+' · <b class="optc"><i class="ti ti-chevron-'+(open?'up':'down')+'"></i>'+g.items.length+'건</b> '+esc(sizes.join(', ')))+'</td>'+
           '<td><div class="c2"><b><span class="pill">'+esc(r.account)+'</span></b><span class="ell">'+stSum(g.items)+'</span></div></td>'+
           '<td class="r num">'+c2(won(g.items.length)+'개', split(g.nN,g.nI))+'</td><td class="r num">'+c2(won(g.items.reduce(function(t,x){ return t+(+x.price||0); },0)),'합계')+'</td><td></td>'+
@@ -1693,11 +1704,11 @@ function krList(){
         return h+(open?KK.map(function(kind){
           var ki=g.items.filter(function(x){ return krKind(x)===kind; }).sort(function(a,b){ return sizeCmp(a.option,b.option) || String(b.settledAt||b.orderedAt).localeCompare(String(a.settledAt||a.orderedAt)); }), kk=g.k+'|'+kind, ko=!!KF.openK[kk];
           var kz=ki.map(function(x){ return x.option; }).filter(function(v,i,a){ return v&&a.indexOf(v)===i; });
-          var mid='<tr class="click kmid'+(ko?' open':'')+'" data-kk="'+esc(kk)+'"><td><div class="c2" style="padding-left:12px"><b>'+kpill(kind)+' '+(kind==='보관'?'보관판매':'일반판매')+' <span class="optc"><i class="ti ti-chevron-'+(ko?'up':'down')+'"></i>'+ki.length+'건</span></b><span>'+esc(kz.join(', '))+'</span></div></td>'+
+          var mid='<tr class="click kmid'+(ko?' open':'')+'" data-kk="'+esc(kk)+'"><td></td><td><div class="c2" style="padding-left:12px"><b>'+kpill(kind)+' '+(kind==='보관'?'보관판매':'일반판매')+' <span class="optc"><i class="ti ti-chevron-'+(ko?'up':'down')+'"></i>'+ki.length+'건</span></b><span>'+esc(kz.join(', '))+'</span></div></td>'+
             '<td><div class="c2"><span class="ell">'+stSum(ki)+'</span></div></td><td class="r num">'+c2(ki.length+'개','')+'</td><td class="r num">'+won(ki.reduce(function(t,x){ return t+(+x.price||0); },0))+'</td><td></td><td class="r num"><b>'+won(ki.reduce(function(t,x){ return t+(+x.payout||0); },0))+'</b></td><td></td><td></td></tr>';
           return mid+(ko?ki.map(function(x){
           var d=String(KF.tab==='settle'?x.settledAt:x.orderedAt||'');
-          return '<tr class="sub"><td><div class="subnm c2"><b>'+esc(x.option||'')+'</b><span>'+esc(x.oid||'')+'</span></div></td>'+
+          return '<tr class="sub"><td></td><td><div class="subnm c2"><b>'+esc(x.option||'')+'</b><span>'+esc(x.oid||'')+'</span></div></td>'+
             '<td><div class="c2"><b style="font-weight:500">'+esc(x.status||'')+'</b></div></td><td class="r num">1개</td>'+
             '<td class="r num">'+won(x.price)+'</td><td class="r num">'+(x.fee?won(x.fee):'—')+'</td><td class="r num">'+(x.payout?'<b>'+won(x.payout)+'</b>':'—')+'</td>'+
             '<td class="r num">'+c2(esc(d.slice(5,10)), KF.tab==='settle'&&x.payoutDate?'지급 '+esc(String(x.payoutDate).slice(5)):esc(d.slice(11,16)))+'</td><td class="c num">'+appCell(g.app,x.option)+'</td></tr>';
