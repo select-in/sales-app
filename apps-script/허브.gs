@@ -22,7 +22,9 @@ var HUB_TABS = {
   원가이력: ['일시', '상품id', 'SKU', '상품명', '이전원가', '새원가', '작업자'],
   직원: ['이름', '권한', 'PIN', '사용', '등록일'],
   설정: ['키', '값', '수정일', '수정자'],
-  채널출고: ['일시', '배치', '채널', '계정', '구분', '상품id', 'SKU', '상품명', '옵션', '바코드', '수량', '주문번호', '판매가', '수수료율', '정산예상', '재고반영', '작업자', '메모']
+  채널출고: ['일시', '배치', '채널', '계정', '구분', '상품id', 'SKU', '상품명', '옵션', '바코드', '수량', '주문번호', '판매가', '수수료율', '정산예상', '재고반영', '작업자', '메모'],
+  크림입찰: ['계정', '입찰id', '주문번호', '상태', '구분', '품번', '상품명', '브랜드', '옵션', '입찰가', '수수료', '정산예정', '최저판매가', '최근거래가', '등록일', '만료일', '동기화'],
+  크림판매: ['계정', '주문번호', '입찰id', '상태', '구분', '품번', '상품명', '옵션', '판매가', '수수료', '정산액', '주문일', '정산일', '지급예정일', '동기화']
 };
 var HUB_P_FIELDS = ['id', 'sku', 'barcode', 'name', 'brand', 'option', 'corp', 'type', 'cost', 'price', 'stock', 'safety', 'loc', 'memo', 'updatedAt', 'updatedBy', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg', 'barPending', 'stocMng', 'vstock', 'owner', 'link', 'setDiv'];
 var HUB_TOKEN_DAYS = 90;
@@ -50,6 +52,8 @@ function doPost(e) {
         return hubOut_(hubLocked_(function () { return hubOwnerBulk_(req.rows, me); }));
       case 'channel_ship': return hubOut_(hubLocked_(function () { return hubChannelShip_(req, me); }));
       case 'channel_list': return hubOut_({ rows: hubChannelList_(req.limit || 400) });
+      case 'krm_sync': return hubOut_(hubLocked_(function () { return hubKrmSync_(req, me); }));
+      case 'krm_list': return hubOut_(hubKrmList_());
       case 'sbn_get': if (!admin) return hubOut_({ error: '관리자만 조회할 수 있습니다' });   // 읽기 전용 (GET)
         if (!/^\/v3\/sb\/[A-Za-z0-9\/_\-]+(\?[A-Za-z0-9_\-=&%.,:]*)?$/.test(String(req.path || ''))) return hubOut_({ error: 'path_not_allowed' });
         return hubOut_({ ok: true, body: hubSbnCall_('GET', req.path, null, req.mode === 'SANDBOX' ? 'SANDBOX' : 'PRODUCTION') });
@@ -485,6 +489,58 @@ function hubChannelList_(limit) {
   return r.vals.slice(-Math.min(2000, limit)).reverse().map(function (v) {
     var o = {}; H.forEach(function (k, i) { o[k] = v[i] instanceof Date ? Utilities.formatDate(v[i], 'Asia/Seoul', 'yyyy-MM-dd HH:mm') : v[i]; }); return o;
   });
+}
+
+/* ===================== 크림 판매자센터 연동 =====================
+ * 크림 판매자센터 화면에서 kream.js(북마크)가 읽어온 데이터를 받아 저장
+ *  - 크림입찰: 계정별 「입찰중」 스냅샷 (매번 통째로 교체)
+ *  - 크림판매: 진행중(발송·검수)·정산 내역 — 계정+주문번호 기준으로 갱신/추가
+ * req: {account, asks:[...]|null, sales:[...]} */
+var HUB_KRM_A = ['account', 'askId', 'oid', 'status', 'kind', 'style', 'name', 'brand', 'option', 'price', 'fee', 'payout', 'lowest', 'last', 'createdAt', 'expiresAt', 'syncedAt'];
+var HUB_KRM_S = ['account', 'oid', 'askId', 'status', 'kind', 'style', 'name', 'option', 'price', 'fee', 'payout', 'orderedAt', 'settledAt', 'payoutDate', 'syncedAt'];
+function hubKrmRow_(o, keys, acct, now) {
+  return keys.map(function (k) {
+    if (k === 'account') return acct; if (k === 'syncedAt') return now;
+    var v = o[k]; if (v == null) return '';
+    return typeof v === 'number' ? v : hubStr_(v, 200);
+  });
+}
+function hubKrmSync_(req, me) {
+  var acct = req.account === '셀렉트인' ? '셀렉트인' : '겐더샵', now = hubNow_(), res = { ok: true, account: acct };
+  if (Array.isArray(req.asks)) {
+    var a = hubRows_('크림입찰'), keep = a.vals.filter(function (v) { return v[0] !== acct; });
+    var add = req.asks.map(function (o) { return hubKrmRow_(o, HUB_KRM_A, acct, now); });
+    var all = keep.concat(add), w = HUB_TABS['크림입찰'].length;
+    if (a.vals.length) a.sh.getRange(2, 1, a.vals.length, w).clearContent();
+    if (all.length) a.sh.getRange(2, 1, all.length, w).setValues(all);
+    res.asks = add.length;
+  }
+  if (Array.isArray(req.sales) && req.sales.length) {
+    var s = hubRows_('크림판매'), idx = {}, w2 = HUB_TABS['크림판매'].length, upd = 0, ins = [];
+    s.vals.forEach(function (v, i) { idx[v[0] + '|' + v[1]] = i; });
+    req.sales.forEach(function (o) {
+      if (!o || !o.oid) return;
+      var row = hubKrmRow_(o, HUB_KRM_S, acct, now), k = acct + '|' + row[1], i = idx[k];
+      if (i != null) {
+        var old = s.vals[i];
+        row = row.map(function (v, j) { return v === '' ? old[j] : v; });   // 비어 있는 값은 기존 값 유지 (정산 내역 ↔ 진행 내역 합치기)
+        s.vals[i] = row; upd++;
+      } else { idx[k] = s.vals.length + ins.length; ins.push(row); }
+    });
+    if (s.vals.length) s.sh.getRange(2, 1, s.vals.length, w2).setValues(s.vals);
+    if (ins.length) s.sh.getRange(s.vals.length + 2, 1, ins.length, w2).setValues(ins);
+    res.salesUpdated = upd; res.salesAdded = ins.length;
+  }
+  hubConfigSet_('krm_synced_' + acct, now, me);
+  return res;
+}
+function hubKrmList_() {
+  var fmt = function (v) { return v instanceof Date ? Utilities.formatDate(v, 'Asia/Seoul', 'yyyy-MM-dd HH:mm') : v; };
+  var a = hubRows_('크림입찰').vals.map(function (v) { var o = {}; HUB_KRM_A.forEach(function (k, i) { o[k] = fmt(v[i]); }); return o; });
+  var s = hubRows_('크림판매').vals.map(function (v) { var o = {}; HUB_KRM_S.forEach(function (k, i) { o[k] = fmt(v[i]); }); return o; });
+  var c = hubConfig_(), synced = {};
+  ['겐더샵', '셀렉트인'].forEach(function (n) { var x = c['krm_synced_' + n]; if (x) synced[n] = x.value; });
+  return { asks: a, sales: s, synced: synced };
 }
 
 /* ===================== 재고 ===================== */

@@ -324,7 +324,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-28n';
+var APP_BUILD = '2026-10-28o';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -544,6 +544,7 @@ var MENU = [
     {k:'register',t:'사방넷 등록',ic:'cloud-upload'},
     {k:'barcode',t:'바코드 점검',ic:'barcode-off'}]},
   {grp:'업무', items:[
+    {k:'kream',t:'크림 판매 관리',ic:'gavel'},
     {k:'channel',t:'크림 · 포이즌 출고',ic:'shoe'},
     {k:'orders',t:'주문 · 발주 · 송장',ic:'truck-delivery',soon:1},
     {k:'gonggu',t:'공동구매',ic:'users-group',soon:1},
@@ -1217,6 +1218,165 @@ VIEWS.channel = {
     };
   }
 };
+
+/* ---------- 크림 판매자센터 (입찰 · 진행 · 정산) ---------- */
+var KR = null, KF = {acct:'전체', tab:'live', q:'', page:1, open:{}, allOpen:false};
+var KR_BM = "javascript:(function(){var s=document.createElement('script');s.src='https://select-in.github.io/sales-app/hub/kream.js?'+Date.now();document.body.appendChild(s);})()";
+function krLoad(force){
+  if (KR && !force) return Promise.resolve(KR);
+  return api('krm_list',{}).then(function(j){ KR=j; return KR; });
+}
+function krNorm(s){ return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+var KR_IDX = null;
+function krAppMatch(style){   // 앱 상품명·SKU·메모에 크림 품번이 들어 있는 상품
+  var k=krNorm(style); if (k.length<5) return [];
+  if (!KR_IDX || KR_IDX.n!==S.products.length){ KR_IDX={n:S.products.length, c:{}, rows:S.products.map(function(p){ return [krNorm(p.name+' '+p.sku+' '+p.memo), p]; })}; }
+  if (KR_IDX.c[k]) return KR_IDX.c[k];
+  return (KR_IDX.c[k] = KR_IDX.rows.filter(function(r){ return r[0].indexOf(k)>=0; }).map(function(r){ return r[1]; }));
+}
+function krOptStock(ps, opt){
+  var o=String(opt||'').toUpperCase().replace(/\s/g,''); if(!o) return null;
+  var hit=ps.filter(function(p){ var x=String(p.option||'').toUpperCase().replace(/\s/g,''); return x===o || x.split(/[:\/]/).pop()===o; });
+  if(!hit.length) return null;
+  return hit.reduce(function(t,p){ return t+Math.max(0,effStock(p)); },0);
+}
+function krTabRows(){
+  if (!KR) return [];
+  var acct=function(r){ return KF.acct==='전체'||r.account===KF.acct; };
+  if (KF.tab==='live') return KR.asks.filter(acct);
+  var S2=KR.sales.filter(acct);
+  if (KF.tab==='prog') return S2.filter(function(r){ return !r.settledAt && !/취소|실패|반송/.test(r.status); });
+  if (KF.tab==='settle') return S2.filter(function(r){ return r.settledAt; });
+  return S2.filter(function(r){ return /취소|실패|반송/.test(r.status); });
+}
+VIEWS.kream = {
+  html: function(){
+    var body = '<div id="krbody"><div class="empty">크림 데이터를 불러오는 중…</div></div>';
+    return '<div class="ph"><div><h1>크림 판매 관리</h1><p>판매자센터의 입찰 · 발송 · 정산을 한 곳에서 · 앱 재고와 품번으로 연결</p></div>'+
+      '<div class="acts"><button class="btn" id="krhow"><i class="ti ti-bookmark"></i>동기화 버튼 설치</button><button class="btn pri" id="krre"><i class="ti ti-refresh"></i>새로고침</button></div></div>'+body;
+  },
+  bind: function(){
+    $('krhow').onclick = krHow;
+    $('krre').onclick = function(){ krLoad(true).then(krDraw).catch(fail); };
+    krLoad().then(krDraw).catch(function(e){ if($('krbody')) $('krbody').innerHTML='<div class="empty">불러오지 못했어요 · '+esc(e&&e.message||'')+'</div>'; });
+  }
+};
+function krHow(){
+  drawer('크림 동기화 버튼 설치 (PC 한 번만)',
+    '<ol class="plan" style="padding-left:20px;margin:0;line-height:1.8">'+
+    '<li>아래 초록 버튼을 <b>북마크바로 끌어다 놓기</b> (북마크바가 안 보이면 Ctrl+Shift+B)</li>'+
+    '<li>크림 판매자센터(partner.kream.co.kr)에 로그인한 화면에서 그 북마크 클릭</li>'+
+    '<li>오른쪽 아래 「OPS 크림 동기화」 창에서 계정 확인 → [지금 동기화]</li>'+
+    '<li>그 크림 창을 켜두면 <b>10분마다 자동</b>으로 다시 가져와요</li></ol>'+
+    '<div style="margin:18px 0;text-align:center"><a class="btn pri" href="'+esc(KR_BM)+'" onclick="toast(\'클릭 말고 북마크바로 끌어다 놓아 주세요\');return false;" style="cursor:grab"><i class="ti ti-refresh"></i>OPS 크림 동기화</a></div>'+
+    '<div class="preview">로그인 정보는 저장하지 않아요. 크림 화면에 로그인된 세션으로 <b>조회만</b> 해요. 크림 로그인이 풀리면(하루 이상 미사용 등) 다시 로그인 후 버튼을 누르면 돼요.</div>',
+    '<button class="btn" onclick="closeDrawer()">닫기</button>');
+}
+function krDraw(){
+  var box=$('krbody'); if(!box) return;
+  if (!KR.asks.length && !KR.sales.length){ box.innerHTML='<div class="card"><div class="empty">아직 가져온 크림 데이터가 없어요.<br>[동기화 버튼 설치]를 보고 크림 판매자센터에서 한 번 실행해 주세요.</div></div>'; return; }
+  var acctF=function(r){ return KF.acct==='전체'||r.account===KF.acct; };
+  var A=KR.asks.filter(acctF), SL=KR.sales.filter(acctF);
+  var prog=SL.filter(function(r){ return !r.settledAt && !/취소|실패|반송/.test(r.status); });
+  var ship=prog.filter(function(r){ return /발송/.test(r.status) && !/완료/.test(r.status); });
+  var ym=new Date(Date.now()+9*3600e3).toISOString().slice(0,7);
+  var mon=SL.filter(function(r){ return String(r.settledAt).slice(0,7)===ym; });
+  var wait=SL.filter(function(r){ return r.payoutDate && String(r.payoutDate)>=new Date(Date.now()+9*3600e3).toISOString().slice(0,10); });
+  var sum=function(L,k){ return L.reduce(function(t,r){ return t+(Number(r[k])||0); },0); };
+  var syn=Object.keys(KR.synced||{}).map(function(k){ return k+' '+KR.synced[k]; }).join(' · ');
+  var tabs=[['live','입찰중',A.length],['prog','진행중',prog.length],['settle','정산',SL.filter(function(r){ return r.settledAt; }).length],['cancel','취소',SL.filter(function(r){ return /취소|실패|반송/.test(r.status); }).length]];
+  box.innerHTML =
+    '<div class="grid g4">'+
+      '<div class="kpi"><div class="k"><i class="ti ti-gavel"></i>입찰중</div><div class="v num">'+won(A.length)+'<small>건</small></div></div>'+
+      '<div class="kpi '+(ship.length?'amber':'')+'"><div class="k"><i class="ti ti-truck"></i>발송 필요</div><div class="v num">'+won(ship.length)+'<small>건</small></div></div>'+
+      '<div class="kpi"><div class="k"><i class="ti ti-coin"></i>이번 달 정산</div><div class="v num">'+won(Math.round(sum(mon,'payout')/1e4))+'<small>만원 · '+mon.length+'건</small></div></div>'+
+      '<div class="kpi"><div class="k"><i class="ti ti-calendar-dollar"></i>지급 예정</div><div class="v num">'+won(Math.round(sum(wait,'payout')/1e4))+'<small>만원 · '+wait.length+'건</small></div></div>'+
+    '</div>'+
+    '<div class="card" style="margin-top:16px">'+
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:center">'+
+        '<div class="seg" id="kra">'+['전체','겐더샵','셀렉트인'].map(function(c){ return '<button data-v="'+c+'" class="'+(KF.acct===c?'on':'')+'">'+c+'</button>'; }).join('')+'</div>'+
+        '<div class="seg" id="krt">'+tabs.map(function(t){ return '<button data-v="'+t[0]+'" class="'+(KF.tab===t[0]?'on':'')+'">'+t[1]+' <small class="num">'+won(t[2])+'</small></button>'; }).join('')+'</div>'+
+        '<div class="search" style="flex:1;min-width:200px"><i class="ti ti-search"></i><input class="inp" id="krq" placeholder="품번, 상품명, 사이즈, 주문번호" value="'+esc(KF.q)+'"></div></div>'+
+      '<p style="margin:0 0 10px;font-size:12px;color:var(--mute)">마지막 동기화: '+esc(syn||'없음')+' · 앱 재고는 상품명에 같은 품번이 있는 상품 기준</p>'+
+      '<div id="krlist"></div></div>';
+  document.querySelectorAll('#kra button').forEach(function(b){ b.onclick=function(){ KF.acct=b.dataset.v; KF.page=1; krDraw(); }; });
+  document.querySelectorAll('#krt button').forEach(function(b){ b.onclick=function(){ KF.tab=b.dataset.v; KF.page=1; krDraw(); }; });
+  $('krq').oninput=function(){ KF.q=this.value; KF.page=1; krList(); };
+  krList();
+}
+function krList(){
+  var el=$('krlist'); if(!el) return;
+  var toks=KF.q.toLowerCase().split(/\s+/).filter(Boolean);
+  var L=krTabRows().filter(function(r){ var h=[r.style,r.name,r.brand,r.option,r.oid,r.account,r.status].join(' ').toLowerCase(); return toks.every(function(t){ return h.indexOf(t)>=0; }); });
+  if(!L.length){ el.innerHTML='<div class="empty">해당하는 건이 없어요</div>'; return; }
+  var live=KF.tab==='live';
+  // 품번 단위로 묶기
+  var G=[], gi={};
+  L.forEach(function(r){ var k=(r.account||'')+'|'+(r.style||r.name); if(!gi[k]){ gi[k]={k:k,items:[]}; G.push(gi[k]); } gi[k].items.push(r); });
+  G.forEach(function(g){
+    g.r=g.items[0]; g.app=krAppMatch(g.r.style);
+    g.amt=g.items.reduce(function(t,x){ return t+(Number(live?x.price:x.payout)||0); },0);
+    g.at=g.items.reduce(function(t,x){ var d=String(x.settledAt||x.orderedAt||x.createdAt||''); return d>t?d:t; },'');
+    g.items.sort(function(a,b){ return String(a.option).localeCompare(String(b.option),'ko',{numeric:true}); });
+  });
+  G.sort(function(a,b){ return live ? b.items.length-a.items.length : b.at.localeCompare(a.at); });
+  var pages=Math.max(1,Math.ceil(G.length/PG.size)); if(KF.page>pages) KF.page=pages;
+  var CS=G.slice((KF.page-1)*PG.size, KF.page*PG.size);
+  var appCell=function(ps, opt){ if(!ps.length) return '<span class="sm">미연결</span>'; var n=opt==null?ps.reduce(function(t,p){ return t+Math.max(0,effStock(p)); },0):krOptStock(ps,opt); return n==null?'<span class="sm">옵션 없음</span>':'<b>'+won(n)+'</b>'; };
+  var lowCell=function(x){ if(!x.lowest) return '—'; var mine=Number(x.price)<=Number(x.lowest); return '<span style="color:'+(mine?'var(--accent)':'var(--amber)')+'">'+won(x.lowest)+'</span>'+(mine?'<div class="sm">최저가</div>':'<div class="sm">+'+won(x.price-x.lowest)+'</div>'); };
+  var dt=function(s){ return esc(String(s||'').slice(5,16)); };
+  var head = live ? '<th>상품 (품번)</th><th>계정</th><th class="r">입찰가</th><th class="r">최저판매가</th><th class="r">최근거래가</th><th class="r">정산예정</th><th class="c">앱 재고</th>'
+                  : '<th>상품 (품번)</th><th>계정 · 상태</th><th class="r">판매가</th><th class="r">수수료</th><th class="r">정산액</th><th>'+(KF.tab==='settle'?'정산일 · 지급일':'주문일')+'</th><th class="c">앱 재고</th>';
+  var row = function(x, sub, ps){
+    var nm = sub ? '<div class="subnm"><span class="sku">'+esc(x.oid||'')+'</span> '+esc(x.option||'')+'</div>' : '';
+    if (live) return '<td>'+nm+'</td><td>'+esc(x.kind||'')+'</td><td class="r num">'+won(x.price)+'</td><td class="r num">'+lowCell(x)+'</td><td class="r num">'+(x.last?won(x.last):'—')+'</td><td class="r num">'+(x.payout?won(x.payout):'—')+'</td><td class="c num">'+appCell(ps,x.option)+'</td>';
+    return '<td>'+nm+'</td><td><span class="pill">'+esc(x.status||'')+'</span> <span class="sm">'+esc(x.kind||'')+'</span></td><td class="r num">'+won(x.price)+'</td><td class="r num">'+(x.fee?won(x.fee):'—')+'</td><td class="r num">'+(x.payout?won(x.payout):'—')+'</td><td class="num">'+(KF.tab==='settle'?dt(x.settledAt)+'<div class="sm">지급 '+esc(String(x.payoutDate||'').slice(5))+'</div>':dt(x.orderedAt))+'</td><td class="c num">'+appCell(ps,x.option)+'</td>';
+  };
+  el.innerHTML = grpBar(G)+
+    '<div class="dtable tblwrap"><table class="tbl ptbl"><thead><tr>'+head+'</tr></thead><tbody>'+
+    CS.map(function(g){
+      var r=g.r, n=g.items.length, open=(!!KF.allOpen)!==(!!KF.open[g.k]);
+      var sizes=g.items.map(function(x){ return x.option; }).filter(function(v,i,a){ return v&&a.indexOf(v)===i; });
+      var h='<tr class="click grp'+(open?' open':'')+'" data-g="'+esc(g.k)+'"><td><div class="nm">'+esc(r.name)+'</div><div class="sm">'+esc([r.brand,r.style].filter(Boolean).join(' · '))+' · <b class="optc"><i class="ti ti-chevron-'+(open?'up':'down')+'"></i>'+n+'건</b> <span class="sm">'+esc(sizes.slice(0,8).join(', ')+(sizes.length>8?' …':''))+'</span></div></td>'+
+        '<td><span class="pill">'+esc(r.account)+'</span></td>'+
+        (live ? '<td class="r num">'+(n>1?won(Math.min.apply(null,g.items.map(function(x){ return x.price; })))+'~':won(r.price))+'</td><td></td><td></td><td class="r num">'+won(g.items.reduce(function(t,x){ return t+(Number(x.payout)||0); },0))+'</td>'
+              : '<td class="r num">'+won(g.items.reduce(function(t,x){ return t+(Number(x.price)||0); },0))+'</td><td></td><td class="r num"><b>'+won(g.amt)+'</b></td><td class="num">'+esc(g.at.slice(5,16))+'</td>')+
+        '<td class="c num">'+appCell(g.app,null)+'</td></tr>';
+      return h+(open?g.items.map(function(x){ return '<tr class="sub">'+row(x,true,g.app)+'</tr>'; }).join(''):'');
+    }).join('')+'</tbody></table></div>'+
+    '<div class="mcards">'+CS.map(function(g){
+      var r=g.r, open=(!!KF.allOpen)!==(!!KF.open[g.k]);
+      return '<div class="mc grp" data-g="'+esc(g.k)+'"><div class="m"><div class="t">'+esc(r.name)+'</div><div class="s">'+esc([r.account,r.style].filter(Boolean).join(' · '))+' · <b class="optc">'+g.items.length+'건 '+(open?'▲':'▼')+'</b></div><div class="s num">앱 재고 '+appCell(g.app,null)+'</div></div><div class="e num"><b>'+won(g.amt)+'</b><div class="s">'+(live?'입찰가 합':'정산액')+'</div></div></div>'+
+        (open?'<div class="mcsub">'+g.items.map(function(x){ return '<div class="mc"><div class="m"><div class="t" style="font-size:14px">'+esc(x.option||'')+' <span class="sm">'+esc(live?x.kind:x.status)+'</span></div><div class="s num">'+(live?'입찰 '+won(x.price)+(x.lowest?' · 최저 '+won(x.lowest):'')+' · 앱 '+appCell(g.app,x.option):'판매 '+won(x.price)+' · 정산 '+(x.payout?won(x.payout):'—')+' · '+esc(String(x.settledAt||x.orderedAt||'').slice(5,16)))+'</div></div></div>'; }).join('')+'</div>':'');
+    }).join('')+'</div>'+pagerHtml(G.length, KF.page, PG.size).replace('개 ·','개 품번 ·');
+  el.querySelectorAll('[data-g]').forEach(function(r){ r.onclick=function(){ KF.open[r.dataset.g]=!KF.open[r.dataset.g]; krList(); }; });
+  bindGrpBar(el, KF, krList);
+  bindPager(el, function(n){ KF.page=n; krList(); });
+}
+
+/* ---------- 크림 판매자센터 → 앱 데이터 수신 (kream.js) ---------- */
+var KRM_ORIGIN = 'https://partner.kream.co.kr', KRM_IN = {};
+window.addEventListener('message', function(e){
+  if (e.origin !== KRM_ORIGIN || !e.data || typeof e.data !== 'object') return;
+  var d = e.data, src = e.source;
+  if (d.type === 'krm_ping'){ if (S.me) src.postMessage({type:'hub_ready'}, KRM_ORIGIN); return; }
+  if (d.type !== 'krm_rows' || !S.me) return;
+  var B = KRM_IN[d.batch] || (KRM_IN[d.batch] = {got:0, q:Promise.resolve(), tot:{asks:0,salesAdded:0,salesUpdated:0}, err:null});
+  B.q = B.q.then(function(){
+    if (B.err) return;
+    return api('krm_sync',{account:d.account, asks:d.asks, sales:d.sales}).then(function(j){
+      if (j.asks!=null) B.tot.asks=j.asks; B.tot.salesAdded+=j.salesAdded||0; B.tot.salesUpdated+=j.salesUpdated||0;
+    }).catch(function(x){ B.err = (x&&x.message)||'저장 실패'; });
+  }).then(function(){
+    B.got++;
+    if (B.err){ src.postMessage({type:'krm_error', batch:d.batch, message:B.err}, KRM_ORIGIN); delete KRM_IN[d.batch]; return; }
+    if (B.got >= d.parts){
+      src.postMessage(Object.assign({type:'krm_saved', batch:d.batch}, B.tot), KRM_ORIGIN); delete KRM_IN[d.batch];
+      KR = null; if ((location.hash||'').indexOf('#kream')===0) krLoad(true).then(krDraw).catch(function(){});
+      toast('크림 '+d.account+' 동기화 · 입찰 '+B.tot.asks+' · 거래 +'+B.tot.salesAdded);
+    }
+  });
+});
 
 /* ---------- 사방넷 등록 (사진 + 필수 정보 → 등록 요청 → Claude가 사방넷 등록) ---------- */
 var MYCATS = ['셀렉트인전용','의류','남성화','여성화','모자/비니','가방','목도리','속옷','아동화','벨트,지갑,귀마개','텀블러'];
