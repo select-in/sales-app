@@ -187,7 +187,8 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 .sel .stk b{font-size:26px;color:var(--ink)}
 .stepper{display:flex;align-items:center;gap:8px;margin-top:14px}
 .stepper button{width:52px;height:52px;border-radius:12px;border:1px solid var(--line2);background:var(--card);font-size:24px;cursor:pointer}
-.stepper input{flex:1;height:52px;text-align:center;font-size:24px;font-weight:700;border:1px solid var(--line2);border-radius:12px;background:var(--card)}
+.stepper button{flex:none}
+.stepper input{flex:1;min-width:0;width:100%;height:52px;text-align:center;font-size:24px;font-weight:700;border:1px solid var(--line2);border-radius:12px;background:var(--card)}
 .preview{font-size:14px;color:var(--sub);margin-top:10px;text-align:center}
 .preview b{color:var(--ink)}
 
@@ -316,7 +317,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-28b';
+var APP_BUILD = '2026-10-28c';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -1250,7 +1251,8 @@ function openReg(id){
     if (status==='request'){ btn.innerHTML='<i class="ti ti-loader-2"></i>사방넷에 등록 중…'; }
     api(status==='request'?'reg_send':'reg_save',{p:pd, reg:reg, status:status}).then(function(j){
       var i = S.products.findIndex(function(x){ return x.id===j.product.id; }); if (i>=0) S.products[i]=j.product; else S.products.push(j.product);
-      persist(); closeDrawer(); toast(status==='request'?'사방넷 등록 완료 · 상품코드 '+(j.productCode||'확인 중'):'임시저장했어요');
+      persist(); closeDrawer(); toast(status==='request'?'사방넷 등록 완료 · 상품코드 '+(j.productCode||'확인 중')+((j.products||[]).length>1?' · 옵션 '+j.products.length+'개로 나눠 저장':''):'임시저장했어요');
+      if (status==='request' && (j.products||[]).length>1){ boot(); return; }
       if (location.hash!=='#register') location.hash='#register'; else route();
     }).catch(function(e){ btn.disabled=false; if(status==='request') btn.innerHTML='<i class="ti ti-cloud-upload"></i>다시 시도'; fail(e); });
   };

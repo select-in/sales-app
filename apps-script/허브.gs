@@ -809,10 +809,37 @@ function hubRegSend_(req, me) {
   var hit = hubFindProduct_(p.id), rg = {};
   try { rg = JSON.parse(hit.p.reg || '{}'); } catch (e) {}
   rg.sbnProductCode = code; rg.sentAt = hubNow_(); rg.sentBy = me.name; rg.noticeType = built.noticeType;
+  var sts = built.product.productSupplyStatusCode === 'IN_SUPPLY' ? '판매' : '대기중', now = hubNow_();
   var row = hubRow_(Object.assign({}, hit.p, { sbnPrd: code || hit.p.sbnPrd, sbnSku: hit.p.sbnSku || '0001', regStatus: '등록완료',
-    sbnStatus: built.product.productSupplyStatusCode === 'IN_SUPPLY' ? '판매' : '대기중', reg: JSON.stringify(rg).slice(0, 45000), updatedAt: hubNow_(), updatedBy: me.name }));
+    sbnStatus: sts, reg: JSON.stringify(rg).slice(0, 45000), updatedAt: now, updatedBy: me.name }));
   hit.sh.getRange(hit.row, 1, 1, row.length).setNumberFormats([hubFormats_()]).setValues([row]);
-  return { ok: true, product: hubProductObj_(row), productCode: code, result: r0 };
+  var split = code ? hubRegSplitOptions_(hubProductObj_(row), built.product.optionInfo.options, code, sts, me) : { added: 0 };
+  var fin = hubFindProduct_(p.id);
+  return { ok: true, product: fin.p, productCode: code, result: r0, optionRows: split.added, products: split.products || [] };
+}
+/* 옵션이 여러 개면 앱에서도 단품(옵션)마다 한 줄씩 — 사방넷 단품코드 0001, 0002 … 순서와 맞춤
+ * 첫 옵션 = 등록서 상품 줄, 나머지는 새 줄 (이미 있으면 갱신). 재고는 옵션별 수량으로 맞추고 이력 남김 */
+function hubRegSplitOptions_(base, options, code, sts, me) {
+  if (!options || options.length < 2) return { added: 0 };
+  var list = hubProducts_(), byKey = {}, now = hubNow_(), logs = [], added = 0, out = [];
+  list.forEach(function (x) { if (x.sbnPrd) byKey[x.sbnPrd + '-' + x.sbnSku] = x; });
+  options.forEach(function (o, i) {
+    var sku = ('000' + (i + 1)).slice(-4), key = code + '-' + sku, qty = o.stockQuantity;
+    var opt = String(o.optionDetailName || '').replace(/^-:|:-$/g, '');
+    var t = i === 0 ? list.filter(function (x) { return x.id === base.id; })[0] : byKey[key];
+    if (t) {
+      t.option = opt; t.sbnPrd = code; t.sbnSku = sku; if (o.barcode) t.barcode = o.barcode;
+      if (qty != null && t.stock !== qty) { logs.push(['재고이력', [now, t.id, t.sku, t.name, '옵션분리', qty - t.stock, qty, '등록서 옵션 재고', me.name]]); t.stock = qty; }
+      t.updatedAt = now; t.updatedBy = me.name; out.push(t);
+    } else {
+      var n = Object.assign({}, base, { id: hubNewId_(), sku: key, option: opt, barcode: o.barcode || '', stock: qty || 0, sbnPrd: code, sbnSku: sku,
+        sbnStatus: sts, regStatus: '', reg: '', barPending: '', updatedAt: now, updatedBy: me.name });
+      list.push(n); added++; out.push(n);
+      if (qty) logs.push(['재고이력', [now, n.id, n.sku, n.name, '기초재고', qty, qty, '등록서 옵션', me.name]]);
+    }
+  });
+  hubWriteAll_(list); hubWriteLogs_(logs);
+  return { added: added, products: out };
 }
 
 /** 처음 한 번: 드라이브·외부 호출 권한 승인용 (실행만 하면 됨) */
