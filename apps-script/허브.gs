@@ -994,7 +994,12 @@ function hubConfigSet_(key, value, me) {
 
 /* ===================== 첫 화면 데이터 ===================== */
 function hubBoot_(me) {
-  var out = { me: me, products: hubProducts_(), history: hubHistory_(null, 200), config: hubConfig_() };
+  // 상품은 가볍게: 열 이름 + 값 배열 (객체 키 반복 제거, 등록서 JSON은 등록서 상품만)
+  var iReg = HUB_P_FIELDS.indexOf('reg'), iRs = HUB_P_FIELDS.indexOf('regStatus');
+  var rows = hubRows_('상품').vals.filter(function (v) { return v[0]; }).map(function (v) {
+    return v.map(function (x, i) { if (x instanceof Date) return Utilities.formatDate(x, 'Asia/Seoul', 'yyyy-MM-dd HH:mm'); if (i === iReg && !v[iRs]) return ''; return x === '' ? '' : x; });
+  });
+  var out = { me: me, pcols: HUB_P_FIELDS, prows: rows, history: hubHistory_(null, 200), config: hubConfig_() };
   if (me.role === '관리자') out.users = hubUsers_();
   return out;
 }

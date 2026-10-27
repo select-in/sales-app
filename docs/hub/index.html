@@ -119,8 +119,8 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 @media (max-width:560px){.optrow{grid-template-columns:1fr 1fr 56px 32px}.optrow .obc{grid-column:1 / span 3;order:5}.optrow .x{order:4}.opthd span:nth-child(4){display:none}}.optrow .inp{padding:10px}.opthd span{font-size:12px;color:var(--mute);padding-left:4px}.optrow .x{width:36px;height:36px;border:0;background:var(--bg);border-radius:8px;cursor:pointer}
 .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 12px}
 
-.seg{display:inline-flex;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px}
-.seg button{border:0;background:none;padding:6px 12px;border-radius:7px;font-size:14px;color:var(--sub);cursor:pointer;font-weight:500}
+.seg{display:inline-flex;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px;max-width:100%;overflow-x:auto;scrollbar-width:none}.seg::-webkit-scrollbar{display:none}
+.seg button{flex:none;white-space:nowrap;border:0;background:none;padding:6px 12px;border-radius:7px;font-size:14px;color:var(--sub);cursor:pointer;font-weight:500}
 .seg button.on{background:var(--card);color:var(--ink);font-weight:700;box-shadow:0 1px 2px rgba(0,0,0,.08)}
 
 .search{position:relative;flex:1;min-width:220px}
@@ -321,7 +321,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-28i';
+var APP_BUILD = '2026-10-28j';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -502,21 +502,34 @@ function showLogin(msg){
 }
 function logout(){
   if (!confirm('로그아웃할까요?')) return;
-  lsDel(LS_TOKEN); lsDel(LS_CACHE); DEMO=false; S={me:null,products:[],history:[],config:{},users:[]}; showLogin();
+  lsDel(LS_TOKEN); lsDel(LS_CACHE); idbSet('S',null); DEMO=false; S={me:null,products:[],history:[],config:{},users:[]}; showLogin();
 }
 
 /* ===================== 시작 ===================== */
+/* 기기 저장소: 상품이 많아 localStorage(5MB) 대신 IndexedDB 사용 */
+var IDB = null;
+function idb(){ if (IDB) return IDB; IDB = new Promise(function(ok){ try{ var r=indexedDB.open('selectin-ops',1); r.onupgradeneeded=function(){ r.result.createObjectStore('kv'); }; r.onsuccess=function(){ ok(r.result); }; r.onerror=function(){ ok(null); }; }catch(e){ ok(null); } }); return IDB; }
+function idbGet(k){ return idb().then(function(db){ if(!db) return null; return new Promise(function(ok){ try{ var q=db.transaction('kv').objectStore('kv').get(k); q.onsuccess=function(){ ok(q.result||null); }; q.onerror=function(){ ok(null); }; }catch(e){ ok(null); } }); }); }
+function idbSet(k,v){ return idb().then(function(db){ if(!db) return; try{ db.transaction('kv','readwrite').objectStore('kv').put(v,k); }catch(e){} }); }
+function expandProducts(j){
+  if (j.products) return j.products;
+  var C = j.pcols||[], N = {cost:1,price:1,stock:1,safety:1,vstock:1};
+  return (j.prows||[]).map(function(v){ var o={}; for (var i=0;i<C.length;i++){ var x=v[i]; o[C[i]] = N[C[i]] ? (Number(String(x==null?'':x).replace(/[,\s원]/g,''))||0) : (x==null?'':String(x)); } return o; });
+}
 function boot(){
   if (!DEMO && !lsGetRaw(LS_TOKEN)) return showLogin();
-  if (!DEMO){ var c = lsGet(LS_CACHE); if (c && c.me){ S = c; shell(); route(); } }
   if (!S.me) $('app').innerHTML = '<div class="login"><div class="box"><p>불러오는 중…</p></div></div>';
+  S.loading = true;
+  var fresh = false;
+  if (!DEMO) idbGet('S').then(function(c){ if (!fresh && c && c.me && (!S.products||!S.products.length)){ S = c; S.loading = true; shell(); route(); } });
   api('boot').then(function(j){
-    S = {me:j.me, products:j.products||[], history:j.history||[], config:j.config||{}, users:j.users||[]};
-    if (!DEMO) lsSet(LS_CACHE,S);
-    shell(); route();
+    fresh = true;
+    S = {me:j.me, products:expandProducts(j), history:j.history||[], config:j.config||{}, users:j.users||[]};
+    persist(); shell(); route();
   }).catch(fail);
 }
-function persist(){ if (!DEMO) lsSet(LS_CACHE,S); }
+var _pt=null;
+function persist(){ if (DEMO) return; clearTimeout(_pt); _pt=setTimeout(function(){ var c=Object.assign({},S); delete c.loading; idbSet('S',c); lsDel(LS_CACHE); }, 400); }
 
 /* ===================== 메뉴 ===================== */
 var MENU = [
@@ -670,6 +683,7 @@ VIEWS.products = {
         var hay = [p.name,p.brand,p.option,p.sku,p.barcode,p.loc,p.cat,p.owner,p.sbnPrd,p.sbnPrd&&p.sbnPrd+'-'+p.sbnSku].join(' ').toLowerCase();
         return toks.every(function(t){ return hay.indexOf(t)>=0; });
       }).sort(function(a,b){ return (a.brand+a.name+a.option).localeCompare(b.brand+b.name+b.option,'ko'); });
+      if (!S.products.length && S.loading){ $('plist').innerHTML = '<div class="empty"><i class="ti ti-loader-2"></i> 상품 불러오는 중… (처음엔 10~20초 걸릴 수 있어요)</div>'; return; }
       if (!S.products.length){ $('plist').innerHTML = '<div class="empty">아직 등록한 상품이 없어요.<br>[상품 등록] 또는 [엑셀 붙여넣기]로 시작하세요.</div>'; return; }
       if (!L.length){ $('plist').innerHTML = '<div class="empty">조건에 맞는 상품이 없어요 · 위의 상태 체크를 확인해 보세요</div>'; return; }
       // 같은 사방넷 상품코드(품번) 아래 옵션(단품)을 하위로 묶음
