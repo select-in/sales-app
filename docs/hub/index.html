@@ -313,7 +313,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-27v';
+var APP_BUILD = '2026-10-27w';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -330,13 +330,19 @@ function nowStr(){ var d=new Date(Date.now()+9*36e5); return d.toISOString().sli
 function today(){ return nowStr().slice(0,10); }
 function toast(msg,err){ var t=document.createElement('div'); t.className='toast'+(err?' err':''); t.textContent=msg; document.body.appendChild(t); setTimeout(function(){ t.remove(); }, err?3600:2200); }
 function margin(p){ if(!p.price) return null; return (p.price-p.cost)/p.price*100; }
-function isVirtual(p){ return p.stocMng==='N'; }
-function stockState(p){ if(p.type==='위탁' || p.sbnStatus==='미사용' || isVirtual(p)) return 'na'; if(p.stock<=0) return 'out'; if(p.safety && p.stock<=p.safety) return 'low'; return 'ok'; }
-function stockMode(p){ return p.type==='위탁' ? '위탁' : isVirtual(p) ? '가상재고' : '현재고'; }
+function isMoum(p){ return !!p.link; }
+function isVirtual(p){ return p.stocMng==='N' && !p.link; }
+var _PK=null, _PKsrc=null;
+function byKey(k){ if(_PKsrc!==S.products){ _PK={}; S.products.forEach(function(p){ if(p.sbnPrd) _PK[p.sbnPrd+'-'+p.sbnSku]=p; }); _PKsrc=S.products; } return _PK[k]; }
+function originOf(p){ return p && p.link ? byKey(p.link) : null; }
+function stockState(p){ if(p.type==='위탁' || p.sbnStatus==='미사용' || isVirtual(p) || isMoum(p)) return 'na'; if(p.stock<=0) return 'out'; if(p.safety && p.stock<=p.safety) return 'low'; return 'ok'; }
+function stockMode(p){ return p.type==='위탁' ? '위탁' : isMoum(p) ? '모음전' : isVirtual(p) ? '가상재고' : '현재고'; }
 function stockLink(p){ return p.sbnPrd ? '사방넷 연동' : '앱 단독'; }
 function stockCell(p){
   var m = stockMode(p), s = stockState(p);
-  var top = m==='위탁' ? '<b>—</b>' : m==='가상재고' ? '<b class="vq">'+won(p.vstock||0)+'</b>' : '<b>'+won(p.stock)+'</b>';
+  var o = m==='모음전' ? originOf(p) : null;
+  var top = m==='위탁' ? '<b>—</b>' : m==='가상재고' ? '<b class="vq">'+won(p.vstock||0)+'</b>' : m==='모음전' ? '<b'+(o?'':' class="vq"')+'>'+(o?won(o.stock):'?')+'</b>' : '<b>'+won(p.stock)+'</b>';
+  if (m==='모음전') return '<div class="stk2">'+top+'<div><span class="pill b">모음전</span>'+(o&&o.stock<=0?' <span class="pill r">원본 품절</span>':'')+'</div><span class="lk" title="사방넷 연결상품 · 원본 재고를 따라가요">원본 '+esc(p.link)+(o?'':' (앱에 없음)')+'</span></div>';
   var tags = '<span class="pill '+(m==='현재고'?'g':'')+'">'+m+'</span>'+(s==='out'?' <span class="pill r">품절</span>':s==='low'?' <span class="pill a">부족</span>':'');
   return '<div class="stk2">'+top+'<div>'+tags+'</div><span class="lk" title="'+(p.sbnPrd?'사방넷 '+esc(p.sbnPrd)+'-'+esc(p.sbnSku)+' '+(m==='가상재고'?'가상재고':'현재고')+'와 연결 · 사방넷 동기화 때 맞춰져요':'사방넷과 연결되지 않은 상품 · 앱 입출고로만 바뀌어요')+'">'+stockLink(p)+'</span></div>';
 }
@@ -629,7 +635,7 @@ VIEWS.products = {
           '<div class="scanrow" style="flex:1;min-width:240px"><div class="search"><i class="ti ti-search"></i><input class="inp" id="pq" placeholder="상품명, 브랜드, 바코드, 상품코드, 담당자" value="'+esc(PF.q)+'"></div><button class="btn pri" id="pscan" title="카메라로 바코드 찍어서 찾기"><i class="ti ti-scan"></i><span>스캔</span></button></div>'+
           '<div class="seg" id="pcorp">'+['all','셀렉트인','겐더샵'].map(function(c){ return '<button data-v="'+c+'" class="'+(PF.corp===c?'on':'')+'">'+(c==='all'?'전체 법인':c)+'</button>'; }).join('')+'</div>'+
           '<select class="inp" id="powner" style="width:auto;min-width:130px"><option value="">전체 담당자</option>'+ownerNames().map(function(n){ return '<option'+(PF.owner===n?' selected':'')+'>'+esc(n)+'</option>'; }).join('')+'<option value="-"'+(PF.owner==='-'?' selected':'')+'>담당 미지정</option></select>'+
-          '<div class="seg" id="pf">'+[['all','전체'],['real','재고관리'],['virtual','가상재고'],['low','부족'],['out','품절'],['consign','위탁']].map(function(c){ return '<button data-v="'+c[0]+'" class="'+(PF.f===c[0]?'on':'')+'">'+c[1]+'</button>'; }).join('')+'</div>'+
+          '<div class="seg" id="pf">'+[['all','전체'],['real','현재고'],['moum','모음전'],['virtual','가상재고'],['low','부족'],['out','품절'],['consign','위탁']].map(function(c){ return '<button data-v="'+c[0]+'" class="'+(PF.f===c[0]?'on':'')+'">'+c[1]+'</button>'; }).join('')+'</div>'+
         '</div><div id="plist"></div></div>';
   },
   bind: function(){
@@ -642,7 +648,8 @@ VIEWS.products = {
         if (PF.f==='low' && s!=='low') return false;
         if (PF.f==='out' && s!=='out') return false;
         if (PF.f==='consign' && p.type!=='위탁') return false;
-        if (PF.f==='real' && (isVirtual(p) || p.type==='위탁')) return false;
+        if (PF.f==='real' && stockMode(p)!=='현재고') return false;
+        if (PF.f==='moum' && !isMoum(p)) return false;
         if (PF.f==='virtual' && !isVirtual(p)) return false;
         var hay = [p.name,p.brand,p.option,p.sku,p.barcode,p.loc,p.cat,p.owner,p.sbnPrd,p.sbnPrd&&p.sbnPrd+'-'+p.sbnSku].join(' ').toLowerCase();
         return toks.every(function(t){ return hay.indexOf(t)>=0; });
@@ -752,7 +759,7 @@ function openProduct(id){
     $('dft').classList.toggle('hide', t!=='info');
     if (t==='info'){
       $('dtab').innerHTML =
-        '<div class="sel" style="margin:0 0 18px;display:flex;gap:14px;align-items:center">'+thumb(p,true)+'<div style="flex:1;min-width:0"><div class="stk" style="margin:0">'+(isVirtual(p)?'가상재고 <b class="num">'+won(p.vstock||0)+'</b>':'현재고 <b class="num">'+(p.type==='위탁'?'—':won(p.stock))+'</b>')+' '+stockPill(p)+sbnPill(p)+'</div>'+'<div class="sbn" style="margin-top:4px">재고 방식: <b>'+stockMode(p)+'</b> · '+(p.sbnPrd?'사방넷 '+esc(p.sbnPrd)+'-'+esc(p.sbnSku)+' '+(isVirtual(p)?'가상재고':'현재고')+'와 연결 (동기화 때 사방넷 값으로 맞춤)':'사방넷 연결 없음 · 앱 입출고로만 관리')+'</div>'+(p.sbnPrd?'<div class="sbn" style="margin-top:4px">'+sbnLabel(p)+(p.cat?' · '+esc(p.cat):'')+'</div>':'')+'<div class="sbn">수정 '+esc(p.updatedAt||'')+' · '+esc(p.updatedBy||'')+'</div></div></div>'+
+        '<div class="sel" style="margin:0 0 18px;display:flex;gap:14px;align-items:center">'+thumb(p,true)+'<div style="flex:1;min-width:0"><div class="stk" style="margin:0">'+(isVirtual(p)?'가상재고 <b class="num">'+won(p.vstock||0)+'</b>':'현재고 <b class="num">'+(p.type==='위탁'?'—':won(p.stock))+'</b>')+' '+stockPill(p)+sbnPill(p)+'</div>'+'<div class="sbn" style="margin-top:4px">재고 방식: <b>'+stockMode(p)+'</b> · '+(isMoum(p)?'사방넷 연결상품 → 원본 '+esc(p.link)+(originOf(p)?' (현재고 '+won(originOf(p).stock)+')':' (앱에 없음)')+' · 입출고는 원본으로 처리':p.sbnPrd?'사방넷 '+esc(p.sbnPrd)+'-'+esc(p.sbnSku)+' '+(isVirtual(p)?'가상재고':'현재고')+'와 연결 (동기화 때 사방넷 값으로 맞춤)':'사방넷 연결 없음 · 앱 입출고로만 관리')+'</div>'+(p.sbnPrd?'<div class="sbn" style="margin-top:4px">'+sbnLabel(p)+(p.cat?' · '+esc(p.cat):'')+'</div>':'')+'<div class="sbn">수정 '+esc(p.updatedAt||'')+' · '+esc(p.updatedBy||'')+'</div></div></div>'+
         productForm(p);
       bindProductForm();
     } else if (t==='hist'){
@@ -897,6 +904,8 @@ function drawPick(q, list){
   document.querySelectorAll('#spick button').forEach(function(b){ b.onclick = function(){ choose(b.dataset.id); }; });
 }
 function choose(id, scanned){
+  var mp = S.products.filter(function(x){ return x.id===id; })[0], mo = originOf(mp);
+  if (mp && isMoum(mp)){ if (!mo){ toast('모음전인데 원본('+mp.link+')이 앱에 없어요', true); return; } toast('모음전 → 원본 '+mp.link+' 재고로 처리해요'); id = mo.id; }
   MV.id = id; MV.qty = 1; $('spick').innerHTML=''; $('sq').value='';
   var cp = S.products.filter(function(x){ return x.id===id; })[0];
   if (cp && isVirtual(cp) && scanned && MV.cont){ toast('가상재고 상품이라 건너뜀: '+cp.name, true); MV.id=null; return; }
@@ -1027,6 +1036,7 @@ function chAdd(code){
   chPush(L[0]); return true;
 }
 function chPush(p){
+  if (isMoum(p)){ var o=originOf(p); if(!o){ toast('모음전인데 원본('+p.link+')이 앱에 없어요', true); return; } p = o; }
   var ex = CH.items.filter(function(i){ return i.id===p.id && !i.orderNo; })[0];
   if (ex) ex.qty++; else CH.items.unshift({id:p.id, qty:1, orderNo:'', price:''});
   chSave(); if (navigator.vibrate) navigator.vibrate(40);
@@ -1333,52 +1343,57 @@ function scanFix(id, after){
 }
 
 /* ---------- 원가 · 마진 ---------- */
-var CF = {sort:'margin', q:'', page:1};
+var CF = {sort:'margin', q:'', page:1, basis:'현재고'};
+function costBasis(p){ return CF.basis==='전체' || stockMode(p)===CF.basis; }
+function effStock(p){ var m=stockMode(p); return m==='현재고' ? p.stock : m==='가상재고' ? (p.vstock||0) : m==='모음전' ? ((originOf(p)||{}).stock||0) : 0; }
 VIEWS.cost = {
   html: function(){
-    var P = S.products.filter(function(p){ return p.price; });
+    var B = S.products.filter(costBasis), P = B.filter(function(p){ return p.price; });
     var avg = P.length ? P.reduce(function(a,p){ return a+margin(p); },0)/P.length : 0;
     var low = P.filter(function(p){ return margin(p)<marginMin(); });
-    var sa = S.products.filter(function(p){ return p.type!=='위탁'; });
+    var sa = S.products.filter(function(p){ return stockMode(p)==='현재고'; });
     var value = sa.reduce(function(a,p){ return a+Math.max(0,p.stock)*p.cost; },0);
     var sell = sa.reduce(function(a,p){ return a+Math.max(0,p.stock)*p.price; },0);
+    var qty = sa.reduce(function(a,p){ return a+Math.max(0,p.stock); },0);
     return '<div class="ph"><div><h1>원가 · 마진</h1><p>원가를 바꾸면 변동 기록이 자동으로 남아요 · 마진 기준 '+marginMin()+'%</p></div></div>'+
       '<div class="grid g4">'+
         '<div class="kpi"><div class="k">평균 마진율</div><div class="v num">'+avg.toFixed(1)+'<small>%</small></div></div>'+
         '<div class="kpi '+(low.length?'red':'')+'"><div class="k">기준 미만</div><div class="v num">'+won(low.length)+'<small>개</small></div></div>'+
-        '<div class="kpi"><div class="k">사입 재고 원가</div><div class="v num">'+won(Math.round(value/1e4))+'<small>만원</small></div></div>'+
-        '<div class="kpi"><div class="k">재고 판매가 환산</div><div class="v num">'+won(Math.round(sell/1e4))+'<small>만원</small></div></div>'+
+        '<div class="kpi"><div class="k">현재고 원가 <small style="font-weight:400">('+won(qty)+'개)</small></div><div class="v num">'+won(Math.round(value/1e4))+'<small>만원</small></div></div>'+
+        '<div class="kpi"><div class="k">현재고 판매가 환산</div><div class="v num">'+won(Math.round(sell/1e4))+'<small>만원</small></div></div>'+
       '</div>'+
       '<div class="card" style="margin-top:16px">'+
         '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"><div class="search"><i class="ti ti-search"></i><input class="inp" id="cq" placeholder="상품 검색" value="'+esc(CF.q)+'"></div>'+
+        '<div class="seg" id="cb">'+[['현재고','현재고 기준'],['모음전','모음전'],['가상재고','가상재고'],['전체','전체']].map(function(c){ return '<button data-v="'+c[0]+'" class="'+(CF.basis===c[0]?'on':'')+'">'+c[1]+' <small class="num">'+won(S.products.filter(function(p){ return c[0]==='전체'||stockMode(p)===c[0]; }).length)+'</small></button>'; }).join('')+'</div>'+
         '<div class="seg" id="cs">'+[['margin','마진율 낮은 순'],['value','재고금액 큰 순'],['name','이름순']].map(function(c){ return '<button data-v="'+c[0]+'" class="'+(CF.sort===c[0]?'on':'')+'">'+c[1]+'</button>'; }).join('')+'</div></div>'+
         '<div id="clist"></div></div>';
   },
   bind: function(){
     var draw = function(){
       var toks = CF.q.toLowerCase().split(/\s+/).filter(Boolean);
-      var L = S.products.filter(function(p){ var h=[p.name,p.brand,p.option,p.sku].join(' ').toLowerCase(); return toks.every(function(t){ return h.indexOf(t)>=0; }); });
+      var L = S.products.filter(costBasis).filter(function(p){ var h=[p.name,p.brand,p.option,p.sku,p.sbnPrd].join(' ').toLowerCase(); return toks.every(function(t){ return h.indexOf(t)>=0; }); });
       L.sort(function(a,b){
         if (CF.sort==='margin'){ var x=margin(a), y=margin(b); return (x==null?999:x)-(y==null?999:y); }
-        if (CF.sort==='value') return Math.max(0,b.stock)*b.cost - Math.max(0,a.stock)*a.cost;
+        if (CF.sort==='value') return Math.max(0,effStock(b))*b.cost - Math.max(0,effStock(a))*a.cost;
         return a.name.localeCompare(b.name,'ko');
       });
       if (!L.length){ $('clist').innerHTML='<div class="empty">상품이 없어요</div>'; return; }
       var cpages=Math.max(1,Math.ceil(L.length/PG.size)); if(CF.page>cpages) CF.page=cpages; var CS=L.slice((CF.page-1)*PG.size, CF.page*PG.size);
       var mm = function(p){ var m=margin(p); return m==null?'<span class="sm">판매가 없음</span>':'<b style="color:'+(m<marginMin()?'var(--red)':'var(--accent)')+'">'+m.toFixed(1)+'%</b>'; };
       $('clist').innerHTML =
-        '<div class="dtable tblwrap"><table class="tbl"><thead><tr><th>상품</th><th>법인</th><th class="r">원가</th><th class="r">판매가</th><th class="r">마진</th><th class="r">마진율</th><th class="r">재고 원가</th></tr></thead><tbody>'+
+        '<div class="dtable tblwrap"><table class="tbl"><thead><tr><th>상품</th><th>법인</th><th class="r">원가</th><th class="r">판매가</th><th class="r">마진</th><th class="r">마진율</th><th class="r">재고</th><th class="r">재고 원가</th></tr></thead><tbody>'+
         CS.map(function(p){
           return '<tr class="click" data-id="'+esc(p.id)+'"><td><div class="pcell">'+thumb(p)+'<div><div class="nm">'+esc(p.name)+'</div><div class="sm">'+esc([p.brand,p.option].filter(Boolean).join(' · '))+'</div></div></div></td><td><span class="pill">'+esc(p.corp)+'</span></td>'+
-            '<td class="r num">'+won(p.cost)+'</td><td class="r num">'+won(p.price)+'</td><td class="r num">'+(p.price?won(p.price-p.cost):'—')+'</td><td class="r num">'+mm(p)+'</td><td class="r num">'+(p.type==='위탁'?'—':won(Math.max(0,p.stock)*p.cost))+'</td></tr>';
+            '<td class="r num">'+won(p.cost)+'</td><td class="r num">'+won(p.price)+'</td><td class="r num">'+(p.price?won(p.price-p.cost):'—')+'</td><td class="r num">'+mm(p)+'</td><td class="c num">'+stockCell(p)+'</td><td class="r num">'+(stockMode(p)==='위탁'?'—':won(Math.max(0,effStock(p))*p.cost))+(stockMode(p)!=='현재고'&&stockMode(p)!=='위탁'?'<div class="sm">참고용</div>':'')+'</td></tr>';
         }).join('')+'</tbody></table></div>'+
         '<div class="mcards">'+CS.map(function(p){
-          return '<div class="mc" data-id="'+esc(p.id)+'">'+thumb(p)+'<div class="m"><div class="t">'+esc(p.name)+'</div><div class="s">'+esc(p.option||p.brand)+'</div><div class="s num">원가 '+won(p.cost)+' · 판매가 '+won(p.price)+'</div></div><div class="e num">'+mm(p)+'<div class="s">'+(p.price?won(p.price-p.cost)+'원':'')+'</div></div></div>';
+          return '<div class="mc" data-id="'+esc(p.id)+'">'+thumb(p)+'<div class="m"><div class="t">'+esc(p.name)+'</div><div class="s">'+esc(p.option||p.brand)+'</div><div class="s num">원가 '+won(p.cost)+' · 판매가 '+won(p.price)+' · '+stockMode(p)+' '+won(effStock(p))+'개</div></div><div class="e num">'+mm(p)+'<div class="s">'+(p.price?won(p.price-p.cost)+'원':'')+'</div></div></div>';
         }).join('')+'</div>'+pagerHtml(L.length, CF.page, PG.size);
       document.querySelectorAll('#clist [data-id]').forEach(function(r){ r.onclick = function(){ openProduct(r.dataset.id); }; });
       bindPager($('clist'), function(n){ CF.page=n; draw(); });
     };
     $('cq').oninput = function(){ CF.q=this.value; CF.page=1; draw(); };
+    document.querySelectorAll('#cb button').forEach(function(b){ b.onclick=function(){ CF.basis=b.dataset.v; CF.page=1; route(); }; });
     document.querySelectorAll('#cs button').forEach(function(b){ b.onclick=function(){ CF.sort=b.dataset.v; CF.page=1; document.querySelectorAll('#cs button').forEach(function(x){ x.classList.toggle('on',x===b); }); draw(); }; });
     draw();
   }
@@ -1536,7 +1551,7 @@ function openSbnFlags(){
     '<button class="btn" onclick="closeDrawer()">취소</button><button class="btn pri" id="sbngo">반영</button>');
   $('sbngo').onclick = function(){
     var b=this; b.disabled=true; $('sbnmsg').textContent='저장 중…';
-    api('sbn_flags',{rows:R.map(function(r){ return {sbnPrd:r.sbnPrd,sbnSku:r.sbnSku,stocMng:r.stocMng,vstock:r.vstock,owner:r.owner||'',cost:r.cost,price:r.price}; })}).then(function(j){
+    api('sbn_flags',{rows:R.map(function(r){ return {sbnPrd:r.sbnPrd,sbnSku:r.sbnSku,stocMng:r.stocMng,vstock:r.vstock,owner:r.owner||'',cost:r.cost,price:r.price,link:r.link,setDiv:r.setDiv}; })}).then(function(j){
       $('sbnmsg').innerHTML='완료 · 재고관리 <b>'+won(j.y)+'</b> · 가상재고 <b>'+won(j.n)+'</b> · 앱에 없는 단품 '+won(j.missing)+'개'+(j.ownerSet?' · 담당자 채움 '+won(j.ownerSet)+'개':'')+(j.costChanged!=null?'<br>원가 변경 <b>'+won(j.costChanged)+'</b>개 · 판매가 변경 <b>'+won(j.priceChanged)+'</b>개':'')+(j.byCorp?'<br>'+Object.keys(j.byCorp).map(function(c){ var o=j.byCorp[c]; return esc(c)+' 재고관리 '+won(o.y)+' / 가상재고 '+won(o.n); }).join('<br>'):'');
       b.textContent='닫기'; b.disabled=false; b.onclick=function(){ closeDrawer(); boot(); };
     }).catch(function(e){ b.disabled=false; fail(e); });
