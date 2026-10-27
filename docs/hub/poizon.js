@@ -12,13 +12,15 @@
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
 
   /* ---------- 화면이 받아온 주문 응답 모으기 ---------- */
-  var CAP = [], waiters = [];
+  var CAP = [], waiters = [], bidWaiters = [];
   var of = window.fetch;
   window.fetch = function (u, opt) {
     var s = String(u && u.url || u), p = of.apply(this, arguments);
+    if (/bidding\/query\/independent\/list/.test(s)) p.then(function (r) { r.clone().text().then(function (t) { var rec = { body: opt && opt.body, t: t, at: Date.now() }; bidWaiters.splice(0).forEach(function (w) { w(rec); }); }); }).catch(function () {});
     if (/orderPageList/.test(s)) p.then(function (r) { r.clone().text().then(function (t) { var rec = { body: opt && opt.body, t: t, at: Date.now() }; CAP.push(rec); waiters.splice(0).forEach(function (w) { w(rec); }); }); }).catch(function () {});
     return p;
   };
+  function nextBid(ms) { return new Promise(function (ok) { var done = false; bidWaiters.push(function (r) { if (!done) { done = true; ok(r); } }); setTimeout(function () { if (!done) { done = true; ok(null); } }, ms || 15000); }); }
   function nextResp(ms) { return new Promise(function (ok) { var done = false; waiters.push(function (r) { if (!done) { done = true; ok(r); } }); setTimeout(function () { if (!done) { done = true; ok(null); } }, ms || 15000); }); }
 
   /* ---------- 화면 ---------- */
@@ -90,6 +92,41 @@
       orderedAt: (tt.orderCreateTimeStr || '').replace(/\//g, '-'), deadline: (o.deliveryDeadlineStr || '').replace(/\//g, '-'), merchantId: String(o.merchantId || '')
     };
   }
+  /* ---------- 입찰 중 (직접 입찰 → 일반 판매) ---------- */
+  function bidRows(rec) {
+    var out = [];
+    try {
+      var d = JSON.parse(rec.t).data || {};
+      (d.contents || []).forEach(function (c) {
+        var spec = String(c.saleSpec || '').split(','), inv = (c.skuInventoryInfoList || []).slice().sort(function (a, b) { return a.skuSort - b.skuSort; }), ex = {};
+        (c.skuExtraInfoList || []).forEach(function (e) { ex[e.globalSkuId] = e; });
+        var base = { style: c.articleNumber || '', name: c.spuTitle || '', brand: c.brandName || '', saleCount: Number(c.saleCount) || 0, cat: c.categoryName || '', spu: String(c.showSpuId || c.spuId || '') };
+        if (!inv.length) inv = [{}];
+        inv.forEach(function (v, i) {
+          var e = ex[v.globalSkuId] || {}, bp = e.bidPrice && e.bidPrice.money ? Number(e.bidPrice.money.amount) || 0 : 0;
+          out.push(Object.assign({}, base, { opt: String(spec.length === inv.length ? spec[i] : (inv.length === 1 ? c.saleSpec : '')).trim(), price: bp, cnt: Number(v.biddingRecord) || 0 }));
+        });
+      });
+      return { list: out, total: d.total };
+    } catch (e) { return { list: out }; }
+  }
+  function collectBids() {
+    var out = [], n = 1, p0 = nextBid(25000);
+    if (!/\/main\/bid\/freely/.test(location.pathname)) { history.pushState({}, '', '/main/bid/freely'); dispatchEvent(new PopStateEvent('popstate', { state: {} })); }
+    else { var t = findTab('일반 판매'); if (t) click(t); }
+    return p0.then(function (rec) {
+      if (!rec) throw new Error('입찰 목록을 못 읽었어요');
+      var step = function (rec) {
+        if (!rec) return out;
+        out = out.concat(bidRows(rec).list);
+        return W(1200).then(function () {
+          var nb = nextBtn(); if (!nb || n >= 40) return out;
+          n++; msg('입찰 중 읽는 중… ' + n + '쪽'); var q = nextBid(); click(nb); return q.then(step);
+        });
+      };
+      return step(rec);
+    });
+  }
   function collect() {
     var acct = $('opa').value, full = !LS('opsPznFull2_' + acct), res = { account: acct, rows: [], waitNos: [] };
     msg('주문 관리 화면 여는 중…');
@@ -105,6 +142,9 @@
     }).then(function (L) {
       L.forEach(function (o) { res.rows.push(row(o, 'SUCCESS')); });
       res.full = full;
+      msg('입찰 중 읽는 중…');
+      return collectBids().then(function (B) { res.bids = B; }, function () { res.bids = null; });
+    }).then(function () {
       var m = res.rows[0] && res.rows[0].merchantId; res.merchantId = m || '';
       return res;
     });
@@ -148,7 +188,7 @@
           if (e.data.type === 'pzn_saved') ok(e.data); else bad(new Error(e.data.message || 'OPS 저장 실패'));
         };
         window.addEventListener('message', on);
-        w.postMessage({ type: 'pzn_rows', batch: batch, account: res.account, rows: res.rows, waitNos: res.waitNos, waitOk: true }, HUB_ORIGIN);
+        w.postMessage({ type: 'pzn_rows', batch: batch, account: res.account, rows: res.rows, waitNos: res.waitNos, waitOk: true, bids: res.bids || undefined }, HUB_ORIGIN);
         setTimeout(function () { window.removeEventListener('message', on); bad(new Error('OPS 저장 응답이 없어요')); }, 3 * 60 * 1000);
       });
     });
@@ -162,7 +202,7 @@
       return send(res).then(function (r) {
         if (res.full) LS('opsPznFull2_' + res.account, '1');
         LS('opsPznAcct', res.account);
-        msg('완료 ' + new Date().toTimeString().slice(0, 5) + ' (' + Math.round((Date.now() - t0) / 1000) + '초)\n발송 대기 ' + res.waitNos.length + '건 · 추가 ' + (r.added || 0) + ' / 갱신 ' + (r.updated || 0) + ($('opauto').checked ? '\n다음 자동 동기화 10분 뒤' : ''));
+        msg('완료 ' + new Date().toTimeString().slice(0, 5) + ' (' + Math.round((Date.now() - t0) / 1000) + '초)\n발송 대기 ' + res.waitNos.length + '건 · 추가 ' + (r.added || 0) + ' / 갱신 ' + (r.updated || 0) + (res.bids ? '\n입찰 중 ' + res.bids.length + '개 사이즈' : '\n입찰 목록은 이번엔 못 읽음') + ($('opauto').checked ? '\n다음 자동 동기화 10분 뒤' : ''));
       });
     }).catch(function (e) { msg('⚠ ' + (e && e.message || e)); })
       .then(function () { busy = false; $('opgo').disabled = false; });

@@ -24,6 +24,8 @@ var HUB_TABS = {
   설정: ['키', '값', '수정일', '수정자'],
   채널출고: ['일시', '배치', '채널', '계정', '구분', '상품id', 'SKU', '상품명', '옵션', '바코드', '수량', '주문번호', '판매가', '수수료율', '정산예상', '재고반영', '작업자', '메모'],
   크림입찰: ['계정', '입찰id', '주문번호', '상태', '구분', '품번', '상품명', '브랜드', '옵션', '입찰가', '수수료', '정산예정', '최저판매가', '최근거래가', '등록일', '만료일', '동기화', '내순위', '최저가일반', '최저가보관', '체결가일반', '체결가보관'],
+  포이즌입찰: ['계정', '품번', '상품명', '브랜드', '옵션', '입찰가', '입찰수', '판매중수량', '카테고리', 'spuId', '동기화'],
+  사방넷등록: ['쇼핑몰코드', '쇼핑몰', '로그인ID', '상품수', '목록', '동기화'],
   포이즌판매: ['계정', '주문번호', '상태', '탭', '구분', '품번', '상품명', '브랜드', '사이즈', '판매가', '수수료', '정산액', '주문일', '발송기한', '동기화'],
   크림보관: ['계정', '보관id', '주문번호', '단계', '상태', '품번', '상품명', '사이즈', '운송장', '신청일', '수정일', '동기화'],
   크림매핑: ['크림품번', '사방넷상품코드', '컬러', '수정일', '수정자', '사이즈연결'],
@@ -59,6 +61,11 @@ function doPost(e) {
       case 'krm_list': return hubOut_(hubKrmList_());
       case 'pzn_sync': return hubOut_(hubLocked_(function () { return hubPznSync_(req, me); }));
       case 'pzn_list': return hubOut_(hubPznList_());
+      case 'sbn_stock_sync': if (!admin) return hubOut_({ error: '관리자만 사방넷 재고를 맞출 수 있습니다' });   // 사방넷 관리자 화면(sbn.js)이 읽은 현재고로 앱 재고만 맞춤
+        return hubOut_(hubLocked_(function () { return hubSbnStockSync_(req, me); }));
+      case 'sbr_sync': if (!admin) return hubOut_({ error: '관리자만 저장할 수 있습니다' });   // 쇼핑몰별 상품 등록 현황 (sbn.js)
+        return hubOut_(hubLocked_(function () { return hubSbrSync_(req, me); }));
+      case 'sbr_list': return hubOut_(hubSbrList_());
       case 'krm_map_set': return hubOut_(hubLocked_(function () { return hubKrmMapSet_(req, me); }));
       case 'sbn_sales_check': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 사방넷 API(주문일) 기준 일별·법인·쇼핑몰 집계 — 매출판 대조용 (읽기 전용)
         return hubOut_(hubSbnSalesRange_(req.from, req.to));
@@ -586,15 +593,72 @@ function hubPznSync_(req, me) {
   });
   if (s.vals.length) s.sh.getRange(2, 1, s.vals.length, w).setValues(s.vals);
   if (ins.length) s.sh.getRange(s.vals.length + 2, 1, ins.length, w).setValues(ins);
+  var bidN = null;
+  if (Array.isArray(req.bids)) {   // 입찰 중 목록: 이 계정 것을 통째로 바꿈
+    var b = hubRows_('포이즌입찰'), bw = HUB_TABS['포이즌입찰'].length;
+    var keep = b.vals.filter(function (v) { return v[0] && v[0] !== acct; });
+    var add = req.bids.slice(0, 5000).map(function (o) { return [acct, "'" + hubStr_(o.style, 60), hubStr_(o.name, 150), hubStr_(o.brand, 60), hubStr_(o.opt, 80), hubNum_(o.price), hubNum_(o.cnt), hubNum_(o.saleCount), hubStr_(o.cat, 40), "'" + hubStr_(o.spu, 30), now]; });
+    var all = keep.concat(add);
+    if (b.vals.length) b.sh.getRange(2, 1, b.vals.length, bw).clearContent();
+    if (all.length) b.sh.getRange(2, 1, all.length, bw).setValues(all);
+    bidN = add.length; hubConfigSet_('pzb_synced_' + acct, now, me);
+  }
   hubConfigSet_('pzn_synced_' + acct, now, me);
-  return { ok: true, added: ins.length, updated: upd };
+  return { ok: true, added: ins.length, updated: upd, bids: bidN };
 }
 function hubPznList_() {
   var fmt = function (v) { return v instanceof Date ? Utilities.formatDate(v, 'Asia/Seoul', 'yyyy-MM-dd HH:mm') : v; };
   var rows = hubRows_('포이즌판매').vals.map(function (v) { var o = {}; HUB_PZN.forEach(function (k, i) { o[k] = fmt(v[i]); }); o.orderNo = String(o.orderNo); return o; });
   var c = hubConfig_(), synced = {};
   ['겐더샵', '셀렉트인'].forEach(function (n) { var x = c['pzn_synced_' + n]; if (x) synced[n] = x.value; });
-  return { rows: rows, synced: synced };
+  var bids = hubRows_('포이즌입찰').vals.filter(function (v) { return v[0]; }).map(function (v) { return { account: v[0], style: String(v[1]), name: v[2], brand: v[3], opt: v[4], price: hubNum_(v[5]), cnt: hubNum_(v[6]), saleCount: hubNum_(v[7]), cat: v[8], spu: String(v[9]) }; });
+  var bsync = {}; ['겐더샵', '셀렉트인'].forEach(function (n) { var x = c['pzb_synced_' + n]; if (x) bsync[n] = x.value; });
+  return { rows: rows, synced: synced, bids: bids, bidSynced: bsync };
+}
+
+/* ===================== 사방넷 현재고 → 앱 재고 (sbn.js) =====================
+ * rows: [[상품코드, 단품코드, 현재고]] — 창고별 줄은 보내는 쪽에서 합침. 여러 번 나눠 보냄(part/parts)
+ * 재고만 바꾸고 차이는 재고이력 '사방넷동기화'. 가상재고(재고관리 사용안함)는 건너뜀.
+ * 앱에서 10분 안에 바꾼 단품은 사방넷 반영 전일 수 있어 이번엔 건너뜀(다음 동기화 때 맞춤) */
+function hubSbnStockSync_(req, me) {
+  var rows = req.rows || []; if (!rows.length) return { error: '재고 행이 없습니다' };
+  var m = {}; rows.forEach(function (r) { if (r && r[0]) m[hubStr_(r[0], 30) + '-' + hubStr_(r[1], 20)] = Math.round(hubNum_(r[2])); });
+  var list = hubProducts_(), now = hubNow_(), logs = [], changed = 0, seen = 0, skipped = 0, recent = Date.now() - 10 * 60 * 1000, ch = [];
+  list.forEach(function (p) {
+    if (!p.sbnPrd) return;
+    var k = p.sbnPrd + '-' + p.sbnSku; if (!(k in m)) return;
+    seen++;
+    if (p.stocMng === 'N') return;
+    var q = m[k]; if (p.stock === q) return;
+    var t = Date.parse(String(p.updatedAt).replace(' ', 'T') + ':00+09:00');
+    if (p.updatedBy !== '사방넷' && t && t > recent) { skipped++; return; }
+    logs.push(['재고이력', [now, p.id, p.sku, p.name, '사방넷동기화', q - p.stock, q, '사방넷 현재고로 맞춤(자동)', me.name]]);
+    if (ch.length < 30) ch.push(k + ' ' + p.stock + '→' + q);
+    p.stock = q; p.updatedAt = now; p.updatedBy = '사방넷'; changed++;
+  });
+  if (changed) { hubWriteAll_(list); hubWriteLogs_(logs); }
+  if (req.final) hubConfigSet_('sbn_stock_at', now + ' · 단품 ' + (req.total || rows.length) + '개 확인' + (changed ? ' · 변경 ' + changed : ''), me);
+  return { ok: true, seen: seen, changed: changed, skipped: skipped, sample: ch };
+}
+
+/* ===================== 쇼핑몰별 상품 등록 현황 (sbn.js) =====================
+ * 사방넷 「쇼핑몰상품수정」 목록을 계정별로 묶어 받음: accts: [{shma, mall, id, list:'상품코드[상태],...'}]  (상태 p=일시중지 x=품절, 없으면 공급중)
+ * 쇼핑몰 로그인 비밀번호 등은 받지 않음 */
+function hubSbrSync_(req, me) {
+  var A = req.accts || []; if (!A.length) return { error: '등록 현황이 비어 있어요' };
+  var now = hubNow_(), r = hubRows_('사방넷등록'), w = HUB_TABS['사방넷등록'].length;
+  var out = A.slice(0, 200).map(function (a) { var l = hubStr_(a.list, 49000); return [hubStr_(a.shma, 20), hubStr_(a.mall, 60), "'" + hubStr_(a.id, 80), l ? l.split(',').length : 0, l, now]; });
+  if (r.vals.length) r.sh.getRange(2, 1, r.vals.length, w).clearContent();
+  r.sh.getRange(2, 1, out.length, w).setValues(out);
+  hubConfigSet_('sbr_synced', now + ' · ' + out.length + '개 계정', me);
+  return { ok: true, accts: out.length };
+}
+function hubSbrList_() {
+  var accts = hubRows_('사방넷등록').vals.filter(function (v) { return v[0]; }).map(function (v) { return { shma: String(v[0]), mall: String(v[1]), id: String(v[2]), n: hubNum_(v[3]), list: String(v[4] || '') }; });
+  var corp = {};
+  try { SpreadsheetApp.openById(HUB_SALES_ID).getSheetByName('설정').getRange('A57:B120').getValues().forEach(function (r) { var id = String(r[0]).trim(); if (id) corp[id] = String(r[1]).trim(); }); } catch (e) {}
+  var c = hubConfig_();
+  return { accts: accts, corp: corp, synced: c.sbr_synced ? c.sbr_synced.value : '', stockAt: c.sbn_stock_at ? c.sbn_stock_at.value : '' };
 }
 
 /* 크림 품번 ↔ 사방넷 상품코드(+컬러) 연결표 */
