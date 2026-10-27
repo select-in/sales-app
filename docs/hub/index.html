@@ -265,7 +265,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-27d';
+var APP_BUILD = '2026-10-27e';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -555,7 +555,7 @@ VIEWS.products = {
         if (PF.f==='low' && s!=='low') return false;
         if (PF.f==='out' && s!=='out') return false;
         if (PF.f==='consign' && p.type!=='위탁') return false;
-        var hay = [p.name,p.brand,p.option,p.sku,p.barcode,p.loc,p.sbnPrd,p.sbnPrd&&p.sbnPrd+'-'+p.sbnSku].join(' ').toLowerCase();
+        var hay = [p.name,p.brand,p.option,p.sku,p.barcode,p.loc,p.cat,p.sbnPrd,p.sbnPrd&&p.sbnPrd+'-'+p.sbnSku].join(' ').toLowerCase();
         return toks.every(function(t){ return hay.indexOf(t)>=0; });
       }).sort(function(a,b){ return (a.brand+a.name+a.option).localeCompare(b.brand+b.name+b.option,'ko'); });
       if (!S.products.length){ $('plist').innerHTML = '<div class="empty">아직 등록한 상품이 없어요.<br>[상품 등록] 또는 [엑셀 붙여넣기]로 시작하세요.</div>'; return; }
@@ -648,7 +648,7 @@ function openProduct(id){
     $('dft').classList.toggle('hide', t!=='info');
     if (t==='info'){
       $('dtab').innerHTML =
-        '<div class="sel" style="margin:0 0 18px;display:flex;gap:14px;align-items:center">'+thumb(p,true)+'<div style="flex:1;min-width:0"><div class="stk" style="margin:0">현재 재고 <b class="num">'+(p.type==='위탁'?'—':won(p.stock))+'</b>'+stockPill(p)+sbnPill(p)+'</div>'+(p.sbnPrd?'<div class="sbn" style="margin-top:4px">'+sbnLabel(p)+'</div>':'')+'<div class="sbn">수정 '+esc(p.updatedAt||'')+' · '+esc(p.updatedBy||'')+'</div></div></div>'+
+        '<div class="sel" style="margin:0 0 18px;display:flex;gap:14px;align-items:center">'+thumb(p,true)+'<div style="flex:1;min-width:0"><div class="stk" style="margin:0">현재 재고 <b class="num">'+(p.type==='위탁'?'—':won(p.stock))+'</b>'+stockPill(p)+sbnPill(p)+'</div>'+(p.sbnPrd?'<div class="sbn" style="margin-top:4px">'+sbnLabel(p)+(p.cat?' · '+esc(p.cat):'')+'</div>':'')+'<div class="sbn">수정 '+esc(p.updatedAt||'')+' · '+esc(p.updatedBy||'')+'</div></div></div>'+
         productForm(p);
       bindProductForm();
     } else if (t==='hist'){
@@ -793,7 +793,7 @@ function drawSel(){
   var lab = {in:'입고 수량',out:'출고 수량',adjust:'실제 재고 수량'}[MV.type];
   if (MV.type==='adjust' && MV.qty===1) MV.qty = p.stock;
   $('ssel').innerHTML =
-    '<div class="sel"><div style="display:flex;gap:12px;align-items:flex-start">'+thumb(p,true)+'<div style="flex:1;min-width:0"><div class="nm">'+esc(p.name)+'</div><div class="meta">'+esc([p.brand,p.option,p.corp,p.loc?'위치 '+p.loc:''].filter(Boolean).join(' · '))+'</div>'+(p.sbnPrd?'<div class="sbn">'+sbnLabel(p)+(p.barcode?' · '+esc(p.barcode):'')+'</div>':'')+'</div><button class="x" id="sclr" aria-label="선택 취소"><i class="ti ti-x"></i></button></div>'+
+    '<div class="sel"><div style="display:flex;gap:12px;align-items:flex-start">'+thumb(p,true)+'<div style="flex:1;min-width:0"><div class="nm">'+esc(p.name)+'</div><div class="meta">'+esc([p.brand,p.option,p.corp,p.loc?'위치 '+p.loc:''].filter(Boolean).join(' · '))+'</div>'+(p.sbnPrd?'<div class="sbn">'+sbnLabel(p)+(p.barcode?' · '+esc(p.barcode):'')+(p.cat?' · '+esc(p.cat):'')+'</div>':'')+'</div><button class="x" id="sclr" aria-label="선택 취소"><i class="ti ti-x"></i></button></div>'+
     '<div class="stk">현재 재고 <b class="num">'+won(p.stock)+'</b>'+stockPill(p)+'</div>'+
     '<div style="margin-top:14px;font-size:13px;font-weight:600;color:var(--sub)">'+lab+'</div>'+
     '<div class="stepper" style="margin-top:6px"><button id="sm">−</button><input id="sqty" class="num" inputmode="numeric" value="'+MV.qty+'"><button id="sp">+</button></div>'+

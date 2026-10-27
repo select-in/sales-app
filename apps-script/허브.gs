@@ -17,13 +17,13 @@
  */
 
 var HUB_TABS = {
-  상품: ['id', 'SKU', '바코드', '상품명', '브랜드', '옵션', '법인', '구분', '원가', '판매가', '재고', '안전재고', '위치', '메모', '수정일', '수정자', '사방넷상품코드', '단품코드', '이미지', '사방넷상태'],
+  상품: ['id', 'SKU', '바코드', '상품명', '브랜드', '옵션', '법인', '구분', '원가', '판매가', '재고', '안전재고', '위치', '메모', '수정일', '수정자', '사방넷상품코드', '단품코드', '이미지', '사방넷상태', '카테고리'],
   재고이력: ['일시', '상품id', 'SKU', '상품명', '구분', '수량', '변경후재고', '메모', '작업자'],
   원가이력: ['일시', '상품id', 'SKU', '상품명', '이전원가', '새원가', '작업자'],
   직원: ['이름', '권한', 'PIN', '사용', '등록일'],
   설정: ['키', '값', '수정일', '수정자']
 };
-var HUB_P_FIELDS = ['id', 'sku', 'barcode', 'name', 'brand', 'option', 'corp', 'type', 'cost', 'price', 'stock', 'safety', 'loc', 'memo', 'updatedAt', 'updatedBy', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus'];
+var HUB_P_FIELDS = ['id', 'sku', 'barcode', 'name', 'brand', 'option', 'corp', 'type', 'cost', 'price', 'stock', 'safety', 'loc', 'memo', 'updatedAt', 'updatedBy', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat'];
 var HUB_TOKEN_DAYS = 90;
 
 /* ===================== 진입점 ===================== */
@@ -194,7 +194,7 @@ function hubProductObj_(v) {
   var o = {};
   HUB_P_FIELDS.forEach(function (f, i) { o[f] = v[i] instanceof Date ? Utilities.formatDate(v[i], 'Asia/Seoul', 'yyyy-MM-dd HH:mm') : v[i]; });
   ['cost', 'price', 'stock', 'safety'].forEach(function (f) { o[f] = hubNum_(o[f]); });
-  ['id', 'sku', 'barcode', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus'].forEach(function (f) { o[f] = String(o[f] == null ? '' : o[f]); });
+  ['id', 'sku', 'barcode', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat'].forEach(function (f) { o[f] = String(o[f] == null ? '' : o[f]); });
   return o;
 }
 function hubProducts_() {
@@ -306,7 +306,8 @@ function hubWriteLogs_(logs) {
  * rows: [{sbnPrd, sbnSku, barcode, name, option, brand, cost, price, stock, safety, img, sbnStatus, corp}]
  * 규칙: 사방넷상품코드+단품코드가 같은 상품을 찾아 갱신(없으면 바코드로), 없으면 새로 등록.
  *       재고는 사방넷 현재고로 맞추고 차이는 재고이력에 '사방넷동기화'로 남김.
- *       앱에서 직접 입력한 위치·메모·법인·구분은 유지.
+ *       법인은 사방넷 마이카테고리로 정함: '셀렉트인전용' → 셀렉트인, 그 외 → 겐더샵 (보내는 쪽에서 corp로 계산해 넘김).
+ *       앱에서 직접 입력한 위치·메모·구분은 유지.
  */
 function hubSbnSync_(rows, me) {
   if (!rows || !rows.length) return { error: '가져올 행이 없습니다' };
@@ -327,13 +328,14 @@ function hubSbnSync_(rows, me) {
         sbnPrd: hubStr_(r.sbnPrd, 30), sbnSku: hubStr_(r.sbnSku, 20), barcode: bar || hit.barcode, sku: hit.sku || key,
         name: hubStr_(r.name, 150), option: hubStr_(r.option, 80), brand: hubStr_(r.brand, 60) || hit.brand,
         cost: cost, price: hubNum_(r.price), stock: stock, safety: hubNum_(r.safety), img: hubStr_(r.img, 300) || hit.img,
-        sbnStatus: hubStr_(r.sbnStatus, 20), updatedAt: now, updatedBy: '사방넷'
+        sbnStatus: hubStr_(r.sbnStatus, 20), cat: hubStr_(r.cat, 60), corp: r.corp === '셀렉트인' ? '셀렉트인' : '겐더샵',
+        updatedAt: now, updatedBy: '사방넷'
       });
       updated++;
     } else {
       var n = {
         id: hubNewId_(), sku: key, barcode: bar, name: hubStr_(r.name, 150), brand: hubStr_(r.brand, 60), option: hubStr_(r.option, 80),
-        corp: r.corp === '겐더샵' ? '겐더샵' : '셀렉트인', type: '사입', cost: cost, price: hubNum_(r.price), stock: stock,
+        corp: r.corp === '셀렉트인' ? '셀렉트인' : '겐더샵', type: '사입', cat: hubStr_(r.cat, 60), cost: cost, price: hubNum_(r.price), stock: stock,
         safety: hubNum_(r.safety), loc: '', memo: '', updatedAt: now, updatedBy: '사방넷',
         sbnPrd: hubStr_(r.sbnPrd, 30), sbnSku: hubStr_(r.sbnSku, 20), img: hubStr_(r.img, 300), sbnStatus: hubStr_(r.sbnStatus, 20)
       };
