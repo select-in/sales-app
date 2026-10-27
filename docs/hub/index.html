@@ -331,7 +331,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-29a';
+var APP_BUILD = '2026-10-29s';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -556,7 +556,7 @@ var MENU = [
     {k:'orders',t:'주문 · 발주 · 송장',ic:'truck-delivery',soon:1},
     {k:'gonggu',t:'공동구매',ic:'users-group',soon:1},
     {k:'influencer',t:'인플루언서',ic:'brand-instagram',soon:1},
-    {k:'sales',t:'매출',ic:'chart-bar',soon:1}]},
+    {k:'sales',t:'매출',ic:'chart-bar'}]},
   {grp:'기타', items:[
     {k:'links',t:'기존 프로그램',ic:'apps'},
     {k:'settings',t:'설정',ic:'settings'}]}
@@ -632,11 +632,14 @@ document.addEventListener('click', function(e){ var b=e.target.closest && e.targ
 /* ===================== 화면들 ===================== */
 var VIEWS = {};
 
-/* ---------- 홈 매출 (데일리매출판 읽기) ---------- */
-var SALES = null, SF = (function(){ var o={corp:'전체', per:'month'}; try{ var x=JSON.parse(localStorage.getItem('hubSalesF')||'{}'); if(x.corp) o.corp=x.corp; if(x.per) o.per=x.per; }catch(e){} return o; })();
+/* ---------- 매출 (데일리매출판 시트 직접 읽기) ----------
+ * 행: [날짜, 법인, 채널그룹, 플랫폼, 건수, 매출, 정산예정, 이익, 원가, 실시간(1), (관리자) 입금예정일, 입금확인]
+ * 확정 = 일별입력, 실시간 = 오늘현황(오늘 · 일별입력에 아직 없는 그룹만). 정산·이익은 확정분만 계산 */
+var SALES = null, SF = (function(){ var o={corp:'전체', per:'month', a:'', b:''}; try{ var x=JSON.parse(localStorage.getItem('hubSalesF')||'{}'); if(x.corp) o.corp=x.corp; if(x.per) o.per=x.per; if(x.a) o.a=x.a; if(x.b) o.b=x.b; }catch(e){} return o; })();
+function salesSave(){ try{ localStorage.setItem('hubSalesF', JSON.stringify(SF)); }catch(e){} }
 function salesLoad(force){
   if (SALES && !force && Date.now()-SALES._t<5*60e3) return Promise.resolve(SALES);
-  return api('sales',{}).then(function(j){ SALES=j; SALES._t=Date.now(); return j; });
+  return api('sales',{}).then(function(j){ if (j.error) throw {message:j.error}; SALES=j; SALES._t=Date.now(); return j; });
 }
 function ymdAdd(d, k){ var x=new Date(d+'T00:00:00Z'); x.setUTCDate(x.getUTCDate()+k); return x.toISOString().slice(0,10); }
 function salesRange(per, td){
@@ -650,55 +653,87 @@ function salesRange(per, td){
     case 'week': return {a:ymdAdd(td,-wd),b:td, pa:ymdAdd(td,-wd-7), pb:ymdAdd(td,-7), cmp:'지난주 같은 기간'};
     case 'month': return {a:m+'-01',b:td, pa:pm+'-01', pb:(function(){ var e=ymdAdd(pm+'-01',dayOfM-1); return e>pmEnd?pmEnd:e; })(), cmp:'지난달 같은 기간'};
     case 'pmonth': return {a:pm+'-01',b:pmEnd, pa:ppm+'-01', pb:ymdAdd(pm+'-01',-1), cmp:'전전달'};
+    case 'custom': var A=SF.a||m+'-01', B=SF.b||td; if(A>B){ var t=A; A=B; B=t; } var len=Math.round((new Date(B)-new Date(A))/864e5)+1; return {a:A,b:B, pa:ymdAdd(A,-len), pb:ymdAdd(A,-1), cmp:'직전 같은 기간'};
     default: return {a:y+'-01-01',b:td, pa:null, pb:null, cmp:''};
   }
 }
-function salesHtml(){ return '<div class="card" id="hsales" style="margin-bottom:16px"><div class="empty">매출 불러오는 중…</div></div>'; }
+function salesHtml(full){ return '<div class="card" id="hsales" data-full="'+(full?1:'')+'" style="margin-bottom:16px"><div class="empty">매출 불러오는 중…</div></div>'; }
+function salesMan(v){ var s=v<0?'-':''; v=Math.abs(v); return s+(v>=1e8?(v/1e8).toFixed(2)+'<small>억</small>':won(Math.round(v/1e4))+'<small>만원</small>'); }
+function salesFoot(){
+  var V=SALES.verify, L=SALES.last||{}, td=SALES.today, out=[];
+  if (V && !V.error) out.push(V.ok ? '<span class="pill" style="background:var(--accentbg,var(--bg));color:var(--accent)"><i class="ti ti-circle-check"></i> 매출판 대시보드 월누적('+esc(V.from.slice(5))+'~'+esc(V.base.slice(5))+')과 일치 · '+won(V.app)+'원</span>'
+    : '<span class="pill" style="background:var(--redbg);color:var(--red)"><i class="ti ti-alert-triangle"></i> 매출판 대시보드와 다름 · 시트 '+won(V.sheet)+' / 앱 '+won(V.app)+' (차이 '+won(V.app-V.sheet)+')</span>');
+  var lab={'사방넷':'사방넷','스마트스토어':'스마트스토어','크림':'크림','포이즌':'포이즌','도소매':'도소매','공동구매':'공동구매'};
+  Object.keys(lab).forEach(function(k){ if(!L[k]) return; var gap=Math.round((new Date(td)-new Date(L[k]))/864e5); var late=(k==='사방넷'||k==='스마트스토어')?gap>1:(k==='크림'||k==='포이즌')?gap>8:false;
+    out.push('<span class="pill"'+(late?' style="background:var(--amberbg);color:var(--amber)"':'')+'>'+lab[k]+' '+esc(L[k].slice(5).replace('-','/'))+'까지</span>'); });
+  var lv=SALES.live||{};
+  return '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;font-size:12px">'+out.join('')+'</div>'+
+    '<p style="margin:8px 0 0;font-size:12px;color:var(--mute)">매출판 시트 「일별입력」을 직접 읽어요 · 어제까지는 확정, 오늘은 사방넷'+(lv.sabang?' '+esc(lv.sabang):'')+'·스마트스토어'+(lv.store?' '+esc(lv.store):'')+' 실시간(주문 기준) · 크림·포이즌은 매주 월요일 반영 · 불러온 시각 '+esc(SALES.at||'')+
+    ' <a href="#" id="sref" style="color:var(--accent)">새로고침</a></p>';
+}
 function salesDraw(){
   var el=$('hsales'); if(!el || !SALES) return;
-  var R=SALES.rows, td=SALES.today||today(), rg=salesRange(SF.per, td);
+  var full=!!el.dataset.full, R=SALES.rows, td=SALES.today||today(), rg=salesRange(SF.per, td), adm=SALES.cols&&SALES.cols.indexOf('payDay')>=0;
   var cf=function(r){ return SF.corp==='전체' || r[1]===SF.corp; };
   var inR=function(a,b){ return function(r){ return r[0]>=a && r[0]<=b && cf(r); }; };
   var cur=R.filter(inR(rg.a,rg.b)), prev=rg.pa?R.filter(inR(rg.pa,rg.pb)):[];
+  var conf=cur.filter(function(r){ return !r[9]; }), lv=cur.filter(function(r){ return r[9]; });
   var sum=function(L,i){ return L.reduce(function(t,r){ return t+(+r[i]||0); },0); };
-  var amt=sum(cur,5), cnt=sum(cur,4), st=sum(cur,6), pf=sum(cur,7), pamt=sum(prev,5);
+  var amt=sum(cur,5), cnt=sum(cur,4), camt=sum(conf,5), lamt=sum(lv,5), st=sum(conf,6), pf=sum(conf,7), pamt=sum(prev,5);
   var chg=pamt? Math.round((amt-pamt)/pamt*1000)/10 : null;
-  var man=function(v){ return v>=1e8?(v/1e8).toFixed(2)+'<small>억</small>':won(Math.round(v/1e4))+'<small>만원</small>'; };
-  // 플랫폼별
-  var P={}; cur.forEach(function(r){ var k=r[3]+'|'+(SF.corp==='전체'?r[1]:''); var o=P[k]||(P[k]={pf:r[3], corp:r[1], grp:r[2], cnt:0, amt:0, st:0, profit:0}); o.cnt+=+r[4]||0; o.amt+=+r[5]||0; o.st+=+r[6]||0; o.profit+=+r[7]||0; });
-  var PL=Object.keys(P).map(function(k){ return P[k]; }).filter(function(o){ return o.amt||o.cnt; }).sort(function(a,b){ return b.amt-a.amt; });
+  var agg=function(L,key){ var P={}; L.forEach(function(r){ var k=key(r); var o=P[k]||(P[k]={k:k, pf:r[3], corp:r[1], grp:r[2], cnt:0, amt:0, st:0, profit:0, live:0}); o.cnt+=+r[4]||0; o.amt+=+r[5]||0; if(r[9]) o.live+=+r[5]||0; else { o.st+=+r[6]||0; o.profit+=+r[7]||0; } }); return Object.keys(P).map(function(k){ return P[k]; }).filter(function(o){ return o.amt||o.cnt; }).sort(function(a,b){ return b.amt-a.amt; }); };
+  var PL=agg(cur,function(r){ return r[3]+'|'+(SF.corp==='전체'?r[1]:''); }), CO=agg(cur,function(r){ return r[1]; }), GL=agg(cur,function(r){ return r[2]; });
   var mx=PL.length?PL[0].amt:1;
   XL_CUR = function(){ return {file:'매출_'+SF.corp+'_'+rg.a+'_'+rg.b, sheets:[
-    {name:'플랫폼별', head:['플랫폼','채널그룹','법인','주문건수','매출','정산예정','이익'], rows:PL.map(function(o){ return [o.pf, o.grp, o.corp, o.cnt, o.amt, o.st, o.profit]; })},
-    {name:'일별상세', head:['날짜','법인','채널그룹','플랫폼','주문건수','매출','정산예정','이익','원가'], rows:cur.slice().sort(function(a,b){ return a[0].localeCompare(b[0]); })}]}; };
-  // 그룹별 (사방넷/스마트스토어/리셀/도소매…)
-  var GR={}; cur.forEach(function(r){ GR[r[2]]=(GR[r[2]]||0)+(+r[5]||0); });
-  var grs=Object.keys(GR).sort(function(a,b){ return GR[b]-GR[a]; });
-  // 일별 추이 (최근 30일 또는 기간)
+    {name:'플랫폼별', head:['플랫폼','채널그룹','법인','주문건수','매출','정산예정(확정분)','이익(확정분)','오늘 실시간 매출'], rows:PL.map(function(o){ return [o.pf, o.grp, o.corp, o.cnt, o.amt, o.st, o.profit, o.live]; })},
+    {name:'일별상세', head:['날짜','법인','채널그룹','플랫폼','주문건수','매출','정산예정','이익','원가','구분'], rows:cur.slice().sort(function(a,b){ return a[0].localeCompare(b[0]); }).map(function(r){ return r.slice(0,9).concat([r[9]?'오늘 실시간':'확정']); })}]}; };
   var ta=SF.per==='today'||SF.per==='yday'||SF.per==='week'?ymdAdd(td,-29):rg.a, tb=rg.b, days=[], D={};
   R.forEach(function(r){ if(r[0]>=ta && r[0]<=tb && cf(r)) D[r[0]]=(D[r[0]]||0)+(+r[5]||0); });
-  if (SF.per==='year'){ var M={}; Object.keys(D).forEach(function(d){ M[d.slice(0,7)]=(M[d.slice(0,7)]||0)+D[d]; }); days=Object.keys(M).sort().map(function(k){ return [k.slice(5)+'월', M[k], false]; }); }
+  if (SF.per==='year' || (SF.per==='custom' && (new Date(tb)-new Date(ta))/864e5>92)){ var M={}; Object.keys(D).forEach(function(d){ M[d.slice(0,7)]=(M[d.slice(0,7)]||0)+D[d]; }); days=Object.keys(M).sort().map(function(k){ return [k.slice(5)*1+'월', M[k], true]; }); }
   else for(var d=ta; d<=tb; d=ymdAdd(d,1)) days.push([d.slice(8)*1+'', D[d]||0, d>=rg.a&&d<=rg.b]);
   var dmx=Math.max.apply(null, days.map(function(x){ return x[1]; }).concat([1]));
-  var pers=[['today','오늘'],['yday','어제'],['week','이번 주'],['month','이번 달'],['pmonth','지난 달'],['year','올해']];
+  var pers=[['today','오늘'],['yday','어제'],['week','이번 주'],['month','이번 달'],['pmonth','지난 달'],['year','올해']].concat(full?[['custom','직접']]:[]);
+  var grpTbl=function(title, L, showCorp){ var t=sum(L,5)||1; return '<h3 style="margin:18px 0 6px;font-size:15px">'+title+'</h3><div class="tblwrap"><table class="tbl"><thead><tr><th>'+(showCorp?'법인':'채널그룹')+'</th><th class="r">주문</th><th class="r">매출</th><th style="width:24%">비중</th><th class="r">정산 예정</th><th class="r">이익</th><th class="r">이익률</th></tr></thead><tbody>'+
+    L.map(function(o){ var c=o.amt-o.live; return '<tr><td><b>'+esc(o.k||'기타')+'</b>'+(o.live?' <span class="sm">실시간 '+won(o.live)+'</span>':'')+'</td><td class="r num">'+won(o.cnt)+'</td><td class="r num"><b>'+won(o.amt)+'</b></td><td><div class="sbar"><i style="width:'+Math.max(1,Math.round(o.amt/t*100))+'%"></i><span>'+(o.amt/t*100).toFixed(1)+'%</span></div></td><td class="r num">'+(o.st?won(o.st):'—')+'</td><td class="r num">'+won(o.profit)+'</td><td class="r num">'+(c?(o.profit/c*100).toFixed(1)+'%':'—')+'</td></tr>'; }).join('')+'</tbody></table></div>'; };
+  var pay='';
+  if (full && adm){
+    var P7={}, end=ymdAdd(td,6);
+    R.forEach(function(r){ if(r[10] && r[10]>=td && r[10]<=end && !r[11] && cf(r)) P7[r[10]]=(P7[r[10]]||0)+(+r[6]||0); });
+    var pk=Object.keys(P7).sort(), ptot=pk.reduce(function(t,k){ return t+P7[k]; },0);
+    pay='<h3 style="margin:18px 0 6px;font-size:15px">입금 예정 7일 <small style="color:var(--mute);font-weight:400">관리자만 · 입금확인 안 된 정산예정액 · 합계 '+won(ptot)+'원</small></h3>'+
+      (pk.length?'<div class="tblwrap"><table class="tbl"><tbody>'+pk.map(function(k){ return '<tr><td>'+esc(k)+'</td><td class="r num"><b>'+won(P7[k])+'</b></td></tr>'; }).join('')+'</tbody></table></div>':'<div class="empty">7일 안에 입금 예정이 없어요</div>');
+  }
   el.innerHTML =
-    '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:12px"><h2 style="margin:0">매출 <small>'+esc(rg.a===rg.b?rg.a:rg.a+' ~ '+rg.b)+'</small></h2>'+
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:12px"><h2 style="margin:0">'+(full?'':'<a href="#sales" style="color:inherit;text-decoration:none">')+'매출 <small>'+esc(rg.a===rg.b?rg.a:rg.a+' ~ '+rg.b)+'</small>'+(full?'':' <i class="ti ti-chevron-right" style="font-size:16px;color:var(--mute)"></i></a>')+'</h2>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap"><div class="seg" id="sfc">'+['전체','겐더샵','셀렉트인'].map(function(c){ return '<button data-v="'+c+'" class="'+(SF.corp===c?'on':'')+'">'+c+'</button>'; }).join('')+'</div>'+
-      '<div class="seg" id="sfp">'+pers.map(function(p){ return '<button data-v="'+p[0]+'" class="'+(SF.per===p[0]?'on':'')+'">'+p[1]+'</button>'; }).join('')+'</div></div></div>'+
+      '<div class="seg" id="sfp">'+pers.map(function(p){ return '<button data-v="'+p[0]+'" class="'+(SF.per===p[0]?'on':'')+'">'+p[1]+'</button>'; }).join('')+'</div>'+
+      (full&&SF.per==='custom'?'<span style="display:flex;gap:6px;align-items:center"><input type="date" id="sfa" value="'+esc(rg.a)+'" class="inp" style="width:auto"> ~ <input type="date" id="sfb" value="'+esc(rg.b)+'" class="inp" style="width:auto"></span>':'')+'</div></div>'+
     '<div class="grid g4">'+
-      '<div class="kpi"><div class="k"><i class="ti ti-chart-bar"></i>매출</div><div class="v num">'+man(amt)+'</div><div class="sm">'+(chg==null?'&nbsp;':'<b style="color:'+(chg>=0?'var(--accent)':'var(--red)')+'">'+(chg>=0?'▲':'▼')+Math.abs(chg)+'%</b> '+esc(rg.cmp)+' 대비')+'</div></div>'+
+      '<div class="kpi"><div class="k"><i class="ti ti-chart-bar"></i>매출</div><div class="v num">'+salesMan(amt)+'</div><div class="sm">'+(chg==null?'':'<b style="color:'+(chg>=0?'var(--accent)':'var(--red)')+'">'+(chg>=0?'▲':'▼')+Math.abs(chg)+'%</b> '+esc(rg.cmp)+' 대비')+(lamt?'<br>확정 '+won(camt)+' + 오늘 실시간 '+won(lamt):'')+'</div></div>'+
       '<div class="kpi"><div class="k"><i class="ti ti-receipt"></i>주문</div><div class="v num">'+won(cnt)+'<small>건</small></div><div class="sm">객단가 '+(cnt?won(Math.round(amt/cnt)):'—')+'원</div></div>'+
-      '<div class="kpi"><div class="k"><i class="ti ti-wallet"></i>정산 예정</div><div class="v num">'+man(st)+'</div><div class="sm">수수료 차감 후</div></div>'+
-      '<div class="kpi"><div class="k"><i class="ti ti-trending-up"></i>이익</div><div class="v num">'+man(pf)+'</div><div class="sm">'+(st?'이익률 '+(pf/amt*100).toFixed(1)+'%':'&nbsp;')+' · 원가 미입력 건은 원가 0으로 계산</div></div>'+
+      '<div class="kpi"><div class="k"><i class="ti ti-wallet"></i>정산 예정</div><div class="v num">'+salesMan(st)+'</div><div class="sm">수수료 차감 후'+(lamt?' · 확정분만':'')+'</div></div>'+
+      '<div class="kpi"><div class="k"><i class="ti ti-trending-up"></i>이익</div><div class="v num">'+salesMan(pf)+'</div><div class="sm">'+(camt?'이익률 '+(pf/camt*100).toFixed(1)+'%':'')+(lamt?' · 확정분만':'')+'</div></div>'+
     '</div>'+
-    (grs.length?'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 4px">'+grs.map(function(g){ return '<span class="pill">'+esc(g||'기타')+' <b class="num">'+won(Math.round(GR[g]/1e4))+'만</b> · '+(amt?Math.round(GR[g]/amt*100):0)+'%</span>'; }).join('')+'</div>':'')+
+    (!full&&GL.length?'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 4px">'+GL.map(function(o){ return '<span class="pill">'+esc(o.k||'기타')+' <b class="num">'+won(Math.round(o.amt/1e4))+'만</b> · '+(amt?Math.round(o.amt/amt*100):0)+'%</span>'; }).join('')+'</div>':'')+
     '<div class="salesbars" title="일별 매출">'+days.map(function(x){ return '<div class="sb'+(x[2]?' on':'')+'" title="'+esc(x[0])+' · '+won(x[1])+'원"><i style="height:'+Math.max(2,Math.round(x[1]/dmx*100))+'%"></i><span>'+esc(x[0])+'</span></div>'; }).join('')+'</div>'+
+    (full ? (SF.corp==='전체'&&CO.length>1?grpTbl('법인별',CO,true):'')+(GL.length?grpTbl('채널그룹별',GL,false):'') : '')+
+    (full?'<h3 style="margin:18px 0 6px;font-size:15px">플랫폼별</h3>':'')+
     (PL.length ? '<div class="tblwrap" style="margin-top:8px"><table class="tbl"><thead><tr><th>플랫폼</th>'+(SF.corp==='전체'?'<th>법인</th>':'')+'<th class="r">주문</th><th class="r">매출</th><th style="width:28%">비중</th><th class="r">정산 예정</th></tr></thead><tbody>'+
-      PL.map(function(o){ return '<tr><td><b>'+esc(o.pf)+'</b> <span class="sm">'+esc(o.grp)+'</span></td>'+(SF.corp==='전체'?'<td><span class="pill">'+esc(o.corp)+'</span></td>':'')+'<td class="r num">'+won(o.cnt)+'</td><td class="r num"><b>'+won(o.amt)+'</b></td><td><div class="sbar"><i style="width:'+Math.max(1,Math.round(o.amt/mx*100))+'%"></i><span>'+(amt?(o.amt/amt*100).toFixed(1):0)+'%</span></div></td><td class="r num">'+(o.st?won(o.st):'—')+'</td></tr>'; }).join('')+
-      '</tbody></table></div>' : '<div class="empty">이 기간 매출 기록이 없어요</div>')+
-    '<p style="margin:10px 0 0;font-size:12px;color:var(--mute)">「데일리매출판」 기준 · 어제까지는 확정, 오늘은 사방넷·스마트스토어 실시간'+(SALES.liveAt?' ('+esc(SALES.liveAt)+' 갱신)':'')+' · 크림·포이즌·도소매는 다음날 반영</p>';
-  [['sfc','corp'],['sfp','per']].forEach(function(g){ el.querySelectorAll('#'+g[0]+' button').forEach(function(b){ b.onclick=function(){ SF[g[1]]=b.dataset.v; try{ localStorage.setItem('hubSalesF', JSON.stringify(SF)); }catch(e){} salesDraw(); }; }); });
+      PL.slice(0, full?999:12).map(function(o){ return '<tr><td><b>'+esc(o.pf)+'</b> <span class="sm">'+esc(o.grp)+(o.live?' · 실시간':'')+'</span></td>'+(SF.corp==='전체'?'<td><span class="pill">'+esc(o.corp)+'</span></td>':'')+'<td class="r num">'+won(o.cnt)+'</td><td class="r num"><b>'+won(o.amt)+'</b></td><td><div class="sbar"><i style="width:'+Math.max(1,Math.round(o.amt/mx*100))+'%"></i><span>'+(amt?(o.amt/amt*100).toFixed(1):0)+'%</span></div></td><td class="r num">'+(o.st?won(o.st):'—')+'</td></tr>'; }).join('')+
+      '</tbody></table></div>'+(!full&&PL.length>12?'<div style="margin-top:8px"><a class="btn sm" href="#sales">플랫폼 '+PL.length+'개 전체 보기</a></div>':'') : '<div class="empty">이 기간 매출 기록이 없어요</div>')+
+    pay+salesFoot();
+  [['sfc','corp'],['sfp','per']].forEach(function(g){ el.querySelectorAll('#'+g[0]+' button').forEach(function(b){ b.onclick=function(){ SF[g[1]]=b.dataset.v; salesSave(); salesDraw(); }; }); });
+  ['sfa','sfb'].forEach(function(id,i){ var x=$(id); if(x) x.onchange=function(){ SF[i?'b':'a']=this.value; salesSave(); salesDraw(); }; });
+  var rf=$('sref'); if(rf) rf.onclick=function(e){ e.preventDefault(); el.style.opacity=.5; salesLoad(true).then(function(){ el.style.opacity=1; salesDraw(); toast('매출을 다시 불러왔어요'); }).catch(function(e2){ el.style.opacity=1; fail(e2); }); };
 }
+function salesBind(){
+  if (SALES) salesDraw();
+  salesLoad().then(salesDraw).catch(function(e){ if($('hsales')) $('hsales').innerHTML='<div class="empty">매출을 불러오지 못했어요 · '+esc(e&&e.message||'')+'</div>'; });
+}
+VIEWS.sales = {
+  html: function(){ return '<div class="ph"><div><h1>매출</h1><p>겐더샵·셀렉트인 매출을 기간·법인·채널별로 봐요</p></div><div class="acts"><button class="btn" data-xl="1"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button></div></div>'+salesHtml(true); },
+  bind: salesBind
+};
 
 /* ---------- 홈 ---------- */
 VIEWS.home = {
@@ -735,8 +770,7 @@ VIEWS.home = {
       '<div class="card" style="margin-top:16px"><h2>자주 쓰는 프로그램</h2><div class="grid g3">'+toolCards(true)+'</div></div>';
   },
   bind: function(){
-    if (SALES) salesDraw();
-    salesLoad().then(salesDraw).catch(function(e){ if($('hsales')) $('hsales').innerHTML='<div class="empty">매출을 불러오지 못했어요 · '+esc(e&&e.message||'')+'</div>'; });
+    salesBind();
     $('schk').onclick = function(){
       this.disabled = true;
       api('config_set',{key:'scheduler_check',value:'ok'}).then(function(j){ S.config=j.config; persist(); toast('사방넷 스케줄러 점검 완료로 기록했어요'); route(); }).catch(function(e){ fail(e); route(); });
@@ -2042,7 +2076,7 @@ VIEWS.cost = {
 /* ---------- 기존 프로그램 ---------- */
 function userLinks(){ try{ return JSON.parse((S.config.links&&S.config.links.value)||'[]'); }catch(e){ return []; } }
 function toolCards(short){
-  var base = [{t:'데일리 매출 앱',s:'겐더샵·셀렉트인 매출, 채널별 현황',u:'../',ic:'chart-line'}];
+  var base = [];
   var L = base.concat(userLinks());
   return L.slice(0, short?6:99).map(function(l){
     return '<a class="tool" href="'+esc(l.u)+'" target="_blank" rel="noopener"><div class="ic"><i class="ti ti-'+esc(l.ic||'external-link')+'"></i></div><div style="min-width:0"><div class="t">'+esc(l.t)+'</div><div class="s">'+esc(l.s||'')+'</div>'+(short?'':'<div class="u">'+esc(l.u)+'</div>')+'</div></a>';
@@ -2098,9 +2132,6 @@ VIEWS.gonggu = soonView('공동구매','제안서부터 정산까지 공구 한 
 VIEWS.influencer = soonView('인플루언서','공구할 인플루언서 찾기·관리',
   ['<b>인플루언서 DB</b> — 팔로워·카테고리·공구 이력','<b>공구 모니터링</b> — 매일 수집하는 브랜드 공구 게시물 모아보기','<b>상품 매칭</b> — 상품 마스터의 상품과 어울리는 인플루언서 추천'],
   '공구 모니터링은 지금 쓰는 구글 시트를 그대로 보세요.');
-VIEWS.sales = soonView('매출','법인·채널별 매출과 월말 정산',
-  ['<b>매출 요약</b> — 데일리 매출 앱 데이터를 홈 화면에 함께 표시','<b>상품별 매출</b> — 상품 마스터와 연결해 잘 팔리는 상품·재고 회전 분석'],
-  '매출은 지금 쓰는 데일리 매출 앱에서 그대로 확인하세요.');
 
 /* ---------- 전체 메뉴 (모바일) ---------- */
 VIEWS.more = {

@@ -56,7 +56,7 @@ function doPost(e) {
       case 'krm_sync': return hubOut_(hubLocked_(function () { return hubKrmSync_(req, me); }));
       case 'krm_list': return hubOut_(hubKrmList_());
       case 'krm_map_set': return hubOut_(hubLocked_(function () { return hubKrmMapSet_(req, me); }));
-      case 'sales': return hubOut_(hubSales_());
+      case 'sales': return hubOut_(hubSales_(me));
       case 'krm_req': return hubOut_(hubLocked_(function () { hubConfigSet_('krm_req', String(Date.now()), me); return { ok: true }; }));   // 휴대폰에서 [지금 동기화] → PC 크림 창이 받아서 실행
       case 'krm_poll': var kc = hubConfig_(); return hubOut_({ req: kc.krm_req ? Number(kc.krm_req.value) || 0 : 0, by: kc.krm_req ? kc.krm_req.by : '' });
       case 'sbn_get': if (!admin) return hubOut_({ error: '관리자만 조회할 수 있습니다' });   // 읽기 전용 (GET)
@@ -563,33 +563,80 @@ function hubKrmMapSet_(req, me) {
   return { ok: true, maps: hubKrmMaps_() };
 }
 
-/* ===================== 매출 (홈) =====================
- * 기존 「셀렉트인_데일리매출판」 시트를 읽기만 함 (쓰기 없음)
- *  - 일별입력: 날짜·법인·채널그룹·플랫폼별 주문건수·매출·원가·정산예정·이익 (어제까지)
- *  - 오늘현황: 오늘 실시간 주문 (사방넷·스마트스토어) — 일별입력에 오늘 행이 없을 때만 사용 */
+/* ===================== 매출 =====================
+ * 「셀렉트인_데일리매출판」 시트를 직접 읽음 (쓰기 없음). 기존 매출 앱(매출앱.gs)을 거치지 않음.
+ *  - 일별입력: 열 위치가 아니라 '날짜' 머리글 행의 열 이름으로 찾음 → 열을 옮기거나 추가해도 안전
+ *  - 법인 '제외' 행은 집계에서 뺌 (매출판·기존 앱과 같은 규칙)
+ *  - 오늘: 일별입력에 이미 들어온 채널그룹은 확정값을 쓰고, 없는 그룹(사방넷·스마트스토어)만 오늘현황 실시간으로 채움
+ *  - 검증: 매출판 '대시보드' 탭의 월누적 매출과 같은 기간 합계를 맞춰 보고 결과를 함께 보냄
+ *  - 입금예정일·입금확인은 관리자에게만 보냄 */
 var HUB_SALES_ID = '1TSYSFjgcqo1Gu1Ryq9CHjdNN1Fm1QYmASKlV77xsjl0';
-function hubSales_() {
+function hubSalesYmd_(v, tz) {
+  if (v instanceof Date) return Utilities.formatDate(v, tz, 'yyyy-MM-dd');
+  var m = String(v || '').trim().match(/^(\d{4})\s*[-.\/]\s*(\d{1,2})\s*[-.\/]\s*(\d{1,2})/);
+  return m ? m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2) : '';
+}
+function hubSales_(me) {
   var ss = SpreadsheetApp.openById(HUB_SALES_ID), tz = 'Asia/Seoul', today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
-  var ymd = function (v) { if (v instanceof Date) return Utilities.formatDate(v, tz, 'yyyy-MM-dd'); var m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[0] : ''; };
-  var n = function (v) { return typeof v === 'number' ? v : hubNum_(v); };
-  var sh = ss.getSheetByName('일별입력'), last = sh.getLastRow(), rows = [], hasToday = false;
-  if (last >= 3) sh.getRange(3, 1, last - 2, 21).getValues().forEach(function (r) {
-    var d = ymd(r[0]); if (!d) return;
-    if (d === today) hasToday = true;
-    rows.push([d, String(r[4] || '').trim() || '확인필요', String(r[5] || r[1] || '').trim(), String(r[20] || r[2] || r[1] || '').trim(), n(r[6]), n(r[7]), n(r[13]), n(r[14]), n(r[8])]);
+  var admin = me && me.role === '관리자';
+  var sh = ss.getSheetByName('일별입력');
+  if (!sh) return { error: "매출판에 '일별입력' 탭이 없어요" };
+  var v = sh.getRange(1, 1, Math.max(1, sh.getLastRow()), sh.getLastColumn()).getValues();
+  var h = -1;
+  for (var i = 0; i < Math.min(10, v.length); i++) if (String(v[i][0]).trim() === '날짜') { h = i; break; }
+  if (h < 0) return { error: "일별입력 탭에서 '날짜' 머리글을 찾지 못했어요" };
+  var I = {};
+  v[h].forEach(function (c, j) { var k = String(c).trim(); if (k && !(k in I)) I[k] = j; });
+  var need = ['날짜', '법인', '채널그룹', '주문건수', '매출액'], miss = need.filter(function (k) { return I[k] == null; });
+  if (miss.length) return { error: '일별입력 머리글이 바뀌었어요: ' + miss.join(', ') + ' 열을 찾지 못함' };
+  var col = function (r, k) { return I[k] == null ? '' : r[I[k]]; };
+  var rows = [], todayGroups = {}, last = {}, skipped = 0;
+  v.slice(h + 1).forEach(function (r) {
+    var d = hubSalesYmd_(col(r, '날짜'), tz);
+    if (!d) { if (r.some(function (x) { return x !== '' && x != null; })) skipped++; return; }
+    var corp = String(col(r, '법인')).trim();
+    if (corp === '제외') return;
+    var grp = String(col(r, '채널그룹')).trim() || '기타';
+    var pf = String(col(r, '플랫폼(자동)') || col(r, '쇼핑몰') || col(r, '채널')).trim() || grp;
+    if (d === today) todayGroups[grp] = 1;
+    var lk = grp === '리셀' ? (/포이즌/i.test(pf + col(r, '채널')) ? '포이즌' : '크림') : grp;
+    if (d <= today && (!last[lk] || d > last[lk])) last[lk] = d;
+    var row = [d, corp || '확인필요', grp, pf, hubNum_(col(r, '주문건수')), hubNum_(col(r, '매출액')), hubNum_(col(r, '정산예정액')), hubNum_(col(r, '이익')), hubNum_(col(r, '매입원가')), 0];
+    if (admin) row.push(hubSalesYmd_(col(r, '입금예정일'), tz), String(col(r, '입금확인(Y)')).trim().toUpperCase() === 'Y' ? 1 : 0);
+    rows.push(row);
   });
-  var live = [], at = '';
-  if (!hasToday) {
-    var th = ss.getSheetByName('오늘현황');
-    if (th) th.getRange(13, 1, 488, 9).getValues().forEach(function (r) {
-      if (String(r[0]).trim() !== '주문' || ymd(r[8]) !== today) return;
-      var grp = String(r[1] || '').trim();
-      live.push([today, String(r[2] || '').trim() || '확인필요', grp === '사방넷' ? '사방넷' : '스마트스토어', String(r[3] || '').trim(), n(r[5]), n(r[6]), 0, 0, 0]);
-      var t = r[7] instanceof Date ? Utilities.formatDate(r[7], tz, 'HH:mm') : String(r[7] || '').slice(11, 16); if (t > at) at = t;
+  // 오늘 실시간 (일별입력에 아직 없는 채널그룹만)
+  var live = [], at = { sabang: '', store: '' }, th = ss.getSheetByName('오늘현황');
+  if (th && th.getLastRow() >= 1) {
+    var tv = th.getRange(1, 1, Math.min(th.getLastRow(), 600), 9).getValues();
+    tv.forEach(function (r) {
+      if (String(r[0]).trim().indexOf('주문 매출') === 0) { at.sabang = hubSalesHm_(r[4], tz); at.store = hubSalesHm_(r[5], tz); }
+      if (String(r[0]).trim() !== '주문' || hubSalesYmd_(r[8], tz) !== today) return;
+      var g = String(r[1] || '').trim() === '사방넷' ? '사방넷' : '스마트스토어';
+      if (todayGroups[g]) return;
+      var row = [today, String(r[2] || '').trim() || '확인필요', g, String(r[3] || '').trim(), hubNum_(r[5]), hubNum_(r[6]), 0, 0, 0, 1];
+      if (admin) row.push('', 0);
+      live.push(row);
     });
   }
-  return { cols: ['date', 'corp', 'group', 'platform', 'cnt', 'amt', 'settle', 'profit', 'cost'], rows: rows.concat(live), today: today, liveAt: at, liveRows: live.length };
+  // 매출판 대시보드와 대조 (월 선택이 '이번달'일 때만: 월초 ~ 어제 확정 합계)
+  var verify = null;
+  try {
+    var dv = ss.getSheetByName('대시보드').getRange('A1:B12').getValues(), dm = {};
+    dv.forEach(function (r) { dm[String(r[0]).trim()] = r[1]; });
+    var base = hubSalesYmd_(dm['기준일(확정)'], tz), from = hubSalesYmd_(dm['월초'], tz), sheetMtd = hubNum_(dm['월누적 매출']);
+    if (base && from) {
+      var mine = rows.reduce(function (t, r) { return r[0] >= from && r[0] <= base ? t + r[5] : t; }, 0);
+      verify = { from: from, base: base, sheet: sheetMtd, app: mine, ok: Math.abs(mine - sheetMtd) < 1 };
+    }
+  } catch (e) { verify = { error: String(e.message || e).slice(0, 120) }; }
+  return {
+    cols: ['date', 'corp', 'group', 'platform', 'cnt', 'amt', 'settle', 'profit', 'cost', 'live'].concat(admin ? ['payDay', 'paid'] : []),
+    rows: rows.concat(live), today: today, liveAt: at.sabang, live: at, liveRows: live.length,
+    last: last, verify: verify, skipped: skipped, at: Utilities.formatDate(new Date(), tz, 'HH:mm')
+  };
 }
+function hubSalesHm_(x, tz) { return x instanceof Date ? Utilities.formatDate(x, tz, 'HH:mm') : String(x || '').trim(); }
 
 /* ===================== 재고 ===================== */
 function hubStockMove_(req, me) {
