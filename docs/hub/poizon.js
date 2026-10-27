@@ -42,6 +42,7 @@
   }
   function findTab(label) {
     var c = [].slice.call(document.querySelectorAll('div,span,li,button,a')).filter(function (e) { var t = (e.textContent || '').trim().replace(/\s+/g, ' '); return t === label || (t.indexOf(label) === 0 && /^\s*\(\s*[\d+,]+\s*\)\s*$/.test(t.slice(label.length))); });
+    c = c.filter(function (e) { return !e.closest('table,.ant-table,.ant-select,.ant-menu'); });
     c.sort(function (a, b) { return a.querySelectorAll('*').length - b.querySelectorAll('*').length; });
     return c[0] || null;
   }
