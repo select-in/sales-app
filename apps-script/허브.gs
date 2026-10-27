@@ -61,6 +61,7 @@ function doPost(e) {
         return hubOut_(hubSbnSalesRange_(req.from, req.to));
       case 'sales': return hubOut_(hubSales_(me));
       case 'ops_today': return hubOut_(hubOpsToday_(req.force));
+      case 'plat_reco': return hubOut_(hubPlatReco_(req.force));
       case 'sbn_order_fields': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 사방넷 주문 API 응답 항목 이름 확인용 (읽기 전용, 개인정보 항목은 값 제외)
         return hubOut_(hubSbnOrderFields_(req.items));
       case 'krm_req': return hubOut_(hubLocked_(function () { hubConfigSet_('krm_req', String(Date.now()), me); return { ok: true }; }));   // 휴대폰에서 [지금 동기화] → PC 크림 창이 받아서 실행
@@ -749,10 +750,53 @@ function hubSbnOrderFields_(items) {
   var body = { dateSearchCondition: 2, startDate: d, endDate: d, updateOrderStsYn: 'N', page: 1, perPage: 50 };
   if (Array.isArray(items) && items.length) body.responseItems = items.slice(0, 60).map(String);
   var r = hubSbnCall_('POST', '/v3/sb/order', body), dt = (r && r.data) || {}, L = dt.results || [];
-  var personal = /RCV|RECV|RECEIVE|ADDR|TEL|HP|PHONE|MOBILE|BUYER|ORDERER|ORD_NM|USER_NM|EMAIL|ZIP|PERSONAL|CUSTOMS|MSG|MEMO|NAME_RCV|CUST/i;
+  var personal = /RCV|RECV|RECEIVE|ADDR|TEL|HP|PHONE|MOBILE|BUYER|ORDERER|ORD_NM|USER_NM|EMAIL|ZIP|PERSONAL|CUSTOMS|MSG|MEMO|NAME_RCV|CUST(?!OM_PRD)/i;
   var keys = {}; L.forEach(function (x) { Object.keys(x).forEach(function (k) { keys[k] = 1; }); });
   var sample = L.slice(0, 2).map(function (x) { var o = {}; Object.keys(x).forEach(function (k) { o[k] = personal.test(k) ? '(개인정보)' : String(x[k]).slice(0, 40); }); return o; });
   return { code: r && r.code, message: r && r.message, keys: Object.keys(keys), sample: sample, raw: L.length ? '' : JSON.stringify(r).slice(0, 500) };
+}
+/* ===================== 플랫폼 추천 (매출 > 플랫폼 추천) =====================
+ * 사방넷 API(조회 전용) 최근 30일 주문(주문일)을 상품(사방넷 상품코드) × 쇼핑몰 계정별로 묶어 보냄.
+ * 화면에서 상품 마스터(재고·원가·이미지)와 합쳐 채널별 추천(비싼 채널·안 팔리는 채널·재고 소진)을 계산.
+ * 매출판과 같은 규칙: 취소 제외, 반품·교환 재생성 행 제외, 설정 ③ '제외' 계정 제외. 30분 캐시(조각 저장). */
+function hubPlatReco_(force) {
+  var tz = 'Asia/Seoul', cache = CacheService.getScriptCache(), today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  if (!force) {
+    var n = Number(cache.get('preco_n') || 0);
+    if (n) { var parts = cache.getAll(Array.apply(null, Array(n)).map(function (_, i) { return 'preco_' + i; })), txt = '';
+      for (var i = 0; i < n; i++) { if (!parts['preco_' + i]) { txt = ''; break; } txt += parts['preco_' + i]; }
+      if (txt) { try { var c = JSON.parse(txt); if (c.today === today) return c; } catch (e) {} } }
+  }
+  var ss = SpreadsheetApp.openById(HUB_SALES_ID), corp = {};
+  ss.getSheetByName('설정').getRange('A57:B120').getValues().forEach(function (r) { var id = String(r[0]).trim(); if (id) corp[id] = String(r[1]).trim(); });
+  var ymd = function (k) { return Utilities.formatDate(new Date(Date.now() + k * 864e5), tz, 'yyyyMMdd'); };
+  var a = ymd(-30), b = ymd(-1), all = [], page = 1;
+  try {
+    while (page <= 40) {
+      var r = hubSbnCall_('POST', '/v3/sb/order', { dateSearchCondition: 2, startDate: a, endDate: b, updateOrderStsYn: 'N', page: page, perPage: 1000,
+        responseItems: ['SB_ORD_NO', 'ORDER_STATUS', 'SHOP_NM', 'SHOP_LOGIN_ID', 'ORDER_TOT_AMT', 'ORD_CNT', 'ORG_SB_ORD_NO', 'SB_PRD_CD', 'CM_PRD_NM', 'ORDER_DT'] });
+      var dt = (r && r.data) || {}; all = all.concat(dt.results || []); if (!dt.hasNext) break; page++;
+    }
+  } catch (e) { return { error: '사방넷 조회 실패: ' + String(e.message || e).slice(0, 150) }; }
+  var ch = {}, g = {}, names = {}, wk = Utilities.formatDate(new Date(Date.now() - 7 * 864e5), tz, 'yyyyMMdd');
+  all.forEach(function (x) {
+    if (/CANCEL/i.test(String(x.ORDER_STATUS))) return;
+    if (x.ORG_SB_ORD_NO && String(x.ORG_SB_ORD_NO) !== '0') return;
+    var id = String(x.SHOP_LOGIN_ID || '').trim(), c = corp[id] || '확인필요'; if (c === '제외') return;
+    var prd = String(x.SB_PRD_CD || '').trim(); if (!prd || prd === 'null') prd = '';
+    var key = c + '|' + String(x.SHOP_NM || '').trim(), qty = Number(x.ORD_CNT) || 1, amt = Number(x.ORDER_TOT_AMT) || 0, recent = String(x.ORDER_DT || '').slice(0, 8) >= wk;
+    var cc = ch[key] || (ch[key] = { key: key, corp: c, shop: String(x.SHOP_NM || '').trim(), qty: 0, amt: 0, ids: {} }); cc.qty += qty; cc.amt += amt; cc.ids[id] = 1;
+    if (!prd) return;
+    if (!names[prd] && x.CM_PRD_NM && String(x.CM_PRD_NM) !== 'null') names[prd] = String(x.CM_PRD_NM).slice(0, 80);
+    var o = g[prd + '#' + key] || (g[prd + '#' + key] = [prd, key, 0, 0, 0]); o[2] += qty; o[3] += amt; if (recent) o[4] += qty;
+  });
+  var out = { today: today, from: a, to: b, at: Utilities.formatDate(new Date(), tz, 'HH:mm'), orders: all.length,
+    channels: Object.keys(ch).map(function (k) { var o = ch[k]; o.ids = Object.keys(o.ids); return o; }).sort(function (x, y) { return y.amt - x.amt; }),
+    rows: Object.keys(g).map(function (k) { return g[k]; }), names: names };
+  try { var txt2 = JSON.stringify(out), size = 90000, put = {}, cnt = Math.ceil(txt2.length / size);
+    for (var j = 0; j < cnt; j++) put['preco_' + j] = txt2.slice(j * size, (j + 1) * size);
+    if (cnt <= 20) { cache.putAll(put, 1800); cache.put('preco_n', String(cnt), 1800); } } catch (e) {}
+  return out;
 }
 function hubSalesHm_(x, tz) { return x instanceof Date ? Utilities.formatDate(x, tz, 'HH:mm') : String(x || '').trim(); }
 

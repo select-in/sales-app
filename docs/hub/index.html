@@ -343,7 +343,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-30d';
+var APP_BUILD = '2026-10-30d-r1';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -568,7 +568,8 @@ var MENU = [
     {k:'orders',t:'주문 · 발주 · 송장',ic:'truck-delivery',soon:1},
     {k:'gonggu',t:'공동구매',ic:'users-group',soon:1},
     {k:'influencer',t:'인플루언서',ic:'brand-instagram',soon:1},
-    {k:'sales',t:'매출',ic:'chart-bar'}]},
+    {k:'sales',t:'매출',ic:'chart-bar'},
+    {k:'reco',t:'플랫폼 추천',ic:'bulb'}]},
   {grp:'기타', items:[
     {k:'links',t:'기존 프로그램',ic:'apps'},
     {k:'settings',t:'설정',ic:'settings'}]}
@@ -810,6 +811,86 @@ function opsTodayDraw(){
     '<p style="margin:8px 0 0;font-size:12px;color:var(--mute)">주문=오늘 결제(주문)된 건 · 수집=오늘 사방넷에 들어온 건(어제 주문 포함) · 발송=오늘 송장 보낸 건 · 취소·반품 재생성 제외</p>';
   $('hopsr').onclick=function(e){ e.preventDefault(); el.style.opacity=.5; api('ops_today',{force:true}).then(function(j){ el.style.opacity=1; if(j.error) return fail({message:j.error}); OPT=j; OPT._t=Date.now(); opsTodayDraw(); }).catch(function(e2){ el.style.opacity=1; fail(e2); }); };
   $('hopst').onclick=function(e){ e.preventDefault(); el.dataset.open=open?'':'1'; opsTodayDraw(); };
+}
+
+
+/* ---------- 플랫폼 추천 (일반 쇼핑몰) ----------
+ * 서버: 사방넷 최근 30일 주문 → 상품(사방넷 상품코드) × 쇼핑몰별 수량·금액. 여기서 상품 마스터(재고·원가·이미지)와 합쳐 추천 계산.
+ * 실판매가 = 해당 채널 주문금액 ÷ 수량 (쿠폰·할인 반영된 실제 결제 기준) */
+var PR=null, PRF=(function(){ var o={ch:'',tab:'price',corp:'전체'}; try{ var x=JSON.parse(localStorage.getItem('hubRecoF')||'{}'); for(var k in x) o[k]=x[k]; }catch(e){} return o; })();
+function prSave(){ try{ localStorage.setItem('hubRecoF', JSON.stringify(PRF)); }catch(e){} }
+function prMaster(){
+  var M={};
+  S.products.forEach(function(p){ if(!p.sbnPrd) return; var m=M[p.sbnPrd]||(M[p.sbnPrd]={prd:p.sbnPrd, name:p.name, brand:p.brand, img:p.img, corp:p.corp, type:p.type, stock:0, cost:0, price:0, opts:0, owner:p.owner}); m.opts++; if(!isVirtual(p)) m.stock+=Math.max(0,+p.stock||0); if(!m.cost&&p.cost) m.cost=+p.cost; if(!m.price&&p.price) m.price=+p.price; if(!m.img&&p.img) m.img=p.img; });
+  return M;
+}
+VIEWS.reco = {
+  html: function(){ return '<div class="ph"><div><h1>플랫폼 추천</h1><p>쇼핑몰별로 가격 조정·노출·재고 소진할 상품을 골라 줘요 · 사방넷 최근 30일 주문 기준</p></div><div class="acts"><button class="btn" data-xl="1"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button><button class="btn" id="prr"><i class="ti ti-refresh"></i><span>새로고침</span></button></div></div><div id="prbox"><div class="card"><div class="empty">사방넷 최근 30일 주문을 불러오는 중… (처음엔 10~20초)</div></div></div>'; },
+  bind: function(){
+    var go=function(force){ api('plat_reco',{force:!!force}).then(function(j){ if(j.error) throw {message:j.error}; PR=j; prDraw(); }).catch(function(e){ $('prbox').innerHTML='<div class="card"><div class="empty">불러오지 못했어요 · '+esc(e&&e.message||'')+'</div></div>'; }); };
+    $('prr').onclick=function(){ $('prbox').style.opacity=.5; go(true); };
+    if (PR) prDraw(); else go(false);
+  }
+};
+function prDraw(){
+  var box=$('prbox'); if(!box||!PR) return; box.style.opacity=1;
+  var M=prMaster(), chs=PR.channels.filter(function(c){ return PRF.corp==='전체'||c.corp===PRF.corp; });
+  if (!PRF.ch || !chs.some(function(c){ return c.key===PRF.ch; })) PRF.ch = chs[0] ? chs[0].key : '';
+  var C=PRF.ch, cInfo=PR.channels.filter(function(c){ return c.key===C; })[0]||{};
+  // 상품별 채널 통계
+  var P={}; PR.rows.forEach(function(r){ var o=P[r[0]]||(P[r[0]]={prd:r[0], by:{}, qty:0, amt:0, wk:0}); o.by[r[1]]={qty:r[2], amt:r[3], unit:r[2]?r[3]/r[2]:0, wk:r[4]}; o.qty+=r[2]; o.amt+=r[3]; o.wk+=r[4]; });
+  var nm=function(prd){ var m=M[prd]; return m&&m.name || PR.names[prd] || prd; };
+  var chName=function(k){ var x=k.split('|'); return x[1]+' ('+x[0]+')'; };
+  // 1) 가격: 이 채널 실판매가가 다른 채널 최저보다 3% 이상 비싼 상품 (이 채널에서 팔린 것)
+  var price=[], miss=[], best=[];
+  Object.keys(P).forEach(function(k){ var o=P[k], here=o.by[C], others=Object.keys(o.by).filter(function(x){ return x!==C; });
+    if (here){ best.push({o:o, here:here});
+      var low=null; others.forEach(function(x){ var u=o.by[x].unit; if(u>0 && (!low||u<low.unit)) low={ch:x, unit:u, qty:o.by[x].qty}; });
+      if (low && here.unit > low.unit*1.03) price.push({o:o, here:here, low:low, gap:(here.unit-low.unit)/low.unit*100});
+    } else {
+      var oq=others.reduce(function(t,x){ return t+o.by[x].qty; },0), m=M[k];
+      if (oq>=3 && (!m || m.stock>0 || m.type==='위탁')) { var lowU=Math.min.apply(null, others.map(function(x){ return o.by[x].unit||Infinity; })); miss.push({o:o, oq:oq, lowU:lowU, tops:others.sort(function(a,b){ return o.by[b].qty-o.by[a].qty; }).slice(0,3)}); }
+    } });
+  price.sort(function(a,b){ return b.here.qty*b.gap - a.here.qty*a.gap; });
+  miss.sort(function(a,b){ return b.oq-a.oq; });
+  best.sort(function(a,b){ return b.here.amt-a.here.amt; });
+  // 3) 재고 소진: 재고 있는 사입 상품 중 30일 동안 어디서도 안 팔림 (채널 무관)
+  var stale=Object.keys(M).map(function(k){ return M[k]; }).filter(function(m){ return m.type!=='위탁' && m.stock>0 && !P[m.prd] && (PRF.corp==='전체'||m.corp===PRF.corp); })
+    .map(function(m){ m.val=m.stock*(m.cost||0); return m; }).sort(function(a,b){ return b.val-a.val||b.stock-a.stock; });
+  var tabs=[['price','비싼 채널 · 가격 조정',price.length],['miss','여기선 안 팔림 · 등록/노출',miss.length],['best','이 채널 베스트',best.length],['stale','재고 소진 · 30일 판매 0',stale.length]];
+  var img=function(prd){ var m=M[prd]; return thumb(m||{}); };
+  var stockTxt=function(prd){ var m=M[prd]; return m? (m.type==='위탁'?'위탁':won(m.stock)) : '<span class="sm">앱 미등록</span>'; };
+  var marg=function(prd, unit){ var m=M[prd]; if(!m||!m.cost||!unit) return '—'; var v=(unit-m.cost)/unit*100; return '<span style="color:'+(v<10?'var(--red)':'inherit')+'">'+v.toFixed(0)+'%</span>'; };
+  var lim=function(L){ return L.slice(0,200); };
+  var body='';
+  if (PRF.tab==='price') body = price.length ? '<div class="tblwrap"><table class="tbl"><thead><tr><th style="min-width:240px">상품</th><th class="r">여기 실판매가</th><th class="r">최저 채널</th><th class="r">차이</th><th class="r">여기 30일</th><th class="r">재고</th><th class="r">여기 마진</th></tr></thead><tbody>'+
+      lim(price).map(function(x){ return '<tr><td><div style="display:flex;gap:8px;align-items:center">'+img(x.o.prd)+'<div><b>'+esc(nm(x.o.prd))+'</b><div class="sm">'+esc(x.o.prd)+'</div></div></div></td><td class="r num"><b>'+won(Math.round(x.here.unit))+'</b></td><td class="r num">'+won(Math.round(x.low.unit))+'<div class="sm">'+esc(chName(x.low.ch))+' · '+x.low.qty+'개</div></td><td class="r num" style="color:var(--red)">+'+x.gap.toFixed(1)+'%</td><td class="r num">'+x.here.qty+'개</td><td class="r num">'+stockTxt(x.o.prd)+'</td><td class="r num">'+marg(x.o.prd,x.here.unit)+'</td></tr>'; }).join('')+'</tbody></table></div>'
+    : '<div class="empty">이 채널에서 다른 채널보다 3% 넘게 비싸게 팔린 상품이 없어요</div>';
+  if (PRF.tab==='miss') body = miss.length ? '<div class="tblwrap"><table class="tbl"><thead><tr><th style="min-width:240px">상품</th><th class="r">다른 채널 30일</th><th>잘 팔린 채널</th><th class="r">최저 실판매가</th><th class="r">재고</th><th class="r">마진</th></tr></thead><tbody>'+
+      lim(miss).map(function(x){ return '<tr><td><div style="display:flex;gap:8px;align-items:center">'+img(x.o.prd)+'<div><b>'+esc(nm(x.o.prd))+'</b><div class="sm">'+esc(x.o.prd)+'</div></div></div></td><td class="r num"><b>'+x.oq+'개</b></td><td class="sm">'+x.tops.map(function(c){ return esc(chName(c))+' '+x.o.by[c].qty; }).join('<br>')+'</td><td class="r num">'+(isFinite(x.lowU)?won(Math.round(x.lowU)):'—')+'</td><td class="r num">'+stockTxt(x.o.prd)+'</td><td class="r num">'+marg(x.o.prd,x.lowU)+'</td></tr>'; }).join('')+'</tbody></table></div>'
+    : '<div class="empty">다른 채널에서 3개 이상 팔렸는데 여기서 안 팔린 상품이 없어요</div>';
+  if (PRF.tab==='best') body = best.length ? '<div class="tblwrap"><table class="tbl"><thead><tr><th style="min-width:240px">상품</th><th class="r">30일 수량</th><th class="r">최근 7일</th><th class="r">매출</th><th class="r">실판매가</th><th class="r">재고</th><th class="r">마진</th></tr></thead><tbody>'+
+      lim(best).map(function(x){ var m=M[x.o.prd], low=m&&m.type!=='위탁'&&m.stock<=x.here.wk; return '<tr><td><div style="display:flex;gap:8px;align-items:center">'+img(x.o.prd)+'<div><b>'+esc(nm(x.o.prd))+'</b><div class="sm">'+esc(x.o.prd)+'</div></div></div></td><td class="r num"><b>'+x.here.qty+'</b></td><td class="r num">'+x.here.wk+'</td><td class="r num">'+won(x.here.amt)+'</td><td class="r num">'+won(Math.round(x.here.unit))+'</td><td class="r num"'+(low?' style="color:var(--red)" title="최근 7일 판매량보다 재고가 적어요"':'')+'>'+stockTxt(x.o.prd)+'</td><td class="r num">'+marg(x.o.prd,x.here.unit)+'</td></tr>'; }).join('')+'</tbody></table></div>'
+    : '<div class="empty">이 채널 30일 판매가 없어요</div>';
+  if (PRF.tab==='stale') body = stale.length ? '<div class="tblwrap"><table class="tbl"><thead><tr><th style="min-width:240px">상품</th><th>법인</th><th class="r">재고</th><th class="r">원가</th><th class="r">재고 금액</th><th class="r">판매가</th><th>담당</th></tr></thead><tbody>'+
+      lim(stale).map(function(m){ return '<tr><td><div style="display:flex;gap:8px;align-items:center">'+thumb(m)+'<div><b>'+esc(m.name)+'</b><div class="sm">'+esc(m.prd)+(m.brand?' · '+esc(m.brand):'')+'</div></div></div></td><td><span class="pill">'+esc(m.corp||'')+'</span></td><td class="r num">'+won(m.stock)+'</td><td class="r num">'+(m.cost?won(m.cost):'—')+'</td><td class="r num"><b>'+(m.val?won(m.val):'—')+'</b></td><td class="r num">'+(m.price?won(m.price):'—')+'</td><td>'+esc(m.owner||'')+'</td></tr>'; }).join('')+'</tbody></table></div>'
+    : '<div class="empty">재고 있는데 30일 동안 안 팔린 사입 상품이 없어요</div>';
+  XL_CUR=function(){ var sh=[];
+    sh.push({name:'가격조정', head:['상품코드','상품명','여기 실판매가','최저 채널','최저 실판매가','차이%','여기 30일 수량','재고'], rows:price.map(function(x){ return [x.o.prd,nm(x.o.prd),Math.round(x.here.unit),chName(x.low.ch),Math.round(x.low.unit),+x.gap.toFixed(1),x.here.qty,(M[x.o.prd]||{}).stock]; })});
+    sh.push({name:'등록노출', head:['상품코드','상품명','다른 채널 30일 수량','잘 팔린 채널','최저 실판매가','재고'], rows:miss.map(function(x){ return [x.o.prd,nm(x.o.prd),x.oq,x.tops.map(chName).join(', '),isFinite(x.lowU)?Math.round(x.lowU):'',(M[x.o.prd]||{}).stock]; })});
+    sh.push({name:'재고소진', head:['상품코드','상품명','법인','재고','원가','재고금액','판매가','담당'], rows:stale.map(function(m){ return [m.prd,m.name,m.corp,m.stock,m.cost,m.val,m.price,m.owner]; })});
+    return {file:'플랫폼추천_'+chName(C).replace(/[\\/:*?"<>|]/g,''), sheets:sh}; };
+  box.innerHTML =
+    '<div class="card" style="margin-bottom:16px"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between"><div class="seg" id="prc">'+['전체','겐더샵','셀렉트인'].map(function(c){ return '<button data-v="'+c+'" class="'+(PRF.corp===c?'on':'')+'">'+c+'</button>'; }).join('')+'</div>'+
+      '<span class="sm">'+esc(PR.from.slice(4,6)+'/'+PR.from.slice(6))+' ~ '+esc(PR.to.slice(4,6)+'/'+PR.to.slice(6))+' 주문 '+won(PR.orders)+'건 · '+esc(PR.at)+' 불러옴</span></div>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px" id="prch">'+chs.map(function(c){ return '<button class="btn sm'+(c.key===C?' pri':'')+'" data-k="'+esc(c.key)+'">'+esc(c.shop)+' <span style="opacity:.75">'+esc(c.corp)+' · '+won(Math.round(c.amt/1e4))+'만</span></button>'; }).join('')+'</div></div>'+
+    '<div class="card"><h2 style="margin:0 0 4px">'+esc(chName(C))+' <small>30일 '+won(cInfo.qty||0)+'개 · '+won(cInfo.amt||0)+'원</small></h2>'+
+      '<div class="seg" id="prt" style="margin:10px 0 12px;flex-wrap:wrap">'+tabs.map(function(t){ return '<button data-v="'+t[0]+'" class="'+(PRF.tab===t[0]?'on':'')+'">'+t[1]+' <b>'+t[2]+'</b></button>'; }).join('')+'</div>'+
+      body+
+      '<p style="margin:10px 0 0;font-size:12px;color:var(--mute)">실판매가 = 그 채널 주문금액 ÷ 수량 (쿠폰·할인 반영된 실제 결제 기준) · 우리 판매 채널끼리 비교 · 취소·반품 재생성 제외'+(PRF.tab==='stale'?' · 재고 소진은 채널과 관계없이 전체 기준':'')+'</p></div>';
+  box.querySelectorAll('#prc button').forEach(function(b){ b.onclick=function(){ PRF.corp=b.dataset.v; PRF.ch=''; prSave(); prDraw(); }; });
+  box.querySelectorAll('#prch button').forEach(function(b){ b.onclick=function(){ PRF.ch=b.dataset.k; prSave(); prDraw(); }; });
+  box.querySelectorAll('#prt button').forEach(function(b){ b.onclick=function(){ PRF.tab=b.dataset.v; prSave(); prDraw(); }; });
 }
 
 /* ---------- 홈 ---------- */
