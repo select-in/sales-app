@@ -61,6 +61,9 @@ main{margin-left:var(--side);min-height:100vh;padding:28px 32px 60px}
 .chbar{position:sticky;bottom:0;background:var(--card);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 0 calc(4px + env(safe-area-inset-bottom));margin-top:8px;border-top:1px solid var(--line);font-size:14px}
 .chsel{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}.chsel>span{width:78px;font-size:13px;font-weight:600;color:var(--sub)}
 .chb{border-bottom:1px solid var(--line);padding:10px 0}.chb summary{cursor:pointer;font-size:14px;list-style:none}.chb .s{font-size:12.5px;color:var(--mute)}
+.stchk{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin:-4px 0 12px;font-size:14px}.stchk>span{font-size:13px;font-weight:600;color:var(--sub)}.stchk label{display:flex;align-items:center;gap:5px;cursor:pointer}.stchk small{color:var(--mute)}
+.ptbl tr.grp.open{background:var(--soft)}.ptbl tr.sub td{background:var(--bg);padding-top:8px;padding-bottom:8px}.subnm{padding-left:56px;font-size:14px}.subnm .sku{font-size:12px;color:var(--mute);margin-right:6px}.optc{color:var(--brand);font-weight:600;white-space:nowrap}.optc i{vertical-align:-2px}
+.mcsub{margin:0 0 8px 18px;border-left:2px solid var(--line)}.mcsub .mc{padding-left:12px}
 .tabbar{display:none}
 
 .ph{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:20px;flex-wrap:wrap}
@@ -317,7 +320,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-28c';
+var APP_BUILD = '2026-10-28d';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -628,7 +631,9 @@ function histList(list, emptyMsg){
 }
 
 /* ---------- 상품 관리 ---------- */
-var PF = {q:'', corp:'all', f:'all', page:1, owner:''};
+var PF = {q:'', corp:'all', f:'all', page:1, owner:'', open:{}, st:(function(){ var v=lsGet('hubPfSt'); return v&&typeof v==='object'?v:{'판매':1,'품절':1,'대기중':1,'미사용':0,'기타':1}; })()};
+var PF_STS = ['판매','품절','대기중','미사용','기타'];
+function pfStKey(p){ var k=p.sbnStatus||''; return PF_STS.indexOf(k)>=0 ? k : '기타'; }
 VIEWS.products = {
   html: function(){
     var m = location.hash.match(/f=(\w+)/); if (m) PF.f = m[1];
@@ -640,13 +645,16 @@ VIEWS.products = {
           '<div class="seg" id="pcorp">'+['all','셀렉트인','겐더샵'].map(function(c){ return '<button data-v="'+c+'" class="'+(PF.corp===c?'on':'')+'">'+(c==='all'?'전체 법인':c)+'</button>'; }).join('')+'</div>'+
           '<select class="inp" id="powner" style="width:auto;min-width:130px"><option value="">전체 담당자</option>'+ownerNames().map(function(n){ return '<option'+(PF.owner===n?' selected':'')+'>'+esc(n)+'</option>'; }).join('')+'<option value="-"'+(PF.owner==='-'?' selected':'')+'>담당 미지정</option></select>'+
           '<div class="seg" id="pf">'+[['all','전체'],['real','현재고'],['moum','모음전'],['virtual','가상재고'],['low','부족'],['out','품절'],['consign','위탁']].map(function(c){ return '<button data-v="'+c[0]+'" class="'+(PF.f===c[0]?'on':'')+'">'+c[1]+'</button>'; }).join('')+'</div>'+
-        '</div><div id="plist"></div></div>';
+        '</div>'+
+        '<div class="stchk"><span>사방넷 상태</span>'+PF_STS.map(function(k){ var n=S.products.filter(function(p){ return pfStKey(p)===k; }).length; return '<label><input type="checkbox" data-st="'+k+'"'+(PF.st[k]?' checked':'')+'> '+(k==='판매'?'판매중':k)+' <small class="num">'+won(n)+'</small></label>'; }).join('')+'</div>'+
+        '<div id="plist"></div></div>';
   },
   bind: function(){
     var draw = function(){
       var toks = PF.q.toLowerCase().split(/\s+/).filter(Boolean);
       var L = S.products.filter(function(p){
         if (PF.corp!=='all' && p.corp!==PF.corp) return false;
+        if (!PF.st[pfStKey(p)]) return false;
         if (PF.owner && (PF.owner==='-' ? p.owner : p.owner!==PF.owner)) return false;
         var s = stockState(p);
         if (PF.f==='low' && s!=='low') return false;
@@ -659,23 +667,39 @@ VIEWS.products = {
         return toks.every(function(t){ return hay.indexOf(t)>=0; });
       }).sort(function(a,b){ return (a.brand+a.name+a.option).localeCompare(b.brand+b.name+b.option,'ko'); });
       if (!S.products.length){ $('plist').innerHTML = '<div class="empty">아직 등록한 상품이 없어요.<br>[상품 등록] 또는 [엑셀 붙여넣기]로 시작하세요.</div>'; return; }
-      if (!L.length){ $('plist').innerHTML = '<div class="empty">조건에 맞는 상품이 없어요</div>'; return; }
-      var pages=Math.max(1,Math.ceil(L.length/PG.size)); if(PF.page>pages) PF.page=pages; var shown = L.slice((PF.page-1)*PG.size, PF.page*PG.size);
+      if (!L.length){ $('plist').innerHTML = '<div class="empty">조건에 맞는 상품이 없어요 · 위의 상태 체크를 확인해 보세요</div>'; return; }
+      // 같은 사방넷 상품코드(품번) 아래 옵션(단품)을 하위로 묶음
+      var G = [], gi = {};
+      L.forEach(function(p){ var k = p.sbnPrd ? 'P'+p.sbnPrd : 'I'+p.id; if (!gi[k]){ gi[k] = {k:k, items:[]}; G.push(gi[k]); } gi[k].items.push(p); });
+      G.forEach(function(g){ g.items.sort(function(a,b){ return String(a.sbnSku).localeCompare(String(b.sbnSku)); }); g.p = g.items[0]; });
+      var pages=Math.max(1,Math.ceil(G.length/PG.size)); if(PF.page>pages) PF.page=pages; var shown = G.slice((PF.page-1)*PG.size, PF.page*PG.size);
+      var sumStock = function(g){ var m=stockMode(g.p); if (m==='위탁') return '—'; return won(g.items.reduce(function(t,x){ return t+Math.max(0,effStock(x)); },0)); };
+      var stPills = function(g){ var c={}; g.items.forEach(function(x){ var k=x.sbnStatus||'—'; c[k]=(c[k]||0)+1; }); return Object.keys(c).map(function(k){ return '<span class="pill '+(k==='판매'?'g':k==='품절'?'r':k==='미사용'?'':'a')+'">'+esc(k)+(g.items.length>1?' '+c[k]:'')+'</span>'; }).join(' '); };
+      var priceRange = function(g, f){ var v=g.items.map(function(x){ return x[f]; }), mn=Math.min.apply(null,v), mx=Math.max.apply(null,v); return mn===mx?won(mn):won(mn)+'~'+won(mx); };
+      var childRows = function(g){ return g.items.map(function(p){
+          return '<tr class="click sub" data-id="'+esc(p.id)+'"><td><div class="subnm"><span class="sku">'+esc(p.sbnPrd?p.sbnPrd+'-'+p.sbnSku:(p.sku||''))+'</span> '+esc(p.option||'단품')+'</div></td>'+
+            '<td class="c">'+stPills({items:[p]})+'</td><td class="sm num c">'+esc(p.barcode||'—')+'</td>'+
+            '<td class="c num">'+won(p.cost)+'</td><td class="c num">'+won(p.price)+'</td><td class="c num">'+stockCell(p)+'</td></tr>'; }).join(''); };
       $('plist').innerHTML =
-        '<div class="dtable tblwrap"><table class="tbl"><thead><tr><th>상품</th><th>옵션</th><th>법인 · 구분 · 담당</th><th>사방넷 · 바코드</th><th class="r">원가</th><th class="r">판매가</th><th class="r">재고</th></tr></thead><tbody>'+
-        shown.map(function(p){
-          return '<tr class="click" data-id="'+esc(p.id)+'"><td><div class="pcell">'+thumb(p)+'<div><div class="nm">'+esc(p.name)+'</div><div class="sm">'+esc(p.brand)+(p.loc?' · 위치 '+esc(p.loc):'')+'</div></div></div></td><td class="c">'+esc(p.option)+sbnPill(p)+'</td>'+
-            '<td class="c"><span class="pill '+(p.corp==='겐더샵'?'b':'g')+'">'+esc(p.corp)+'</span> <span class="pill">'+esc(p.type)+'</span><div class="sm" style="margin-top:4px">'+(p.owner?'담당 '+esc(p.owner):'<span style="color:var(--mute)">담당 미지정</span>')+'</div></td>'+
-            '<td class="sm num c">'+(p.sbnPrd?esc(p.sbnPrd)+'-'+esc(p.sbnSku):esc(p.sku||'—'))+'<br>'+esc(p.barcode||'—')+'</td>'+
-            '<td class="c num">'+won(p.cost)+'</td><td class="c num">'+won(p.price)+'</td>'+
-            '<td class="c num">'+stockCell(p)+'</td></tr>';
+        '<div class="dtable tblwrap"><table class="tbl ptbl"><thead><tr><th>상품 (품번)</th><th>상태 · 법인 · 담당</th><th>사방넷 · 바코드</th><th class="r">원가</th><th class="r">판매가</th><th class="r">재고</th></tr></thead><tbody>'+
+        shown.map(function(g){
+          var p=g.p, multi=g.items.length>1, open=!!PF.open[g.k];
+          var head = '<tr class="click grp'+(open?' open':'')+'" data-g="'+esc(g.k)+'"><td><div class="pcell">'+thumb(p)+'<div><div class="nm">'+esc(p.name)+'</div><div class="sm">'+esc(p.brand)+(multi?' · <b class="optc"><i class="ti ti-chevron-'+(open?'up':'down')+'"></i>옵션 '+g.items.length+'개</b>':' · '+esc(p.option||'단품'))+'</div></div></div></td>'+
+            '<td class="c">'+stPills(g)+'<div style="margin-top:4px"><span class="pill '+(p.corp==='겐더샵'?'b':'g')+'">'+esc(p.corp)+'</span> <span class="sm">'+(p.owner?'담당 '+esc(p.owner):'담당 미지정')+'</span></div></td>'+
+            '<td class="sm num c">'+(p.sbnPrd?'<b>'+esc(p.sbnPrd)+'</b>':esc(p.sku||'—'))+(multi?'':'<br>'+esc(p.barcode||'—'))+'</td>'+
+            '<td class="c num">'+priceRange(g,'cost')+'</td><td class="c num">'+priceRange(g,'price')+'</td>'+
+            '<td class="c num">'+(multi?'<div class="stk2"><b>'+sumStock(g)+'</b><span class="lk">'+stockMode(p)+' 합계</span></div>':stockCell(p))+'</td></tr>';
+          return head + (multi&&open ? childRows(g) : '');
         }).join('')+'</tbody></table></div>'+
-        '<div class="mcards">'+shown.map(function(p){
-          return '<div class="mc" data-id="'+esc(p.id)+'">'+thumb(p)+'<div class="m"><div class="t">'+esc(p.name)+'</div><div class="s">'+esc([p.brand,p.option].filter(Boolean).join(' · '))+'</div><div class="s">'+esc(p.corp)+' · '+won(p.price)+'원'+(p.sbnPrd?' · '+esc(p.sbnPrd)+'-'+esc(p.sbnSku):'')+'</div></div>'+
-            '<div class="e">'+stockCell(p)+'</div></div>';
+        '<div class="mcards">'+shown.map(function(g){
+          var p=g.p, multi=g.items.length>1, open=!!PF.open[g.k];
+          return '<div class="mc grp" data-g="'+esc(g.k)+'">'+thumb(p)+'<div class="m"><div class="t">'+esc(p.name)+'</div><div class="s">'+esc([p.corp,p.sbnPrd].filter(Boolean).join(' · '))+(multi?' · <b class="optc">옵션 '+g.items.length+'개 '+(open?'▲':'▼')+'</b>':' · '+esc(p.option||'단품'))+'</div><div class="s">'+stPills(g)+'</div></div>'+
+            '<div class="e">'+(multi?'<div class="stk2"><b>'+sumStock(g)+'</b><span class="lk">합계</span></div>':stockCell(p))+'</div></div>'+
+            (multi&&open ? '<div class="mcsub">'+g.items.map(function(x){ return '<div class="mc" data-id="'+esc(x.id)+'"><div class="m"><div class="t" style="font-size:14px">'+esc(x.option||'단품')+'</div><div class="s">'+esc((x.sbnPrd?x.sbnPrd+'-'+x.sbnSku:'')+' · '+(x.barcode||'바코드 없음'))+'</div><div class="s">'+stPills({items:[x]})+'</div></div><div class="e">'+stockCell(x)+'</div></div>'; }).join('')+'</div>' : '');
         }).join('')+'</div>'+
-        pagerHtml(L.length, PF.page, PG.size);
-      document.querySelectorAll('#plist [data-id]').forEach(function(r){ r.onclick = function(){ openProduct(r.dataset.id); }; });
+        pagerHtml(G.length, PF.page, PG.size).replace('개 ·', '개 품번 · ');
+      document.querySelectorAll('#plist [data-g]').forEach(function(r){ r.onclick = function(){ var g=gi[r.dataset.g]; if (g.items.length>1){ PF.open[g.k]=!PF.open[g.k]; draw(); } else openProduct(g.p.id); }; });
+      document.querySelectorAll('#plist [data-id]').forEach(function(r){ r.onclick = function(e){ e.stopPropagation(); openProduct(r.dataset.id); }; });
       bindPager($('plist'), function(n){ PF.page=n; draw(); });
     };
     $('pq').oninput = function(){ PF.q = this.value; PF.page=1; draw(); };
@@ -686,6 +710,7 @@ VIEWS.products = {
       return 'stop';
     }); };
     $('powner').onchange = function(){ PF.owner = this.value; PF.page=1; draw(); };
+    document.querySelectorAll('[data-st]').forEach(function(c){ c.onchange=function(){ PF.st[c.dataset.st]=c.checked?1:0; lsSet('hubPfSt',PF.st); PF.page=1; draw(); }; });
     document.querySelectorAll('#pcorp button').forEach(function(b){ b.onclick = function(){ PF.corp=b.dataset.v; PF.page=1; document.querySelectorAll('#pcorp button').forEach(function(x){ x.classList.toggle('on',x===b); }); draw(); }; });
     document.querySelectorAll('#pf button').forEach(function(b){ b.onclick = function(){ PF.f=b.dataset.v; PF.page=1; if(location.hash.indexOf('f=')>=0) history.replaceState(null,'','#products'); document.querySelectorAll('#pf button').forEach(function(x){ x.classList.toggle('on',x===b); }); draw(); }; });
     $('padd').onclick = function(){ location.hash = '#register'; setTimeout(function(){ openReg(null); }, 60); };
