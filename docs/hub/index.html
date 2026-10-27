@@ -14,7 +14,7 @@
 <link rel="apple-touch-icon" href="../apple-touch-icon.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
-<script src="config.js"></script>
+<script src="config.js?v=2"></script>
 <style>
 :root{
   --bg:#f4f5f7; --card:#fff; --ink:#15171a; --sub:#5b6370; --mute:#8a919c; --line:#e3e6ea; --line2:#d3d8de;
@@ -259,7 +259,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-27a';
+var APP_BUILD = '2026-10-27b';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -1031,7 +1031,13 @@ function userForm(u){
   };
 }
 
-boot();
+(function start(){
+  // 서버 주소가 캐시된 옛 config.js 때문에 비어 보이면 최신본을 직접 다시 읽음
+  if (API) return boot();
+  fetch('config.js?v='+Date.now(),{cache:'no-store'}).then(function(r){ return r.text(); }).then(function(t){
+    var m = t.match(/HUB_API\s*=\s*'([^']+)'/); if (m) API = m[1].trim();
+  }).catch(function(){}).then(boot);
+})();
 </script>
 </body>
 </html>
