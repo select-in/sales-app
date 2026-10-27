@@ -1179,7 +1179,7 @@ VIEWS.channel = {
       if (!confirm(a[0]+' '+a[1]+' '+CH.kind+'로 '+CH.items.length+'종 '+q+'개를 출고 확정할까요?\n현재고 상품은 재고에서 빠지고, 가상재고 상품은 기록만 남아요.')) return;
       var b=this; b.disabled=true;
       api('channel_ship',{channel:a[0], account:a[1], kind:CH.kind, items:CH.items}).then(function(j){
-        (j.products||[]).forEach(function(np){ var i=S.products.findIndex(function(x){ return x.id===np.id; }); if(i>=0){ S.products[i].stock=np.stock; S.products[i].updatedAt=np.updatedAt; } });
+        (j.products||[]).forEach(function(np){ var i=S.products.findIndex(function(x){ return x.id===np.id; }); if(i>=0){ S.products[i].stock=np.stock; S.products[i].updatedAt=np.updatedAt; sbnQueue(S.products[i]); } });
         (j.moves||[]).forEach(function(m){ S.history.unshift(m); }); persist();
         CH.items=[]; chSave(); CH_LIST=null; toast('출고 확정 · '+j.count+'종 '+j.qty+'개 (배치 '+j.batch+')'); route();
       }).catch(function(e){ b.disabled=false; fail(e); });
