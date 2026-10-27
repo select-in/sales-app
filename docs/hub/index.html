@@ -326,7 +326,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-28s';
+var APP_BUILD = '2026-10-28t';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -1520,9 +1520,9 @@ function krList(){
         var r=g.r, open=(!!KF.allOpen)!==(!!KF.open[g.k]);
         var sizes=g.items.map(function(x){ return x.option; }).filter(function(v,i,a){ return v&&a.indexOf(v)===i; });
         var h='<tr class="click grp'+(open?' open':'')+'" data-g="'+esc(g.k)+'"><td><div class="nm">'+esc(r.name)+'</div><div class="sm">'+esc([r.brand,r.style].filter(Boolean).join(' · '))+' · <b class="optc"><i class="ti ti-chevron-'+(open?'up':'down')+'"></i>'+g.items.length+'건</b> <span class="sm">'+esc(sizes.slice(0,8).join(', ')+(sizes.length>8?' …':''))+'</span></div></td>'+
-          '<td><span class="pill">'+esc(r.account)+'</span></td><td class="r">'+cnts(g)+'</td><td></td><td></td><td class="r num"><b>'+won(g.amt)+'</b></td><td class="num">'+esc(g.at.slice(5,16))+'</td><td class="c num">'+appCell(g.app,null)+'</td></tr>';
+          '<td><span class="pill">'+esc(r.account)+'</span><div class="sm" style="margin-top:4px;white-space:nowrap">'+(function(){ var c={}, o=[]; g.items.forEach(function(x){ var k=x.status||'—'; if(!c[k]){ c[k]=0; o.push(k); } c[k]++; }); return o.map(function(k){ return esc(k)+' '+c[k]; }).join(' · '); })()+'</div></td><td class="r">'+cnts(g)+'</td><td></td><td></td><td class="r num"><b>'+won(g.amt)+'</b></td><td class="num">'+esc(g.at.slice(5,16))+'</td><td class="c num">'+appCell(g.app,null)+'</td></tr>';
         return h+(open?g.items.map(function(x){
-          return '<tr class="sub"><td><div class="subnm"><span class="sku">'+esc(x.oid||'')+'</span> <b>'+esc(x.option||'')+'</b></div></td><td>'+kpill(krKind(x))+' <span class="sm">'+esc(x.status||'')+'</span></td><td class="r num">1</td><td class="r num">'+won(x.price)+'</td><td class="r num">'+(x.fee?won(x.fee):'—')+'</td><td class="r num">'+(x.payout?won(x.payout):'—')+'</td>'+
+          return '<tr class="sub"><td><div class="subnm"><span class="sku">'+esc(x.oid||'')+'</span> <b>'+esc(x.option||'')+'</b></div></td><td>'+kpill(krKind(x))+'<div class="sm" style="margin-top:4px;white-space:nowrap">'+esc(x.status||'')+'</div></td><td class="r num">1</td><td class="r num">'+won(x.price)+'</td><td class="r num">'+(x.fee?won(x.fee):'—')+'</td><td class="r num">'+(x.payout?won(x.payout):'—')+'</td>'+
             '<td class="num">'+(KF.tab==='settle'?dt(x.settledAt)+'<div class="sm">지급 '+esc(String(x.payoutDate||'').slice(5))+'</div>':dt(x.orderedAt))+'</td><td class="c num">'+appCell(g.app,x.option)+'</td></tr>';
         }).join(''):'');
       }).join('')+'</tbody></table></div>'+
