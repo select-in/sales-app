@@ -324,7 +324,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-28o';
+var APP_BUILD = '2026-10-28p';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -1278,17 +1278,17 @@ function krDraw(){
   var acctF=function(r){ return KF.acct==='전체'||r.account===KF.acct; };
   var A=KR.asks.filter(acctF), SL=KR.sales.filter(acctF);
   var prog=SL.filter(function(r){ return !r.settledAt && !/취소|실패|반송/.test(r.status); });
-  var ship=prog.filter(function(r){ return /발송/.test(r.status) && !/완료/.test(r.status); });
+  var ship=prog.filter(function(r){ return r.kind!=='보관' && (/발송/.test(r.status) || r.status==='판매완료'); });
   var ym=new Date(Date.now()+9*3600e3).toISOString().slice(0,7);
   var mon=SL.filter(function(r){ return String(r.settledAt).slice(0,7)===ym; });
   var wait=SL.filter(function(r){ return r.payoutDate && String(r.payoutDate)>=new Date(Date.now()+9*3600e3).toISOString().slice(0,10); });
   var sum=function(L,k){ return L.reduce(function(t,r){ return t+(Number(r[k])||0); },0); };
-  var syn=Object.keys(KR.synced||{}).map(function(k){ return k+' '+KR.synced[k]; }).join(' · ');
+  var syn=Object.keys(KR.synced||{}).map(function(k){ var v=KR.synced[k], d=new Date(v); return k+' '+(isNaN(d)?v:(d.getMonth()+1)+'/'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')); }).join(' · ');
   var tabs=[['live','입찰중',A.length],['prog','진행중',prog.length],['settle','정산',SL.filter(function(r){ return r.settledAt; }).length],['cancel','취소',SL.filter(function(r){ return /취소|실패|반송/.test(r.status); }).length]];
   box.innerHTML =
     '<div class="grid g4">'+
       '<div class="kpi"><div class="k"><i class="ti ti-gavel"></i>입찰중</div><div class="v num">'+won(A.length)+'<small>건</small></div></div>'+
-      '<div class="kpi '+(ship.length?'amber':'')+'"><div class="k"><i class="ti ti-truck"></i>발송 필요</div><div class="v num">'+won(ship.length)+'<small>건</small></div></div>'+
+      '<div class="kpi '+(ship.length?'amber':'')+'"><div class="k"><i class="ti ti-truck"></i>발송 필요 <small style="font-weight:400">(일반판매)</small></div><div class="v num">'+won(ship.length)+'<small>건</small></div></div>'+
       '<div class="kpi"><div class="k"><i class="ti ti-coin"></i>이번 달 정산</div><div class="v num">'+won(Math.round(sum(mon,'payout')/1e4))+'<small>만원 · '+mon.length+'건</small></div></div>'+
       '<div class="kpi"><div class="k"><i class="ti ti-calendar-dollar"></i>지급 예정</div><div class="v num">'+won(Math.round(sum(wait,'payout')/1e4))+'<small>만원 · '+wait.length+'건</small></div></div>'+
     '</div>'+
@@ -1338,7 +1338,7 @@ function krList(){
       var r=g.r, n=g.items.length, open=(!!KF.allOpen)!==(!!KF.open[g.k]);
       var sizes=g.items.map(function(x){ return x.option; }).filter(function(v,i,a){ return v&&a.indexOf(v)===i; });
       var h='<tr class="click grp'+(open?' open':'')+'" data-g="'+esc(g.k)+'"><td><div class="nm">'+esc(r.name)+'</div><div class="sm">'+esc([r.brand,r.style].filter(Boolean).join(' · '))+' · <b class="optc"><i class="ti ti-chevron-'+(open?'up':'down')+'"></i>'+n+'건</b> <span class="sm">'+esc(sizes.slice(0,8).join(', ')+(sizes.length>8?' …':''))+'</span></div></td>'+
-        '<td><span class="pill">'+esc(r.account)+'</span></td>'+
+        '<td><span class="pill">'+esc(r.account)+'</span>'+(live?'':' <span class="sm">'+esc(g.items.map(function(x){ return x.status; }).filter(function(v,i,a){ return v&&a.indexOf(v)===i; }).join(', '))+'</span>')+'</td>'+
         (live ? '<td class="r num">'+(n>1?won(Math.min.apply(null,g.items.map(function(x){ return x.price; })))+'~':won(r.price))+'</td><td></td><td></td><td class="r num">'+won(g.items.reduce(function(t,x){ return t+(Number(x.payout)||0); },0))+'</td>'
               : '<td class="r num">'+won(g.items.reduce(function(t,x){ return t+(Number(x.price)||0); },0))+'</td><td></td><td class="r num"><b>'+won(g.amt)+'</b></td><td class="num">'+esc(g.at.slice(5,16))+'</td>')+
         '<td class="c num">'+appCell(g.app,null)+'</td></tr>';
