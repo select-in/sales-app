@@ -306,7 +306,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-27p';
+var APP_BUILD = '2026-10-27q';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -608,7 +608,7 @@ function histList(list, emptyMsg){
 }
 
 /* ---------- 상품 관리 ---------- */
-var PF = {q:'', corp:'all', f:'all', page:1};
+var PF = {q:'', corp:'all', f:'all', page:1, owner:''};
 VIEWS.products = {
   html: function(){
     var m = location.hash.match(/f=(\w+)/); if (m) PF.f = m[1];
@@ -618,6 +618,7 @@ VIEWS.products = {
         '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">'+
           '<div class="search"><i class="ti ti-search"></i><input class="inp" id="pq" placeholder="상품명, 브랜드, 바코드, 상품코드" value="'+esc(PF.q)+'"></div>'+
           '<div class="seg" id="pcorp">'+['all','셀렉트인','겐더샵'].map(function(c){ return '<button data-v="'+c+'" class="'+(PF.corp===c?'on':'')+'">'+(c==='all'?'전체 법인':c)+'</button>'; }).join('')+'</div>'+
+          '<select class="inp" id="powner" style="width:auto;min-width:130px"><option value="">전체 담당자</option>'+ownerNames().map(function(n){ return '<option'+(PF.owner===n?' selected':'')+'>'+esc(n)+'</option>'; }).join('')+'<option value="-"'+(PF.owner==='-'?' selected':'')+'>담당 미지정</option></select>'+
           '<div class="seg" id="pf">'+[['all','전체'],['real','재고관리'],['virtual','가상재고'],['low','부족'],['out','품절'],['consign','위탁']].map(function(c){ return '<button data-v="'+c[0]+'" class="'+(PF.f===c[0]?'on':'')+'">'+c[1]+'</button>'; }).join('')+'</div>'+
         '</div><div id="plist"></div></div>';
   },
@@ -626,23 +627,24 @@ VIEWS.products = {
       var toks = PF.q.toLowerCase().split(/\s+/).filter(Boolean);
       var L = S.products.filter(function(p){
         if (PF.corp!=='all' && p.corp!==PF.corp) return false;
+        if (PF.owner && (PF.owner==='-' ? p.owner : p.owner!==PF.owner)) return false;
         var s = stockState(p);
         if (PF.f==='low' && s!=='low') return false;
         if (PF.f==='out' && s!=='out') return false;
         if (PF.f==='consign' && p.type!=='위탁') return false;
         if (PF.f==='real' && (isVirtual(p) || p.type==='위탁')) return false;
         if (PF.f==='virtual' && !isVirtual(p)) return false;
-        var hay = [p.name,p.brand,p.option,p.sku,p.barcode,p.loc,p.cat,p.sbnPrd,p.sbnPrd&&p.sbnPrd+'-'+p.sbnSku].join(' ').toLowerCase();
+        var hay = [p.name,p.brand,p.option,p.sku,p.barcode,p.loc,p.cat,p.owner,p.sbnPrd,p.sbnPrd&&p.sbnPrd+'-'+p.sbnSku].join(' ').toLowerCase();
         return toks.every(function(t){ return hay.indexOf(t)>=0; });
       }).sort(function(a,b){ return (a.brand+a.name+a.option).localeCompare(b.brand+b.name+b.option,'ko'); });
       if (!S.products.length){ $('plist').innerHTML = '<div class="empty">아직 등록한 상품이 없어요.<br>[상품 등록] 또는 [엑셀 붙여넣기]로 시작하세요.</div>'; return; }
       if (!L.length){ $('plist').innerHTML = '<div class="empty">조건에 맞는 상품이 없어요</div>'; return; }
       var pages=Math.max(1,Math.ceil(L.length/PG.size)); if(PF.page>pages) PF.page=pages; var shown = L.slice((PF.page-1)*PG.size, PF.page*PG.size);
       $('plist').innerHTML =
-        '<div class="dtable tblwrap"><table class="tbl"><thead><tr><th>상품</th><th>옵션</th><th>법인 · 구분</th><th>사방넷 · 바코드</th><th class="r">원가</th><th class="r">판매가</th><th class="r">재고</th></tr></thead><tbody>'+
+        '<div class="dtable tblwrap"><table class="tbl"><thead><tr><th>상품</th><th>옵션</th><th>법인 · 구분 · 담당</th><th>사방넷 · 바코드</th><th class="r">원가</th><th class="r">판매가</th><th class="r">재고</th></tr></thead><tbody>'+
         shown.map(function(p){
           return '<tr class="click" data-id="'+esc(p.id)+'"><td><div class="pcell">'+thumb(p)+'<div><div class="nm">'+esc(p.name)+'</div><div class="sm">'+esc(p.brand)+(p.loc?' · 위치 '+esc(p.loc):'')+'</div></div></div></td><td class="c">'+esc(p.option)+sbnPill(p)+'</td>'+
-            '<td class="c"><span class="pill '+(p.corp==='겐더샵'?'b':'g')+'">'+esc(p.corp)+'</span> <span class="pill">'+esc(p.type)+'</span></td>'+
+            '<td class="c"><span class="pill '+(p.corp==='겐더샵'?'b':'g')+'">'+esc(p.corp)+'</span> <span class="pill">'+esc(p.type)+'</span><div class="sm" style="margin-top:4px">'+(p.owner?'담당 '+esc(p.owner):'<span style="color:var(--mute)">담당 미지정</span>')+'</div></td>'+
             '<td class="sm num c">'+(p.sbnPrd?esc(p.sbnPrd)+'-'+esc(p.sbnSku):esc(p.sku||'—'))+'<br>'+esc(p.barcode||'—')+'</td>'+
             '<td class="c num">'+won(p.cost)+'</td><td class="c num">'+won(p.price)+'</td>'+
             '<td class="c num">'+stockCell(p)+'</td></tr>';
@@ -656,6 +658,7 @@ VIEWS.products = {
       bindPager($('plist'), function(n){ PF.page=n; draw(); });
     };
     $('pq').oninput = function(){ PF.q = this.value; PF.page=1; draw(); };
+    $('powner').onchange = function(){ PF.owner = this.value; PF.page=1; draw(); };
     document.querySelectorAll('#pcorp button').forEach(function(b){ b.onclick = function(){ PF.corp=b.dataset.v; PF.page=1; document.querySelectorAll('#pcorp button').forEach(function(x){ x.classList.toggle('on',x===b); }); draw(); }; });
     document.querySelectorAll('#pf button').forEach(function(b){ b.onclick = function(){ PF.f=b.dataset.v; PF.page=1; if(location.hash.indexOf('f=')>=0) history.replaceState(null,'','#products'); document.querySelectorAll('#pf button').forEach(function(x){ x.classList.toggle('on',x===b); }); draw(); }; });
     $('padd').onclick = function(){ openProduct(null); };
@@ -677,6 +680,7 @@ function drawer(title, body, foot){
 function escClose(e){ if(e.key==='Escape') closeDrawer(); }
 function closeDrawer(){ closeScanner(); var o=$('ov'); if(o) o.remove(); document.removeEventListener('keydown', escClose); }
 
+function ownerNames(){ var m={}; S.products.forEach(function(p){ if(p.owner) m[p.owner]=1; }); (S.users||[]).forEach(function(u){ m[u.name]=1; }); return Object.keys(m).sort(function(a,b){ return a.localeCompare(b,'ko'); }); }
 function productForm(p){
   p = p || {corp:'셀렉트인',type:'사입'};
   function f(k,label,opt){ opt=opt||{}; return '<label class="fld"><span>'+label+(opt.req?' <em>*</em>':'')+'</span><input class="inp'+(opt.num?' r num':'')+'" name="'+k+'" value="'+esc(p[k]==null?'':(opt.num&&p[k]!==''?won(p[k]):p[k]))+'"'+(opt.num?' inputmode="numeric"':'')+(opt.ph?' placeholder="'+opt.ph+'"':'')+'></label>'; }
@@ -689,6 +693,7 @@ function productForm(p){
     '<div class="row2">'+f('cost','원가 (원)',{num:1})+f('price','판매가 (원)',{num:1})+'</div>'+
     '<div class="preview" id="fmargin"></div>'+
     '<div class="row3" style="margin-top:12px">'+(p.id?'':f('stock','시작 재고',{num:1}))+f('safety','안전재고',{num:1,ph:'이하면 부족 표시'})+f('loc','보관 위치',{ph:'예) A-01'})+'</div>'+
+    '<label class="fld"><span>담당자 <small style="color:var(--mute);font-weight:400">상품 등록·관리 책임자</small></span><input class="inp" name="owner" list="ownerList" value="'+esc(p.owner||'')+'" placeholder="예) 김승현"><datalist id="ownerList">'+ownerNames().map(function(n){ return '<option value="'+esc(n)+'">'; }).join('')+'</datalist></label>'+
     '<label class="fld"><span>메모</span><textarea class="inp" name="memo" rows="2">'+esc(p.memo||'')+'</textarea></label>'+
   '</form>';
 }
@@ -708,7 +713,7 @@ function bindProductForm(){
   if (!F.barcode.value && 'ontouchstart' in window) F.barcode.setAttribute('placeholder','[스캔]으로 바로 찍기');
 }
 function formData(F){
-  var o = {}; ['name','brand','option','barcode','sku','corp','type','cost','price','stock','safety','loc','memo'].forEach(function(k){ if(F[k]) o[k] = F[k].value; });
+  var o = {}; ['name','brand','option','barcode','sku','corp','type','cost','price','stock','safety','loc','memo','owner'].forEach(function(k){ if(F[k]) o[k] = F[k].value; });
   ['cost','price','stock','safety'].forEach(function(k){ if(o[k]!=null) o[k] = String(o[k]).replace(/[^\d.-]/g,''); });
   return o;
 }
@@ -1406,8 +1411,8 @@ function openSbnFlags(){
     '<button class="btn" onclick="closeDrawer()">취소</button><button class="btn pri" id="sbngo">반영</button>');
   $('sbngo').onclick = function(){
     var b=this; b.disabled=true; $('sbnmsg').textContent='저장 중…';
-    api('sbn_flags',{rows:R.map(function(r){ return {sbnPrd:r.sbnPrd,sbnSku:r.sbnSku,stocMng:r.stocMng,vstock:r.vstock}; })}).then(function(j){
-      $('sbnmsg').innerHTML='완료 · 재고관리 <b>'+won(j.y)+'</b> · 가상재고 <b>'+won(j.n)+'</b> · 앱에 없는 단품 '+won(j.missing)+'개'+(j.byCorp?'<br>'+Object.keys(j.byCorp).map(function(c){ var o=j.byCorp[c]; return esc(c)+' 재고관리 '+won(o.y)+' / 가상재고 '+won(o.n); }).join('<br>'):'');
+    api('sbn_flags',{rows:R.map(function(r){ return {sbnPrd:r.sbnPrd,sbnSku:r.sbnSku,stocMng:r.stocMng,vstock:r.vstock,owner:r.owner||''}; })}).then(function(j){
+      $('sbnmsg').innerHTML='완료 · 재고관리 <b>'+won(j.y)+'</b> · 가상재고 <b>'+won(j.n)+'</b> · 앱에 없는 단품 '+won(j.missing)+'개'+(j.ownerSet?' · 담당자 채움 '+won(j.ownerSet)+'개':'')+(j.byCorp?'<br>'+Object.keys(j.byCorp).map(function(c){ var o=j.byCorp[c]; return esc(c)+' 재고관리 '+won(o.y)+' / 가상재고 '+won(o.n); }).join('<br>'):'');
       b.textContent='닫기'; b.disabled=false; b.onclick=function(){ closeDrawer(); boot(); };
     }).catch(function(e){ b.disabled=false; fail(e); });
   };

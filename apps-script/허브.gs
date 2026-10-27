@@ -17,13 +17,13 @@
  */
 
 var HUB_TABS = {
-  상품: ['id', 'SKU', '바코드', '상품명', '브랜드', '옵션', '법인', '구분', '원가', '판매가', '재고', '안전재고', '위치', '메모', '수정일', '수정자', '사방넷상품코드', '단품코드', '이미지', '사방넷상태', '카테고리', '등록상태', '등록정보', '바코드반영대기', '재고관리', '가상재고'],
+  상품: ['id', 'SKU', '바코드', '상품명', '브랜드', '옵션', '법인', '구분', '원가', '판매가', '재고', '안전재고', '위치', '메모', '수정일', '수정자', '사방넷상품코드', '단품코드', '이미지', '사방넷상태', '카테고리', '등록상태', '등록정보', '바코드반영대기', '재고관리', '가상재고', '담당자'],
   재고이력: ['일시', '상품id', 'SKU', '상품명', '구분', '수량', '변경후재고', '메모', '작업자'],
   원가이력: ['일시', '상품id', 'SKU', '상품명', '이전원가', '새원가', '작업자'],
   직원: ['이름', '권한', 'PIN', '사용', '등록일'],
   설정: ['키', '값', '수정일', '수정자']
 };
-var HUB_P_FIELDS = ['id', 'sku', 'barcode', 'name', 'brand', 'option', 'corp', 'type', 'cost', 'price', 'stock', 'safety', 'loc', 'memo', 'updatedAt', 'updatedBy', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg', 'barPending', 'stocMng', 'vstock'];
+var HUB_P_FIELDS = ['id', 'sku', 'barcode', 'name', 'brand', 'option', 'corp', 'type', 'cost', 'price', 'stock', 'safety', 'loc', 'memo', 'updatedAt', 'updatedBy', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg', 'barPending', 'stocMng', 'vstock', 'owner'];
 var HUB_TOKEN_DAYS = 90;
 
 /* ===================== 진입점 ===================== */
@@ -222,7 +222,7 @@ function hubProductObj_(v) {
   var o = {};
   HUB_P_FIELDS.forEach(function (f, i) { o[f] = v[i] instanceof Date ? Utilities.formatDate(v[i], 'Asia/Seoul', 'yyyy-MM-dd HH:mm') : v[i]; });
   ['cost', 'price', 'stock', 'safety', 'vstock'].forEach(function (f) { o[f] = hubNum_(o[f]); });
-  ['id', 'sku', 'barcode', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg', 'barPending', 'stocMng'].forEach(function (f) { o[f] = String(o[f] == null ? '' : o[f]); });
+  ['id', 'sku', 'barcode', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg', 'barPending', 'stocMng', 'owner'].forEach(function (f) { o[f] = String(o[f] == null ? '' : o[f]); });
   return o;
 }
 function hubProducts_() {
@@ -236,7 +236,7 @@ function hubFindProduct_(id) {
 function hubClean_(p) {
   return {
     sku: hubStr_(p.sku, 60), barcode: hubStr_(p.barcode, 60), name: hubStr_(p.name, 150), brand: hubStr_(p.brand, 60),
-    option: hubStr_(p.option, 80), corp: p.corp === '겐더샵' ? '겐더샵' : '셀렉트인', type: p.type === '위탁' ? '위탁' : '사입',
+    option: hubStr_(p.option, 80), owner: hubStr_(p.owner, 30), corp: p.corp === '겐더샵' ? '겐더샵' : '셀렉트인', type: p.type === '위탁' ? '위탁' : '사입',
     cost: hubNum_(p.cost), price: hubNum_(p.price), safety: hubNum_(p.safety), loc: hubStr_(p.loc, 40), memo: hubStr_(p.memo, 300)
   };
 }
@@ -373,7 +373,7 @@ function hubSbnSync_(rows, me) {
         id: hubNewId_(), sku: key, barcode: bar, name: hubStr_(r.name, 150), brand: hubStr_(r.brand, 60), option: hubStr_(r.option, 80),
         corp: r.corp === '셀렉트인' ? '셀렉트인' : '겐더샵', type: '사입', cat: hubStr_(r.cat, 60), cost: cost, price: hubNum_(r.price), stock: stock,
         safety: hubNum_(r.safety), loc: '', memo: '', updatedAt: now, updatedBy: '사방넷',
-        sbnPrd: hubStr_(r.sbnPrd, 30), sbnSku: hubStr_(r.sbnSku, 20), img: hubStr_(r.img, 300), sbnStatus: hubStr_(r.sbnStatus, 20), stocMng: mng, vstock: vst
+        sbnPrd: hubStr_(r.sbnPrd, 30), sbnSku: hubStr_(r.sbnSku, 20), img: hubStr_(r.img, 300), sbnStatus: hubStr_(r.sbnStatus, 20), stocMng: mng, vstock: vst, owner: hubStr_(r.owner, 30)
       };
       list.push(n); byKey[key] = n; if (bar && !byBar[bar]) byBar[bar] = n; added++;
     }
@@ -385,25 +385,26 @@ function hubSbnSync_(rows, me) {
 }
 
 /* 재고관리 사용여부·가상재고만 갱신 (다른 값은 건드리지 않음)
- * rows: [{sbnPrd, sbnSku, stocMng:'Y'|'N', vstock}] */
+ * rows: [{sbnPrd, sbnSku, stocMng:'Y'|'N', vstock, owner}] — owner(사방넷 등록자)는 앱 담당자가 비어 있을 때만 채움 */
 function hubSbnFlags_(rows, me) {
   if (!rows || !rows.length) return { error: '가져올 행이 없습니다' };
   var map = {};
   rows.forEach(function (r) { if (r && r.sbnPrd) map[hubStr_(r.sbnPrd, 30) + '-' + hubStr_(r.sbnSku, 20)] = r; });
-  var list = hubProducts_(), y = 0, n = 0, hitN = 0, byCorp = {};
+  var list = hubProducts_(), y = 0, n = 0, hitN = 0, byCorp = {}, ownerSet = 0;
   list.forEach(function (p) {
     var r = p.sbnPrd && map[p.sbnPrd + '-' + p.sbnSku];
     if (!r) return;
     hitN++; delete map[p.sbnPrd + '-' + p.sbnSku];
     if (r.stocMng === 'Y' || r.stocMng === 'N') p.stocMng = r.stocMng;
     if (r.vstock != null && r.vstock !== '') p.vstock = Math.round(hubNum_(r.vstock));
+    if (r.owner && !p.owner) { p.owner = hubStr_(r.owner, 30); ownerSet++; }
     var c = byCorp[p.corp] || (byCorp[p.corp] = { y: 0, n: 0 });
     if (p.stocMng === 'N') { n++; c.n++; } else if (p.stocMng === 'Y') { y++; c.y++; }
   });
   hubWriteAll_(list);
   var missing = Object.keys(map).length;
   hubConfigSet_('sbn_flags', '재고관리 ' + y + ' · 가상재고 ' + n + (missing ? ' · 앱에 없음 ' + missing : ''), me);
-  return { ok: true, matched: hitN, y: y, n: n, missing: missing, byCorp: byCorp };
+  return { ok: true, matched: hitN, y: y, n: n, missing: missing, byCorp: byCorp, ownerSet: ownerSet };
 }
 
 /* ===================== 재고 ===================== */
