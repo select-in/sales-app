@@ -43,6 +43,8 @@ function doPost(e) {
       case 'products_import': return hubOut_(hubLocked_(function () { return hubImport_(req.rows, me); }));
       case 'sbn_sync': if (!admin) return hubOut_({ error: '관리자만 사방넷 동기화를 할 수 있습니다' });
         return hubOut_(hubLocked_(function () { return hubSbnSync_(req.rows, me, req.final); }));
+      case 'sbn_flags': if (!admin) return hubOut_({ error: '관리자만 사방넷 동기화를 할 수 있습니다' });
+        return hubOut_(hubLocked_(function () { return hubSbnFlags_(req.rows, me); }));
       case 'photo_upload': return hubOut_(hubPhotoUpload_(req, me));
       case 'ai_fill': return hubOut_(hubAiFill_(req));
       case 'barsheet_export': return hubOut_(hubLocked_(function () { return hubBarSheetExport_(req, me); }));
@@ -361,6 +363,28 @@ function hubSbnSync_(rows, me) {
   hubWriteLogs_(logs);
   hubConfigSet_('sbn_sync', '추가 ' + added + ' · 갱신 ' + updated + ' · 재고변경 ' + stockChanged + (mngY + mngN ? ' · 재고관리 ' + mngY + ' / 가상재고 ' + mngN : ''), me);
   return { ok: true, added: added, updated: updated, stockChanged: stockChanged, mngY: mngY, mngN: mngN };
+}
+
+/* 재고관리 사용여부·가상재고만 갱신 (다른 값은 건드리지 않음)
+ * rows: [{sbnPrd, sbnSku, stocMng:'Y'|'N', vstock}] */
+function hubSbnFlags_(rows, me) {
+  if (!rows || !rows.length) return { error: '가져올 행이 없습니다' };
+  var map = {};
+  rows.forEach(function (r) { if (r && r.sbnPrd) map[hubStr_(r.sbnPrd, 30) + '-' + hubStr_(r.sbnSku, 20)] = r; });
+  var list = hubProducts_(), y = 0, n = 0, hitN = 0, byCorp = {};
+  list.forEach(function (p) {
+    var r = p.sbnPrd && map[p.sbnPrd + '-' + p.sbnSku];
+    if (!r) return;
+    hitN++; delete map[p.sbnPrd + '-' + p.sbnSku];
+    if (r.stocMng === 'Y' || r.stocMng === 'N') p.stocMng = r.stocMng;
+    if (r.vstock != null && r.vstock !== '') p.vstock = Math.round(hubNum_(r.vstock));
+    var c = byCorp[p.corp] || (byCorp[p.corp] = { y: 0, n: 0 });
+    if (p.stocMng === 'N') { n++; c.n++; } else if (p.stocMng === 'Y') { y++; c.y++; }
+  });
+  hubWriteAll_(list);
+  var missing = Object.keys(map).length;
+  hubConfigSet_('sbn_flags', '재고관리 ' + y + ' · 가상재고 ' + n + (missing ? ' · 앱에 없음 ' + missing : ''), me);
+  return { ok: true, matched: hitN, y: y, n: n, missing: missing, byCorp: byCorp };
 }
 
 /* ===================== 재고 ===================== */

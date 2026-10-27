@@ -302,7 +302,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-27m';
+var APP_BUILD = '2026-10-27n';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -1365,11 +1365,28 @@ window.addEventListener('message', function(e){
   var d = e.data;
   if (d.type === 'sbn_ping'){ e.source.postMessage({type:'hub_ready', admin:isAdmin()}, SBN_ORIGIN); return; }
   if (d.type !== 'sbn_rows' || !Array.isArray(d.rows)) return;
-  if (!SBN_IN || SBN_IN.batch !== d.batch) SBN_IN = {batch:d.batch, rows:[], total:d.total};
+  if (!SBN_IN || SBN_IN.batch !== d.batch) SBN_IN = {batch:d.batch, rows:[], total:d.total, mode:d.mode==='flags'?'flags':'full'};
   SBN_IN.rows = SBN_IN.rows.concat(d.rows);
   e.source.postMessage({type:'hub_got', n:SBN_IN.rows.length}, SBN_ORIGIN);
-  if (d.final) openSbnImport();
+  if (d.final) (SBN_IN.mode==='flags' ? openSbnFlags : openSbnImport)();
 });
+function openSbnFlags(){
+  if (!S.me) return;
+  if (!isAdmin()) return toast('사방넷 동기화는 관리자만 할 수 있어요',true);
+  var R = SBN_IN.rows, y = R.filter(function(r){ return r.stocMng==='Y'; }).length, n = R.filter(function(r){ return r.stocMng==='N'; }).length;
+  drawer('사방넷 재고관리 구분 가져오기',
+    '<div class="sel" style="margin:0"><div class="nm">단품 '+won(R.length)+'개를 받았어요</div><div class="meta">재고관리 사용함 <b>'+won(y)+'</b> · 사용안함(가상재고) <b>'+won(n)+'</b></div></div>'+
+    '<ul class="plan" style="padding-left:20px;margin:16px 0 0"><li>앱 상품의 <b>재고관리 여부·가상재고 수량</b>만 바꿔요 (상품명·바코드·원가·재고 수량은 그대로)</li><li>사용안함 상품은 <b>가상재고</b>로 표시 — 입출고·품절 경고에서 빠져요</li></ul>'+
+    '<div class="preview" id="sbnmsg">아래 [반영]을 누르면 시작해요</div>',
+    '<button class="btn" onclick="closeDrawer()">취소</button><button class="btn pri" id="sbngo">반영</button>');
+  $('sbngo').onclick = function(){
+    var b=this; b.disabled=true; $('sbnmsg').textContent='저장 중…';
+    api('sbn_flags',{rows:R.map(function(r){ return {sbnPrd:r.sbnPrd,sbnSku:r.sbnSku,stocMng:r.stocMng,vstock:r.vstock}; })}).then(function(j){
+      $('sbnmsg').innerHTML='완료 · 재고관리 <b>'+won(j.y)+'</b> · 가상재고 <b>'+won(j.n)+'</b> · 앱에 없는 단품 '+won(j.missing)+'개'+(j.byCorp?'<br>'+Object.keys(j.byCorp).map(function(c){ var o=j.byCorp[c]; return esc(c)+' 재고관리 '+won(o.y)+' / 가상재고 '+won(o.n); }).join('<br>'):'');
+      b.textContent='닫기'; b.disabled=false; b.onclick=function(){ closeDrawer(); boot(); };
+    }).catch(function(e){ b.disabled=false; fail(e); });
+  };
+}
 function openSbnImport(){
   if (!S.me) return;
   if (!isAdmin()) return toast('사방넷 동기화는 관리자만 할 수 있어요',true);
