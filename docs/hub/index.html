@@ -343,7 +343,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-30d-r1';
+var APP_BUILD = '2026-10-30e';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -631,6 +631,7 @@ function syncAll(){
     api('boot',{compact:1}).then(function(j){ S={me:j.me, products:expandProducts(j), history:j.history||[], config:j.config||{}, users:j.users||[]}; KR_IDX=null; persist(); }),
     (typeof salesLoad==='function'?salesLoad(true):Promise.resolve()).catch(function(){}),
     (typeof krLoad==='function'?krLoad(true):Promise.resolve()).catch(function(){}),
+    (typeof pzLoad==='function'?pzLoad(true):Promise.resolve()).catch(function(){}),
     krAsk()
   ];
   Promise.all(jobs).then(function(){ SYNC_AT=hhmm(); toast('동기화 완료 · 상품·재고·매출 최신 · 크림은 1~2분 뒤 자동 반영'); })
@@ -1445,12 +1446,15 @@ function krInboundPending(acct){   // 크림 보관판매: 보관 신청 후 창
   return KR.inv.filter(function(r){ return r.account===acct && r.stage==='shipment_required'; });
 }
 function krTodo(acct, kind){ return kind==='보관판매' ? krInboundPending(acct) : krShipPending(acct); }
+var PZ = null;
+function pzLoad(force){ if (PZ && !force) return Promise.resolve(PZ); return api('pzn_list',{}).then(function(j){ PZ=j; return PZ; }); }
+function pzWaiting(acct){ if (!PZ) return []; return PZ.rows.filter(function(r){ return r.account===acct && r.tab==='WAIT_SHIPPING'; }).map(function(r){ return {oid:r.orderNo, style:r.style, name:r.name, option:r.option, price:r.price, payout:r.payout, deadline:r.deadline}; }); }
+function chTodoList(ch, acct, kind){ return ch==='POIZON' ? pzWaiting(acct) : krTodo(acct, kind); }
 function krUsedOids(){ var u={}; CH.items.forEach(function(i){ if(i.orderNo) u[i.orderNo]=1; }); (CH_LIST||[]).forEach(function(r){ if(r.orderNo) u[r.orderNo]=1; }); return u; }
 function krOptEq(p, opt){ var a=String(p.option||'').toUpperCase().replace(/\s/g,''), b=String(opt||'').toUpperCase().replace(/\s/g,''); return !!b && (a===b || a.split(/[:\/]/).pop()===b); }
 function krMatchShip(p){   // 스캔한 상품과 품번·사이즈가 같은 크림 발송 대기 주문
-  if (CH.ch!=='KREAM') return null;
   var used=krUsedOids(), nm=krNorm(p.name+' '+p.sku+' '+p.memo);
-  return krTodo(CH.corp, CH.kind).filter(function(r){
+  return chTodoList(CH.ch, CH.corp, CH.kind).filter(function(r){
     if (used[r.oid]) return false;
     var mp=krMap(r.style), ok=mp ? krMapProducts(mp).some(function(x){ return x.id===p.id; }) : String(r.style||'').split(/[\/,]/).map(krNorm).some(function(k){ return k.length>=5 && nm.indexOf(k)>=0; });
     if (!ok) return false; var L=[p]; L._style=mp?r.style:''; return krSizeHit(L, r.option).length>0;
@@ -1496,7 +1500,7 @@ function chDraw(){
 }
 function chKrDraw(){   // 크림 출고 대상 (일반판매 발송 · 보관판매 창고 발송) — 계정별, 스캔하면 자동 매칭
   var el=$('chtodo')||$('chkr'); if(!el) return;
-  if (CH.ch!=='KREAM'){ el.innerHTML='<div class="s" style="margin:4px 0 10px;color:var(--mute)">포이즌 출고 대상은 포이즌 판매자센터 연결 후 보여요</div>'; return; }
+  if (CH.ch==='POIZON') return pzTodoDraw(el);
   if (!KR){ el.innerHTML='<div class="s" style="margin:4px 0 10px;color:var(--mute)">크림 출고 대상 불러오는 중…</div>'; return; }
   var used=krUsedOids();
   var cnt=function(a,k){ var L=krTodo(a,k); return [L.length, L.filter(function(r){ return used[r.oid]; }).length]; };
@@ -1509,6 +1513,18 @@ function chKrDraw(){   // 크림 출고 대상 (일반판매 발송 · 보관판
     : '<div class="s" style="margin:8px 0;color:var(--mute)">크림 '+esc(CH.corp)+' '+(CH.kind==='일반판매'?'일반판매 발송':'보관판매 입고(발송)')+' 대상 없음'+(KR.synced&&KR.synced[CH.corp]?' · 동기화 '+esc(krFmtAt(KR.synced[CH.corp])):' (이 계정은 아직 동기화 전)')+'</div>';
   el.innerHTML='<div class="sec" style="margin:2px 0 8px"><i class="ti ti-list-check"></i>출고 대상 <small>크림에서 끌어온 목록 · 스캔하면 주문번호가 자동으로 들어가요</small></div>'+sum+inv+list;
   el.querySelectorAll('[data-ta]').forEach(function(b){ b.onclick=function(){ CH.corp=b.dataset.ta; CH.kind=b.dataset.tk; chSave(); route(); }; });
+}
+function pzTodoDraw(el){   // 포이즌 발송 대기 (계정별) — 스캔하면 주문번호 자동 매칭
+  if (!PZ){ el.innerHTML='<div class="s" style="margin:4px 0 10px;color:var(--mute)">포이즌 출고 대상 불러오는 중…</div>'; pzLoad().then(function(){ if($('chtodo')) chKrDraw(); }).catch(function(e){ el.innerHTML='<div class="s" style="color:var(--mute)">포이즌 데이터를 불러오지 못했어요</div>'; }); return; }
+  var used=krUsedOids();
+  var sum='<div class="todo-grid" style="grid-template-columns:repeat(2,1fr)">'+CH_CORPS.map(function(a){ var L=pzWaiting(a), d=L.filter(function(r){ return used[r.oid]; }).length, on=CH.corp===a;
+      return '<button class="todo-c'+(on?' on':'')+(L.length-d>0?' has':'')+'" data-pa="'+a+'"><span>'+a+' · 포이즌 발송 대기</span><b class="num">'+(L.length-d)+'<small>건 남음</small></b>'+(d?'<small>스캔 '+d+'/'+L.length+'</small>':'')+(PZ.synced&&PZ.synced[a]?'':'<small style="color:var(--mute)">동기화 전</small>')+'</button>'; }).join('')+'</div>';
+  var L=pzWaiting(CH.corp).sort(function(a,b){ return String(a.deadline).localeCompare(String(b.deadline)); });
+  var stk=function(r){ var ps=krAppMatch(r.style); if(!ps.length) return '<span class="sm">미연결</span>'; var h=krSizeHit(ps, r.option); if(!h.length) return '<span class="sm">옵션 없음</span>'; var p=h[0]; return '<b>'+won(Math.max(0,effStock(p)))+'</b>'+(p.loc?' <span class="sm">'+esc(p.loc)+'</span>':''); };
+  var list = L.length ? '<div class="todo-list">'+L.map(function(r){ var u=used[r.oid]; return '<div class="todo-r'+(u?' done':'')+'"><i class="ti ti-'+(u?'circle-check':'circle-dashed')+'"></i><div class="m"><div class="t">'+esc(r.name)+' <b>'+esc(r.option)+'</b></div><div class="s">'+esc(r.style)+' · '+esc(r.oid)+(r.deadline?' · 발송기한 '+esc(String(r.deadline).slice(5,16)):'')+(r.payout?' · 정산 '+won(r.payout):'')+'</div></div><div class="e num">앱 재고 '+stk(r)+'</div></div>'; }).join('')+'</div>'
+    : '<div class="s" style="margin:8px 0;color:var(--mute)">포이즌 '+esc(CH.corp)+' 발송 대기 없음'+(PZ.synced&&PZ.synced[CH.corp]?' · 동기화 '+esc(krFmtAt(PZ.synced[CH.corp])):' · 포이즌 판매자센터에서 OPS 포이즌 동기화를 한 번 실행해 주세요')+'</div>';
+  el.innerHTML='<div class="sec" style="margin:2px 0 8px"><i class="ti ti-list-check"></i>출고 대상 <small>포이즌에서 끌어온 발송 대기 · 스캔하면 주문번호가 자동으로 들어가요</small></div>'+sum+list;
+  el.querySelectorAll('[data-pa]').forEach(function(b){ b.onclick=function(){ CH.corp=b.dataset.pa; chSave(); route(); }; });
 }
 function chHist(){
   if (!CH_LIST){ $('chhist').innerHTML='<div class="empty">불러오는 중…</div>'; return; }
@@ -1717,7 +1733,7 @@ function krHow(){
     '<li>크림 판매자센터(partner.kream.co.kr)에 로그인한 화면에서 그 북마크 클릭</li>'+
     '<li>오른쪽 아래 「OPS 크림 동기화」 창에서 계정 확인 → [지금 동기화]</li>'+
     '<li>그 크림 창을 켜두면 <b>10분마다 자동</b> + 휴대폰에서 [지금 동기화]를 누르면 바로 가져와요</li></ol>'+
-    '<div style="margin:18px 0;text-align:center"><a class="btn pri" href="'+esc(KR_BM)+'" onclick="toast(\'클릭 말고 북마크바로 끌어다 놓아 주세요\');return false;" style="cursor:grab"><i class="ti ti-refresh"></i>OPS 크림 동기화</a></div>'+
+    '<div style="margin:18px 0;text-align:center;display:flex;gap:10px;justify-content:center;flex-wrap:wrap"><a class="btn pri" href="'+esc(KR_BM)+'" onclick="toast(\'클릭 말고 북마크바로 끌어다 놓아 주세요\');return false;" style="cursor:grab"><i class="ti ti-refresh"></i>OPS 크림 동기화</a><a class="btn pri" href="'+esc(KR_BM.replace('kream.js','poizon.js'))+'" onclick="toast(\'클릭 말고 북마크바로 끌어다 놓아 주세요\');return false;" style="cursor:grab"><i class="ti ti-refresh"></i>OPS 포이즌 동기화</a></div><p class="sm" style="text-align:center;margin:-8px 0 12px">포이즌은 seller.poizon.com 에 로그인한 화면에서 [OPS 포이즌 동기화] 북마크를 눌러요</p>'+
     '<div class="preview">로그인 정보는 저장하지 않아요. 크림 화면에 로그인된 세션으로 <b>조회만</b> 해요.</div>',
     '<button class="btn" onclick="closeDrawer()">닫기</button>');
 }
@@ -1946,6 +1962,19 @@ function krCuration(el){
     '<p class="sm" style="margin:8px 0 0">예상 마진 = 가격 × 실제 정산률('+Object.keys(rate).map(function(a){ return a+' '+Math.round(rate[a]*100)+'%'; }).join(' · ')+') − 앱 원가 · 크림 최저가는 상품 전체 기준</p>';
 }
 function c2_(a,b){ return '<div class="c2"><b>'+a+'</b>'+(b?'<span>'+b+'</span>':'')+'</div>'; }
+/* ---------- 포이즌 판매자센터 → 앱 데이터 수신 (poizon.js) ---------- */
+var PZN_ORIGIN = 'https://seller.poizon.com';
+window.addEventListener('message', function(e){
+  if (e.origin !== PZN_ORIGIN || !e.data || typeof e.data !== 'object') return;
+  var d=e.data, src=e.source;
+  if (d.type==='pzn_ping'){ if (S.me) src.postMessage({type:'hub_ready'}, PZN_ORIGIN); return; }
+  if (d.type!=='pzn_rows' || !S.me) return;
+  api('pzn_sync',{account:d.account, rows:d.rows, waitNos:d.waitNos}).then(function(j){
+    src.postMessage({type:'pzn_saved', batch:d.batch, added:j.added, updated:j.updated}, PZN_ORIGIN);
+    PZ=null; if((location.hash||'').indexOf('#channel')===0) pzLoad(true).then(function(){ route(); }).catch(function(){});
+    toast('포이즌 '+d.account+' 동기화 · 발송 대기 '+(d.waitNos||[]).length+'건');
+  }).catch(function(x){ src.postMessage({type:'pzn_error', batch:d.batch, message:(x&&x.message)||'저장 실패'}, PZN_ORIGIN); });
+});
 /* ---------- 크림 판매자센터 → 앱 데이터 수신 (kream.js) ---------- */
 var KRM_ORIGIN = 'https://partner.kream.co.kr', KRM_IN = {};
 window.addEventListener('message', function(e){

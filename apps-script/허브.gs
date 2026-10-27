@@ -24,6 +24,7 @@ var HUB_TABS = {
   설정: ['키', '값', '수정일', '수정자'],
   채널출고: ['일시', '배치', '채널', '계정', '구분', '상품id', 'SKU', '상품명', '옵션', '바코드', '수량', '주문번호', '판매가', '수수료율', '정산예상', '재고반영', '작업자', '메모'],
   크림입찰: ['계정', '입찰id', '주문번호', '상태', '구분', '품번', '상품명', '브랜드', '옵션', '입찰가', '수수료', '정산예정', '최저판매가', '최근거래가', '등록일', '만료일', '동기화', '내순위', '최저가일반', '최저가보관', '체결가일반', '체결가보관'],
+  포이즌판매: ['계정', '주문번호', '상태', '탭', '구분', '품번', '상품명', '브랜드', '사이즈', '판매가', '수수료', '정산액', '주문일', '발송기한', '동기화'],
   크림보관: ['계정', '보관id', '주문번호', '단계', '상태', '품번', '상품명', '사이즈', '운송장', '신청일', '수정일', '동기화'],
   크림매핑: ['크림품번', '사방넷상품코드', '컬러', '수정일', '수정자', '사이즈연결'],
   크림판매: ['계정', '주문번호', '입찰id', '상태', '구분', '품번', '상품명', '옵션', '판매가', '수수료', '정산액', '주문일', '정산일', '지급예정일', '동기화']
@@ -56,6 +57,8 @@ function doPost(e) {
       case 'channel_list': return hubOut_({ rows: hubChannelList_(req.limit || 400) });
       case 'krm_sync': return hubOut_(hubLocked_(function () { return hubKrmSync_(req, me); }));
       case 'krm_list': return hubOut_(hubKrmList_());
+      case 'pzn_sync': return hubOut_(hubLocked_(function () { return hubPznSync_(req, me); }));
+      case 'pzn_list': return hubOut_(hubPznList_());
       case 'krm_map_set': return hubOut_(hubLocked_(function () { return hubKrmMapSet_(req, me); }));
       case 'sbn_sales_check': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 사방넷 API(주문일) 기준 일별·법인·쇼핑몰 집계 — 매출판 대조용 (읽기 전용)
         return hubOut_(hubSbnSalesRange_(req.from, req.to));
@@ -565,6 +568,35 @@ function hubKrmList_() {
   ['겐더샵', '셀렉트인'].forEach(function (n) { var x = c['krm_invcnt_' + n]; if (x) try { invCount[n] = JSON.parse(x.value); } catch (e) {} });
   return { asks: a, sales: s, synced: synced, maps: hubKrmMaps_(), inv: inv, invCount: invCount };
 }
+/* ===================== 포이즌 판매자센터 연동 =====================
+ * poizon.js(북마크)가 주문 관리 화면에서 읽어온 주문을 저장 — 계정+주문번호 기준 갱신/추가
+ * waitNos: 이번에 확인한 발송 대기 주문번호 전체 → 예전에 발송 대기였는데 빠진 주문은 '탭'을 비워 출고 대상에서 뺌 */
+var HUB_PZN = ['account', 'orderNo', 'status', 'tab', 'kind', 'style', 'name', 'brand', 'option', 'price', 'fee', 'payout', 'orderedAt', 'deadline', 'syncedAt'];
+function hubPznSync_(req, me) {
+  var acct = req.account === '셀렉트인' ? '셀렉트인' : '겐더샵', now = hubNow_();
+  var s = hubRows_('포이즌판매'), w = HUB_TABS['포이즌판매'].length, idx = {}, upd = 0, ins = [];
+  var wait = {}; (req.waitNos || []).forEach(function (n) { wait[String(n)] = 1; });
+  s.vals.forEach(function (v, i) { idx[v[0] + '|' + v[1]] = i; if (v[0] === acct && v[3] === 'WAIT_SHIPPING' && !wait[String(v[1])]) v[3] = 'DONE_OR_MOVED'; });
+  (req.rows || []).forEach(function (o) {
+    if (!o || !o.orderNo) return;
+    var row = hubKrmRow_(o, HUB_PZN, acct, now); row[1] = "'" + String(o.orderNo);
+    var k = acct + '|' + String(o.orderNo), i = idx[k];
+    if (i != null && i >= 0) { var old = s.vals[i]; s.vals[i] = row.map(function (v, j) { return v === '' ? old[j] : v; }); upd++; }
+    else if (i == null) { ins.push(row); idx[k] = -1; }
+  });
+  if (s.vals.length) s.sh.getRange(2, 1, s.vals.length, w).setValues(s.vals);
+  if (ins.length) s.sh.getRange(s.vals.length + 2, 1, ins.length, w).setValues(ins);
+  hubConfigSet_('pzn_synced_' + acct, now, me);
+  return { ok: true, added: ins.length, updated: upd };
+}
+function hubPznList_() {
+  var fmt = function (v) { return v instanceof Date ? Utilities.formatDate(v, 'Asia/Seoul', 'yyyy-MM-dd HH:mm') : v; };
+  var rows = hubRows_('포이즌판매').vals.map(function (v) { var o = {}; HUB_PZN.forEach(function (k, i) { o[k] = fmt(v[i]); }); o.orderNo = String(o.orderNo); return o; });
+  var c = hubConfig_(), synced = {};
+  ['겐더샵', '셀렉트인'].forEach(function (n) { var x = c['pzn_synced_' + n]; if (x) synced[n] = x.value; });
+  return { rows: rows, synced: synced };
+}
+
 /* 크림 품번 ↔ 사방넷 상품코드(+컬러) 연결표 */
 function hubKrmMaps_() {
   return hubRows_('크림매핑').vals.filter(function (v) { return v[0]; }).map(function (v) {
