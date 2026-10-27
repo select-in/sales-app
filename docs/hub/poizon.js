@@ -45,7 +45,11 @@
     c.sort(function (a, b) { return a.querySelectorAll('*').length - b.querySelectorAll('*').length; });
     return c[0] || null;
   }
-  function nextBtn() { var n = document.querySelector('.ant-pagination-next'); return n && !/disabled/.test(n.className) && n.getAttribute('aria-disabled') !== 'true' ? n : null; }
+  function nextBtn() {   // 보이는 페이지네이션의 [다음] (비활성 아니면)
+    var L = [].slice.call(document.querySelectorAll('.ant-pagination-next')).filter(function (n) { return n.getClientRects().length; });
+    var n = L[L.length - 1]; if (!n || /disabled/.test(n.className) || n.getAttribute('aria-disabled') === 'true') return null;
+    return n.querySelector('button,a') || n;
+  }
   function click(el) { ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function (t) { el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window })); }); }
   function pageRows(rec) {
     try { var j = JSON.parse(rec.t), P = j && j.data && j.data.pageOrderList; return { list: (P && P.dataList) || [], total: P && P.totalCount }; } catch (e) { return { list: [] }; }
@@ -59,10 +63,12 @@
       var step = function (rec) {
         if (!rec) return out;
         out = out.concat(pageRows(rec).list);
+        return W(900).then(function () {
         var nb = nextBtn();
         if (!nb || n >= maxPages) return out;
         n++; msg(label + ' 읽는 중… ' + n + '쪽');
         var q = nextResp(); click(nb); return q.then(step);
+        });
       };
       return step(rec);
     });
@@ -78,13 +84,13 @@
     };
   }
   function collect() {
-    var acct = $('opa').value, full = !LS('opsPznFull_' + acct), res = { account: acct, rows: [], waitNos: [] };
+    var acct = $('opa').value, full = !LS('opsPznFull2_' + acct), res = { account: acct, rows: [], waitNos: [] };
     msg('주문 관리 화면 여는 중…');
     return goOrders().then(function () {
       msg('발송 대기 읽는 중…');
       return grab('발송 대기', 20);
     }).then(function (L) {
-      L.forEach(function (o) { var r = row(o, 'WAIT_SHIPPING'); res.rows.push(r); res.waitNos.push(r.orderNo); });
+      var seen = {}; L.forEach(function (o) { var r = row(o, 'WAIT_SHIPPING'); if (seen[r.orderNo]) return; seen[r.orderNo] = 1; res.rows.push(r); res.waitNos.push(r.orderNo); });
       msg('발송 완료 읽는 중…'); return grab('발송 완료', 10);
     }).then(function (L) {
       L.forEach(function (o) { res.rows.push(row(o, 'SHIPPED')); });
@@ -147,7 +153,7 @@
     collect().then(function (res) { return checkAcct(res, ev); }).then(function (res) {
       msg('OPS로 보내는 중… 주문 ' + res.rows.length + '건 (발송 대기 ' + res.waitNos.length + ')');
       return send(res).then(function (r) {
-        if (res.full) LS('opsPznFull_' + res.account, '1');
+        if (res.full) LS('opsPznFull2_' + res.account, '1');
         LS('opsPznAcct', res.account);
         msg('완료 ' + new Date().toTimeString().slice(0, 5) + ' (' + Math.round((Date.now() - t0) / 1000) + '초)\n발송 대기 ' + res.waitNos.length + '건 · 추가 ' + (r.added || 0) + ' / 갱신 ' + (r.updated || 0) + ($('opauto').checked ? '\n다음 자동 동기화 10분 뒤' : ''));
       });
