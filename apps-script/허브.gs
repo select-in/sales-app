@@ -59,6 +59,7 @@ function doPost(e) {
         return hubOut_(hubLocked_(function () { hubConfigSet_(req.key, req.value, me); return { ok: true, config: hubConfig_() }; }));
       case 'users': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });
         return hubOut_({ users: hubUsers_() });
+      case 'user_rename': return hubOut_(hubLocked_(function () { return hubUserRename_(req, me); }));
       case 'user_save': if (!admin) return hubOut_({ error: '관리자만 바꿀 수 있습니다' });
         return hubOut_(hubLocked_(function () { return hubUserSave_(req, me); }));
       default: return hubOut_({ error: 'unknown_action' });
@@ -89,8 +90,8 @@ function hubSetup() {
   var users = hubUsers_();
   if (!users.some(function (u) { return u.role === '관리자'; })) {
     var pin = String(Math.floor(100000 + Math.random() * 900000));
-    hubUserSave_({ name: '대장', role: '관리자', pin: pin, active: true }, { name: '설정' });
-    Logger.log('관리자 계정이 만들어졌습니다 → 이름: 대장 / PIN: ' + pin + '  (앱 설정 화면에서 바꿀 수 있습니다)');
+    hubUserSave_({ name: '대표', role: '관리자', pin: pin, active: true }, { name: '설정' });
+    Logger.log('관리자 계정이 만들어졌습니다 → 이름: 대표 / PIN: ' + pin + '  (앱 설정 화면에서 바꿀 수 있습니다)');
   } else {
     Logger.log('이미 관리자 계정이 있습니다. PIN을 잊었다면 hubResetAdminPin 을 실행하세요.');
   }
@@ -179,6 +180,24 @@ function hubUsers_() {
   return hubRows_('직원').vals.map(function (v) {
     return { name: String(v[0]), role: String(v[1]), active: !(v[3] === false || String(v[3]) === 'FALSE'), createdAt: String(v[4]) };
   }).filter(function (u) { return u.name; });
+}
+/* 내 이름 바꾸기 — 현재 PIN 확인 후 새 이름으로 (PIN 해시가 이름을 포함하므로 다시 계산), 기록의 작업자 이름도 함께 변경 */
+function hubUserRename_(req, me) {
+  var to = hubStr_(req.newName, 30), pin = hubStr_(req.pin, 30);
+  if (!to) return { error: '새 이름을 입력하세요' };
+  if (to === me.name) return { error: '지금 이름과 같아요' };
+  var u = hubUserRow_(me.name);
+  if (!u || hubHash_(me.name + '|' + pin) !== String(u.v[2])) return { error: '현재 PIN이 맞지 않습니다' };
+  if (hubUserRow_(to)) return { error: '이미 있는 이름이에요' };
+  hubSheet_('직원').getRange(u.row, 1, 1, 3).setValues([[to, u.v[1], hubHash_(to + '|' + pin)]]);
+  [['재고이력', 9], ['원가이력', 7], ['설정', 4], ['상품', 16]].forEach(function (t) {
+    var sh = hubSheet_(t[0]), n = sh.getLastRow() - 1;
+    if (n < 1) return;
+    var rg = sh.getRange(2, t[1], n, 1), v = rg.getValues(), ch = false;
+    v.forEach(function (r) { if (String(r[0]) === me.name) { r[0] = to; ch = true; } });
+    if (ch) rg.setValues(v);
+  });
+  return hubLogin_(to, pin);
 }
 function hubUserSave_(req, me) {
   var name = hubStr_(req.name, 30);
