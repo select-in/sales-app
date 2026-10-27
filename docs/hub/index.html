@@ -59,6 +59,7 @@ main{margin-left:var(--side);min-height:100vh;padding:28px 32px 60px}
 .chf{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}.chf .inp{padding:8px 10px;font-size:13.5px}
 .stepper.sm{display:flex;align-items:center;gap:6px}.stepper.sm button{width:30px;height:30px;font-size:16px}.stepper.sm b{min-width:22px;text-align:center}
 .chbar{position:sticky;bottom:0;background:var(--card);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 0 calc(4px + env(safe-area-inset-bottom));margin-top:8px;border-top:1px solid var(--line);font-size:14px}
+.chsel{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}.chsel>span{width:78px;font-size:13px;font-weight:600;color:var(--sub)}
 .chb{border-bottom:1px solid var(--line);padding:10px 0}.chb summary{cursor:pointer;font-size:14px;list-style:none}.chb .s{font-size:12.5px;color:var(--mute)}
 .tabbar{display:none}
 
@@ -313,7 +314,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-27x';
+var APP_BUILD = '2026-10-27y';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -1022,12 +1023,13 @@ function stopCam(){
 }
 
 /* ---------- 크림 · 포이즌 출고 (휴대폰 연속 스캔 → 출고 확정) ---------- */
-var CH_ACCTS = [['KREAM','겐더샵'],['KREAM','셀렉트인'],['POIZON','겐더샵']];
+var CH_CHANNELS = ['KREAM','POIZON'], CH_CORPS = ['겐더샵','셀렉트인'];
 var CH_FEE = {KREAM:0.05, POIZON:0.10};
-var CH = lsGet('hubChCart') || {a:0, kind:'일반판매', items:[]};
+var CH = lsGet('hubChCart') || {kind:'일반판매', items:[]};
+if (CH_CHANNELS.indexOf(CH.ch)<0) CH.ch='KREAM'; if (CH_CORPS.indexOf(CH.corp)<0) CH.corp='겐더샵';
 var CH_LIST = null;
 function chSave(){ lsSet('hubChCart', CH); }
-function chAcct(){ return CH_ACCTS[CH.a] || CH_ACCTS[0]; }
+function chAcct(){ return [CH.ch, CH.corp]; }
 function chAdd(code){
   var L = findAllByCode(code), corp = chAcct()[1];
   if (L.length > 1){ var f = L.filter(function(p){ return p.corp===corp; }); if (f.length) L = f; }
@@ -1087,9 +1089,11 @@ VIEWS.channel = {
   html: function(){
     return '<div class="ph"><div><h1>크림 · 포이즌 출고</h1><p>휴대폰으로 바코드를 연속으로 찍어 담고, 마지막에 출고 확정</p></div></div>'+
       '<div class="grid g2"><div class="card">'+
-        '<div class="seg" id="chacct" style="margin-bottom:10px;flex-wrap:wrap">'+CH_ACCTS.map(function(a,i){ return '<button data-v="'+i+'" class="'+(CH.a===i?'on':'')+'">'+a[0]+' · '+a[1]+'</button>'; }).join('')+'</div>'+
-        '<div class="seg" id="chkind" style="margin-bottom:14px">'+['일반판매','보관판매'].map(function(k){ return '<button data-v="'+k+'" class="'+(CH.kind===k?'on':'')+'">'+(k==='일반판매'?'일반판매 발송':'보관판매 입고')+'</button>'; }).join('')+'</div>'+
-        '<div class="scanrow"><div class="search"><i class="ti ti-barcode"></i><input class="inp" id="chq" placeholder="바코드 입력 후 Enter (스캐너 총도 가능)" autocomplete="off"></div><button class="btn pri" id="chscan"><i class="ti ti-scan"></i><span>스캔</span></button></div>'+
+        '<div class="chsel"><span>채널</span><div class="seg" id="chch">'+CH_CHANNELS.map(function(c){ return '<button data-v="'+c+'" class="'+(CH.ch===c?'on':'')+'">'+c+'</button>'; }).join('')+'</div></div>'+
+        '<div class="chsel"><span>계정 (법인)</span><div class="seg" id="chcorp">'+CH_CORPS.map(function(c){ return '<button data-v="'+c+'" class="'+(CH.corp===c?'on':'')+'">'+c+'</button>'; }).join('')+'</div></div>'+
+        '<div class="chsel"><span>구분</span>'+
+        '<div class="seg" id="chkind">'+['일반판매','보관판매'].map(function(k){ return '<button data-v="'+k+'" class="'+(CH.kind===k?'on':'')+'">'+(k==='일반판매'?'일반판매 발송':'보관판매 입고')+'</button>'; }).join('')+'</div></div>'+
+        '<div class="scanrow" style="margin-top:6px"><div class="search"><i class="ti ti-barcode"></i><input class="inp" id="chq" placeholder="바코드 입력 후 Enter (스캐너 총도 가능)" autocomplete="off"></div><button class="btn pri" id="chscan"><i class="ti ti-scan"></i><span>스캔</span></button></div>'+
         '<div id="chcart" style="margin-top:14px"></div>'+
         '<div class="chbar"><div id="chsum"></div><div style="display:flex;gap:8px"><button class="btn" id="chclr">비우기</button><button class="btn pri" id="chgo"><i class="ti ti-truck-delivery"></i>출고 확정</button></div></div>'+
       '</div>'+
@@ -1098,7 +1102,7 @@ VIEWS.channel = {
   bind: function(){
     chDraw(); chHist();
     if (!CH_LIST) api('channel_list',{}).then(function(j){ CH_LIST=j.rows||[]; if($('chhist')) chHist(); }).catch(function(){ CH_LIST=[]; if($('chhist')) chHist(); });
-    document.querySelectorAll('#chacct button').forEach(function(b){ b.onclick=function(){ CH.a=+b.dataset.v; chSave(); document.querySelectorAll('#chacct button').forEach(function(x){ x.classList.toggle('on',x===b); }); chDraw(); }; });
+    [['chch','ch'],['chcorp','corp']].forEach(function(g){ document.querySelectorAll('#'+g[0]+' button').forEach(function(b){ b.onclick=function(){ CH[g[1]]=b.dataset.v; chSave(); document.querySelectorAll('#'+g[0]+' button').forEach(function(x){ x.classList.toggle('on',x===b); }); chDraw(); }; }); });
     document.querySelectorAll('#chkind button').forEach(function(b){ b.onclick=function(){ CH.kind=b.dataset.v; chSave(); document.querySelectorAll('#chkind button').forEach(function(x){ x.classList.toggle('on',x===b); }); }; });
     $('chq').onkeydown = function(e){ if(e.key!=='Enter') return; var v=this.value.trim(); if(!v) return; this.value=''; chAdd(v); };
     $('chscan').onclick = function(){ var a=chAcct(); openScanner('연속 스캔 · '+a[0]+' '+a[1]+' '+(CH.kind==='일반판매'?'발송':'입고'), function(code){ var r=chAdd(code); return r==='pick' ? 'stop' : 'continue'; }); };
