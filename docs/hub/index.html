@@ -331,7 +331,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-29t';
+var APP_BUILD = '2026-10-29u';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -1448,18 +1448,21 @@ function krMapOpen(style, name){
   var digits=(String(style).match(/\d{4,}/g)||[]);
   var cand=function(q){
     var t=String(q||'').trim().toLowerCase(), G={};
-    S.products.forEach(function(p){ if(!p.sbnPrd) return; var h=(p.name+' '+p.sbnPrd+' '+p.brand+' '+p.option).toLowerCase(), ok = t ? t.split(/\s+/).every(function(w){ return h.indexOf(w)>=0; }) : digits.some(function(d){ return h.indexOf(d)>=0; }); if(ok){ var g=G[p.sbnPrd]||(G[p.sbnPrd]={prd:p.sbnPrd, name:p.name, corp:p.corp, n:0, colors:{}}); g.n++; var c=krColorOf(p); if(c) g.colors[c]=1; } });
-    return Object.keys(G).map(function(k){ return G[k]; }).slice(0,30);
+    S.products.forEach(function(p){ if(!p.sbnPrd) return; var h=(p.name+' '+p.sbnPrd+' '+p.brand+' '+p.option).toLowerCase(), ok = t ? t.split(/\s+/).every(function(w){ return h.indexOf(w)>=0; }) : digits.some(function(d){ return h.indexOf(d)>=0; }); if(ok){ var g=G[p.sbnPrd]||(G[p.sbnPrd]={prd:p.sbnPrd, name:p.name, corp:p.corp, n:0, colors:{}, real:0, stock:0, modes:{}}); g.n++; var c=krColorOf(p); if(c) g.colors[c]=1; var md=stockMode(p); g.modes[md]=(g.modes[md]||0)+1; if(md==='현재고'){ g.real++; g.stock+=Math.max(0,+p.stock||0); } } });
+    var L=Object.keys(G).map(function(k){ return G[k]; });
+    if (!showAll) L=L.filter(function(g){ return g.real>0; });   // 기본: 재고관리 하는(현재고) 상품만
+    return L.sort(function(a,b){ return b.real-a.real || b.stock-a.stock; }).slice(0,30);
   };
-  var sel={prd:cur?cur.sbnPrd:'', color:cur?cur.color:'', sizes:Object.assign({}, (cur&&cur.sizes)||{})};
+  var sel={prd:cur?cur.sbnPrd:'', color:cur?cur.color:'', sizes:Object.assign({}, (cur&&cur.sizes)||{})}, showAll=false;
   drawer('사방넷 상품 연결',
     '<div class="sel" style="margin:0"><div class="nm">'+esc(name)+'</div><div class="meta">크림 품번 <b>'+esc(style)+'</b> · 사이즈 '+esc(sizes.join(', '))+'</div></div>'+
     '<label class="fld" style="margin-top:14px"><span>사방넷 상품 찾기 (상품코드·상품명)</span><input class="inp" id="kmq" placeholder="예) 100439 또는 디키즈 85283" value="'+esc(sel.prd)+'"></label>'+
+    '<label style="display:flex;gap:6px;align-items:center;font-size:13px;color:var(--sub);margin:6px 0"><input type="checkbox" id="kmall"> 가상재고·모음전 상품도 보기 <span class="sm">(기본은 재고관리 하는 현재고 상품만)</span></label>'+
     '<div id="kmc" class="pick" style="max-height:260px;overflow:auto"></div><div id="kmp"></div>',
     (cur?'<button class="btn" id="kmdel">연결 해제</button>':'')+'<button class="btn" onclick="closeDrawer()">취소</button><button class="btn pri" id="kmsave" disabled>연결 저장</button>');
   var drawC=function(){
     var L=cand($('kmq').value);
-    $('kmc').innerHTML = L.length ? L.map(function(g){ return '<button data-prd="'+esc(g.prd)+'" class="'+(g.prd===sel.prd?'on':'')+'"><div style="flex:1;min-width:0;text-align:left"><div style="font-weight:600">'+esc(g.name)+'</div><div style="font-size:13px;color:var(--mute)">'+esc(g.prd)+' · '+esc(g.corp)+' · 단품 '+g.n+(Object.keys(g.colors).length?' · '+esc(Object.keys(g.colors).join(', ')):'')+'</div></div></button>'; }).join('') : '<div class="empty">찾는 상품이 없어요 · 상품코드나 상품명 일부로 찾아보세요</div>';
+    $('kmc').innerHTML = L.length ? L.map(function(g){ return '<button data-prd="'+esc(g.prd)+'" class="'+(g.prd===sel.prd?'on':'')+'"><div style="flex:1;min-width:0;text-align:left"><div style="font-weight:600">'+esc(g.name)+'</div><div style="font-size:13px;color:var(--mute)">'+esc(g.prd)+' · '+esc(g.corp)+' · 단품 '+g.n+(Object.keys(g.colors).length?' · '+esc(Object.keys(g.colors).join(', ')):'')+'</div><div style="font-size:12.5px;margin-top:4px">'+Object.keys(g.modes).map(function(m){ return '<span class="pill'+(m==='현재고'?' g':'')+'">'+esc(m)+' '+g.modes[m]+'</span>'; }).join(' ')+(g.real?' <b class="num">현재고 '+won(g.stock)+'개</b>':'')+'</div></div></button>'; }).join('') : '<div class="empty">'+(showAll?'찾는 상품이 없어요':'재고관리(현재고) 상품 중엔 없어요 · 위 체크로 가상재고·모음전도 볼 수 있어요')+' · 상품코드나 상품명 일부로 찾아보세요</div>';
     $('kmc').querySelectorAll('[data-prd]').forEach(function(b){ b.onclick=function(){ if(sel.prd!==b.dataset.prd){ sel.prd=b.dataset.prd; sel.color=''; sel.sizes={}; } drawC(); drawP(); }; });
   };
   var drawP=function(){
@@ -1475,7 +1478,7 @@ function krMapOpen(style, name){
     document.querySelectorAll('#kmp select[data-z]').forEach(function(x){ x.onchange=function(){ sel.sizes[x.dataset.z]=x.value; drawP(); }; });
     document.querySelectorAll('#kmcol button').forEach(function(b){ b.onclick=function(){ sel.color=b.dataset.v; sel.sizes={}; drawP(); }; });
   };
-  $('kmq').oninput=drawC; drawC(); drawP();
+  $('kmq').oninput=drawC; $('kmall').onchange=function(){ showAll=this.checked; drawC(); }; drawC(); drawP();
   var save=function(prd, color){ var b=$('kmsave'); b.disabled=true; api('krm_map_set',{style:style, sbnPrd:prd, color:color, sizes:prd?sel.sizes:{}}).then(function(j){ KR.maps=j.maps; KR_IDX=null; closeDrawer(); toast(prd?'연결했어요 · '+style+' → '+prd+(color?' '+color:''):'연결을 해제했어요'); krList(); }).catch(function(e){ b.disabled=false; fail(e); }); };
   $('kmsave').onclick=function(){ save(sel.prd, sel.color); };
   if ($('kmdel')) $('kmdel').onclick=function(){ if(confirm('이 연결을 해제할까요?')) save('', ''); };
