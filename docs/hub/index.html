@@ -66,7 +66,7 @@ main{margin-left:var(--side);min-height:100vh;padding:28px 32px 60px}
 .mcsub{margin:0 0 8px 18px;border-left:2px solid var(--line)}.mcsub .mc{padding-left:12px}
 .hopt{font-size:12.5px;color:var(--sub);margin-top:1px}
 .pfilters{display:contents}.pfilters .stchk{flex-basis:100%;margin:0}.pfbtn,.pfdone{display:none}.pfn{display:inline-grid;place-items:center;min-width:18px;height:18px;border-radius:9px;background:var(--brand);color:#fff;font-size:11px;margin-left:4px}
-@media (max-width:900px){.pfbtn{display:inline-flex}.pfilters{display:none;width:100%;flex-direction:column;align-items:stretch;gap:10px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--bg)}.pfilters.open{display:flex}.pfilters .seg{align-self:flex-start}.pfilters .stchk{margin:0}.pfdone{display:inline-flex;align-self:flex-end}.pfilters #powner{width:100%!important}}
+@media (max-width:900px){#pscan span,.pfbtn span{display:none}#pscan,.pfbtn{padding-left:12px;padding-right:12px}.pfbtn{display:inline-flex}.pfilters{display:none;width:100%;flex-direction:column;align-items:stretch;gap:10px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--bg)}.pfilters.open{display:flex}.pfilters .seg{align-self:flex-start}.pfilters .stchk{margin:0}.pfdone{display:inline-flex;align-self:flex-end}.pfilters #powner{width:100%!important}}
 .tabbar{display:none}
 
 .ph{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:20px;flex-wrap:wrap}
@@ -323,7 +323,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-28k';
+var APP_BUILD = '2026-10-28l';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
