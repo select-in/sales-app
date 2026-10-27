@@ -746,7 +746,7 @@ function hubOpsToday_(force) {
 }
 function hubSbnOrderFields_(items) {
   var d = Utilities.formatDate(new Date(Date.now() - 864e5), 'Asia/Seoul', 'yyyyMMdd');
-  var body = { dateSearchCondition: 2, startDate: d, endDate: d, updateOrderStsYn: 'N', page: 1, perPage: 3 };
+  var body = { dateSearchCondition: 2, startDate: d, endDate: d, updateOrderStsYn: 'N', page: 1, perPage: 50 };
   if (Array.isArray(items) && items.length) body.responseItems = items.slice(0, 60).map(String);
   var r = hubSbnCall_('POST', '/v3/sb/order', body), dt = (r && r.data) || {}, L = dt.results || [];
   var personal = /RCV|RECV|RECEIVE|ADDR|TEL|HP|PHONE|MOBILE|BUYER|ORDERER|ORD_NM|USER_NM|EMAIL|ZIP|PERSONAL|CUSTOMS|MSG|MEMO|NAME_RCV|CUST/i;
