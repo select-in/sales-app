@@ -59,6 +59,7 @@ function doPost(e) {
       case 'barsheet_match': return hubOut_(hubLocked_(function () { return hubBarSheetMatch_(); }));
       case 'barsheet_apply': return hubOut_(hubLocked_(function () { return hubBarSheetApply_(me); }));
       case 'barcode_set': return hubOut_(hubLocked_(function () { return hubBarcodeSet_(req, me); }));
+      case 'reg_send': return hubOut_(hubLocked_(function () { return hubRegSend_(req, me); }));
       case 'reg_save': return hubOut_(hubLocked_(function () { return hubRegSave_(req, me); }));
       case 'stock_move': return hubOut_(hubLocked_(function () { return hubStockMove_(req, me); }));
       case 'history': return hubOut_({ history: hubHistory_(req.id, 300) });
@@ -731,6 +732,83 @@ function hubRegSave_(req, me) {
   hit.sh.getRange(hit.row, 1, 1, row.length).setNumberFormats([hubFormats_()]).setValues([row]);
   return { ok: true, product: hubProductObj_(row) };
 }
+/* ===================== 등록서 → 사방넷 바로 등록 (API: POST /v3/sb/product/upsert) =====================
+ * 자체상품코드 = 앱 상품 id → 같은 등록서를 다시 보내면 사방넷에서 '수정'으로 처리됨
+ * 상품정보제공고시는 카테고리별 유형의 모든 항목을 '상세페이지 참조'로 채움 (원산지 입력 시 제조국만 그 값)
+ * 원산지 코드 123 = 상세설명참조, 배송비 무료, 과세, 사입 */
+var HUB_NOTICE_BY_CAT = { '의류': 'WEAR', '속옷': 'WEAR', '남성화': 'SHOES', '여성화': 'SHOES', '아동화': 'SHOES', '가방': 'BAG',
+  '모자/비니': 'FASHION_ITEMS', '목도리': 'FASHION_ITEMS', '벨트,지갑,귀마개': 'FASHION_ITEMS', '텀블러': 'KITCHENWARE' };
+var HUB_NOTICE_TYPES = ['WEAR', 'SHOES', 'BAG', 'FASHION_ITEMS', 'KITCHENWARE', 'ETC'];
+function hubSbnCached_(key, path, sec) {
+  var c = CacheService.getScriptCache(), v = c.get(key);
+  if (v) return JSON.parse(v);
+  var b = hubSbnCall_('GET', path, null, 'PRODUCTION'); var d = b && b.data ? b.data : b;
+  try { c.put(key, JSON.stringify(d), sec || 21600); } catch (e) {}
+  return d;
+}
+function hubSbnCatCode_(name) {
+  var d = hubSbnCached_('sbn_cats', '/v3/sb/category', 21600), hit = null;
+  (d.items || []).forEach(function (it) { (it.category || []).forEach(function (c) { if (String(c.name).trim() === String(name).trim()) hit = it.leafCode || c.code; }); });
+  return hit;
+}
+function hubRegPayload_(p, reg) {
+  var type = HUB_NOTICE_TYPES.indexOf(reg.noticeType) >= 0 ? reg.noticeType : (HUB_NOTICE_BY_CAT[reg.myCategory] || 'ETC');
+  var nt = hubSbnCached_('sbn_notice_' + type, '/v3/sb/product-info-notice/' + type, 21600);
+  var REF = '상세페이지 참조', origin = hubStr_(reg.origin, 40);
+  var attrs = (nt.details || []).map(function (d) {
+    return { attributeClassificationCode: nt.productInfoNoticeTypeCode, attributeSrno: d.productInfoNoticeDetailCode,
+      attributeText: origin && /제조국|원산지/.test(d.productInfoNoticeDetailName) ? origin : REF };
+  });
+  var cat = hubSbnCatCode_(reg.myCategory);
+  if (!cat) throw new Error('사방넷 마이카테고리를 찾을 수 없어요: ' + reg.myCategory);
+  var opts = (reg.options || []).map(function (o) { return String(o).trim(); }).filter(String);
+  var two = opts.some(function (o) { return o.indexOf(':') > 0; });
+  var stock = Math.max(0, Math.round(hubNum_(reg.stock != null ? reg.stock : p.stock)));
+  var options = opts.length ? opts.map(function (o, i) {
+    return { optionName: two ? '색상:사이즈' : '옵션', optionDetailName: o, stockQuantity: i === 0 ? stock : 0, additionalAmount: 0, optionSupplyStatusCode: 'SALE', barcode: i === 0 ? (p.barcode || '') : '', safetyStockQuantity: 0 };
+  }) : [{ optionName: '단품', optionDetailName: '단품', stockQuantity: stock, additionalAmount: 0, optionSupplyStatusCode: 'SALE', barcode: p.barcode || '', safetyStockQuantity: 0 }];
+  var photos = (reg.photos || []).filter(function (x) { return x && x.url; }).slice(0, 10);
+  var esc = function (t) { return String(t || '').replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); };
+  var desc = '<div style="text-align:center;max-width:860px;margin:0 auto;font-family:sans-serif;">' +
+    (reg.detail ? '<p style="font-size:16px;line-height:1.7;margin:24px 0;">' + esc(reg.detail).replace(/\n/g, '<br>') + '</p>' : '') +
+    photos.map(function (ph) { return '<img src="' + ph.url + '" style="width:100%;display:block;margin:0 auto 8px;">'; }).join('') + '</div>';
+  var target = { '남성': 'MALE', '여성': 'FEMALE', '공용': 'UNISEX', '아동': 'JUNIOR' }[reg.gender];
+  var o = {
+    customProductCode: p.id, productName: hubStr_(p.name, 200), brandName: hubStr_(p.brand, 60), manufacturerName: hubStr_(p.brand, 60) || '상세페이지 참조',
+    modelNo: hubStr_(reg.modelNo, 60), modelName: hubStr_(reg.modelNo, 60),
+    productDivisionCode: 'PURCHASE', myCategoryCodeL: cat, originName: '123',
+    productSupplyStatusCode: reg.supply === 'IN_SUPPLY' ? 'IN_SUPPLY' : 'WAITING', deliveryCostCode: 'FREE', deliveryCost: 0, taxCode: 'TAXABLE',
+    costPrice: hubNum_(p.cost), sellingPrice: hubNum_(p.price), consumerPrice: hubNum_(reg.tagPrice) || hubNum_(p.price),
+    attributeInfo: attrs,
+    optionInfo: { stockUseYn: 'Y', optionEditCode: 'RESET', options: options },
+    imageInfo: photos.map(function (ph, i) { return { imageSrno: String(i + 1), imagePath: ph.url }; }),
+    productDetailDescription: desc,
+    adminMemo: '셀렉트인 OPS 등록서 ' + p.id + (reg.note ? ' · ' + hubStr_(reg.note, 200) : '')
+  };
+  if (target) o.productTargetCode = target;
+  if (!o.modelNo) { delete o.modelNo; delete o.modelName; }
+  return { product: o, noticeType: type };
+}
+function hubRegSend_(req, me) {
+  var reg = req.reg || {};
+  var saved = hubRegSave_(Object.assign({}, req, { status: 'request' }), me);
+  if (saved.error) return saved;
+  var p = saved.product;
+  var built = hubRegPayload_(p, reg);
+  var res = hubSbnCall_('POST', '/v3/sb/product/upsert', { products: [built.product] }, 'PRODUCTION');
+  var d = res && res.data ? res.data : res, r0 = (d && d.results && d.results[0]) || {};
+  if (d && d.failCount) return { error: '사방넷 등록 실패: ' + JSON.stringify(r0).slice(0, 300), product: p };
+  var code = r0.productCode || r0.prdNo || '';
+  if (!code) { try { var g = hubSbnCall_('GET', '/v3/sb/product?customProductCode=' + encodeURIComponent(p.id), null, 'PRODUCTION'); code = String((g.data || g).productCode || ''); } catch (e) {} }
+  var hit = hubFindProduct_(p.id), rg = {};
+  try { rg = JSON.parse(hit.p.reg || '{}'); } catch (e) {}
+  rg.sbnProductCode = code; rg.sentAt = hubNow_(); rg.sentBy = me.name; rg.noticeType = built.noticeType;
+  var row = hubRow_(Object.assign({}, hit.p, { sbnPrd: code || hit.p.sbnPrd, sbnSku: hit.p.sbnSku || '0001', regStatus: '등록완료',
+    sbnStatus: built.product.productSupplyStatusCode === 'IN_SUPPLY' ? '판매' : '대기중', reg: JSON.stringify(rg).slice(0, 45000), updatedAt: hubNow_(), updatedBy: me.name }));
+  hit.sh.getRange(hit.row, 1, 1, row.length).setNumberFormats([hubFormats_()]).setValues([row]);
+  return { ok: true, product: hubProductObj_(row), productCode: code, result: r0 };
+}
+
 /** 처음 한 번: 드라이브·외부 호출 권한 승인용 (실행만 하면 됨) */
 function hubAuthorize() {
   hubPhotoFolder_();
