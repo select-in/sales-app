@@ -306,7 +306,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-27q';
+var APP_BUILD = '2026-10-27r';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -616,7 +616,7 @@ VIEWS.products = {
       '<div class="acts"><button class="btn" id="pimp"><i class="ti ti-table-import"></i>엑셀 붙여넣기</button><button class="btn pri" id="padd"><i class="ti ti-plus"></i>상품 등록</button></div></div>'+
       '<div class="card">'+
         '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">'+
-          '<div class="search"><i class="ti ti-search"></i><input class="inp" id="pq" placeholder="상품명, 브랜드, 바코드, 상품코드" value="'+esc(PF.q)+'"></div>'+
+          '<div class="scanrow" style="flex:1;min-width:240px"><div class="search"><i class="ti ti-search"></i><input class="inp" id="pq" placeholder="상품명, 브랜드, 바코드, 상품코드, 담당자" value="'+esc(PF.q)+'"></div><button class="btn pri" id="pscan" title="카메라로 바코드 찍어서 찾기"><i class="ti ti-scan"></i><span>스캔</span></button></div>'+
           '<div class="seg" id="pcorp">'+['all','셀렉트인','겐더샵'].map(function(c){ return '<button data-v="'+c+'" class="'+(PF.corp===c?'on':'')+'">'+(c==='all'?'전체 법인':c)+'</button>'; }).join('')+'</div>'+
           '<select class="inp" id="powner" style="width:auto;min-width:130px"><option value="">전체 담당자</option>'+ownerNames().map(function(n){ return '<option'+(PF.owner===n?' selected':'')+'>'+esc(n)+'</option>'; }).join('')+'<option value="-"'+(PF.owner==='-'?' selected':'')+'>담당 미지정</option></select>'+
           '<div class="seg" id="pf">'+[['all','전체'],['real','재고관리'],['virtual','가상재고'],['low','부족'],['out','품절'],['consign','위탁']].map(function(c){ return '<button data-v="'+c[0]+'" class="'+(PF.f===c[0]?'on':'')+'">'+c[1]+'</button>'; }).join('')+'</div>'+
@@ -658,6 +658,12 @@ VIEWS.products = {
       bindPager($('plist'), function(n){ PF.page=n; draw(); });
     };
     $('pq').oninput = function(){ PF.q = this.value; PF.page=1; draw(); };
+    $('pscan').onclick = function(){ openScanner('바코드로 상품 찾기', function(code){
+      if (navigator.vibrate) navigator.vibrate(40);
+      var hit = findByCode(code); PF.q = code; PF.page = 1; $('pq').value = code; draw();
+      if (hit) openProduct(hit.id); else toast('등록되지 않은 바코드예요: '+code, true);
+      return 'stop';
+    }); };
     $('powner').onchange = function(){ PF.owner = this.value; PF.page=1; draw(); };
     document.querySelectorAll('#pcorp button').forEach(function(b){ b.onclick = function(){ PF.corp=b.dataset.v; PF.page=1; document.querySelectorAll('#pcorp button').forEach(function(x){ x.classList.toggle('on',x===b); }); draw(); }; });
     document.querySelectorAll('#pf button').forEach(function(b){ b.onclick = function(){ PF.f=b.dataset.v; PF.page=1; if(location.hash.indexOf('f=')>=0) history.replaceState(null,'','#products'); document.querySelectorAll('#pf button').forEach(function(x){ x.classList.toggle('on',x===b); }); draw(); }; });
