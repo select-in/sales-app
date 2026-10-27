@@ -53,7 +53,7 @@ a{color:var(--accent)}
 main{margin-left:var(--side);min-height:100vh;padding:28px 32px 60px}
 .wrap{max-width:1120px;margin:0 auto}
 .topbar{display:none}
-.card.cur{margin-top:14px;box-shadow:none;border:1px solid var(--line)}.card.cur h2 i{color:var(--accent)}.curt{min-width:760px}.curt td:first-child{width:38%}
+.card.cur{margin-top:14px;box-shadow:none;border:1px solid var(--line)}.card.cur h2 i{color:var(--accent)}.curt{min-width:760px;table-layout:auto!important}.curt td:first-child{width:40%;max-width:360px}.curt td:first-child .c2 b{max-width:340px}
 .todo-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px}.todo-c{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);cursor:pointer;text-align:left}.todo-c span{font-size:12.5px;color:var(--sub)}.todo-c b{font-size:20px}.todo-c b small{font-size:12px;font-weight:500;margin-left:2px;color:var(--mute)}.todo-c>small{font-size:11.5px;color:var(--accent)}.todo-c.has b{color:var(--amber)}.todo-c.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
 .todo-list{max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:10px}.todo-r{display:flex;gap:10px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line)}.todo-r:last-child{border-bottom:0}.todo-r .m{flex:1;min-width:0}.todo-r .t{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.todo-r .s{font-size:12px;color:var(--mute)}.todo-r .e{font-size:13px;white-space:nowrap}.todo-r i{color:var(--mute)}.todo-r.done{opacity:.55}.todo-r.done i{color:var(--accent)}
 @media (max-width:900px){.todo-grid{grid-template-columns:1fr 1fr}}
@@ -343,7 +343,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-30c-o1';
+var APP_BUILD = '2026-10-30d';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
