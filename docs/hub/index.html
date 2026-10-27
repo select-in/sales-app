@@ -1402,7 +1402,7 @@ function sizeKey(v){
 }
 function sizeCmp(a,b){ var x=sizeKey(a), y=sizeKey(b); return x[0]-y[0] || x[1]-y[1] || String(x[2]).localeCompare(String(y[2])); }
 /* ---------- 크림 판매자센터 (입찰 · 진행 · 정산) ---------- */
-var KR = null, KF = {acct:'전체', kind:'전체', tab:'live', q:'', page:1, open:{}, openK:{}, allOpen:false};
+var KR = null, KF = {acct:'전체', kind:'전체', link:'전체', tab:'live', q:'', page:1, open:{}, openK:{}, allOpen:false};
 var KR_BM = "javascript:(function(){var s=document.createElement('script');s.src='https://select-in.github.io/sales-app/hub/kream.js?'+Date.now();document.body.appendChild(s);})()";
 function krLoad(force){
   if (KR && !force) return Promise.resolve(KR);
@@ -1579,11 +1579,12 @@ function krDraw(){
       '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:center">'+
         '<div class="seg" id="kra">'+['전체','겐더샵','셀렉트인'].map(function(c){ return '<button data-v="'+c+'" class="'+(KF.acct===c?'on':'')+'">'+c+'</button>'; }).join('')+'</div>'+
         '<div class="seg" id="krk">'+[['전체','일반+보관'],['일반','일반판매'],['보관','보관판매']].map(function(c){ return '<button data-v="'+c[0]+'" class="'+(KF.kind===c[0]?'on':'')+'">'+c[1]+'</button>'; }).join('')+'</div>'+
+        '<div class="seg" id="krl">'+(function(){ var st={}, n={연결:0,미연결:0}; krTabRows().forEach(function(r){ var k=r.account+'|'+r.style; if(st[k]==null){ st[k]=krAppMatch(r.style).length>0; n[st[k]?'연결':'미연결']++; } }); return [['전체','사방넷 전체'],['연결','연결됨'],['미연결','미연결']].map(function(c){ return '<button data-v="'+c[0]+'" class="'+(KF.link===c[0]?'on':'')+'">'+c[1]+(c[0]!=='전체'?' <small class="num">'+won(n[c[0]])+'</small>':'')+'</button>'; }).join(''); })()+'</div>'+
         '<div class="seg" id="krt">'+tabs.map(function(t){ return '<button data-v="'+t[0]+'" class="'+(KF.tab===t[0]?'on':'')+'">'+t[1]+' <small class="num">'+won(cnt(t[0]))+'</small></button>'; }).join('')+'</div>'+
         '<div class="search" style="flex:1;min-width:200px"><i class="ti ti-search"></i><input class="inp" id="krq" placeholder="품번, 상품명, 사이즈, 주문번호" value="'+esc(KF.q)+'"></div></div>'+
       '<p style="margin:0 0 10px;font-size:12px;color:var(--mute)">마지막 동기화: '+esc(syn||'없음')+(KF.tab==='live'?' · 크림 최저가·최근 체결가는 크림이 주는 <b>상품 전체(전 사이즈) 기준</b> · 순위 1 = 그 사이즈에서 내가 최저가':'')+'</p>'+
       '<div id="krlist"></div></div>';
-  [['kra','acct'],['krk','kind'],['krt','tab']].forEach(function(g){ document.querySelectorAll('#'+g[0]+' button').forEach(function(b){ b.onclick=function(){ KF[g[1]]=b.dataset.v; KF.page=1; krDraw(); }; }); });
+  [['kra','acct'],['krk','kind'],['krl','link'],['krt','tab']].forEach(function(g){ document.querySelectorAll('#'+g[0]+' button').forEach(function(b){ b.onclick=function(){ KF[g[1]]=b.dataset.v; KF.page=1; krDraw(); }; }); });
   $('krq').oninput=function(){ KF.q=this.value; KF.page=1; krList(); };
   krList();
 }
@@ -1602,6 +1603,7 @@ function krList(){
   var el=$('krlist'); if(!el) return;
   var toks=KF.q.toLowerCase().split(/\s+/).filter(Boolean);
   var L=krTabRows().filter(function(r){ var h=[r.style,r.name,r.brand,r.option,r.oid,r.account,r.status,r.kind].join(' ').toLowerCase(); return toks.every(function(t){ return h.indexOf(t)>=0; }); });
+  if (KF.link!=='전체'){ var lk={}; L=L.filter(function(r){ if(lk[r.style]==null) lk[r.style]=krAppMatch(r.style).length>0; return KF.link==='연결'?lk[r.style]:!lk[r.style]; }); }
   var tabNm={live:'입찰중',prog:'진행중',settle:'정산',cancel:'취소'}[KF.tab];
   XL_CUR = function(){
     var SMx=krSoldMap();
