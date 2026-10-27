@@ -59,6 +59,8 @@
       style: r.style_code || '', name: r.translated_name || r.name || '', brand: (it.product && it.product.brand && it.product.brand.name) || '',
       option: it.option || '', price: it.price || 0, fee: fee ? Math.abs(fee) : '', payout: pb.total_payout || '',
       lowest: m.lowest_ask || '', last: m.last_sale_price || '',
+      rank: it.live_rank || '', lowN: m.lowest_ask_normal || '', lowI: m.lowest_ask_inventory_100 || '',
+      lastN: m.last_price_normal || '', lastI: m.last_price_inventory_100 || '',
       createdAt: kst(it.date_created), expiresAt: kst(it.expires_at),
       orderedAt: kst((it.transaction && it.transaction.date_created) || '')
     };
@@ -200,6 +202,9 @@
   $('okgo').onclick = run;
   $('okauto').onchange = function () { clearInterval(timer); if (this.checked) timer = setInterval(run, EVERY); };
   timer = setInterval(run, EVERY);
+  window.addEventListener('message', function (e) {   // 휴대폰 [지금 동기화] 요청 → OPS 창이 전달
+    if (e.origin === HUB_ORIGIN && e.data && e.data.type === 'krm_run') { if (!hubWin || hubWin.closed) hubWin = e.source; run(); }
+  });
   window.__opsKrm = { show: function () { box.style.display = ''; }, run: run };
   if (saved) run(); else msg('계정을 확인하고 [지금 동기화]를 눌러 주세요');
 })();
