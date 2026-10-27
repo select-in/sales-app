@@ -145,7 +145,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 .c2{display:flex;flex-direction:column;gap:2px;line-height:1.3;min-width:0}.c2>b{font-weight:700;white-space:nowrap}.c2>span{font-size:12px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tbl .r .c2{align-items:flex-end}
 .nm2>b{overflow:hidden;text-overflow:ellipsis;font-weight:600}.c2 .ell{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .c2 em{font-style:normal;font-weight:600}.c2 em.ok,em.ok{color:var(--accent);font-style:normal}.c2 em.wn,em.wn{color:var(--amber);font-style:normal}
-.ktbl tr.sub .subnm{padding-left:28px}.ktbl tr.kmid td{background:var(--soft);padding:8px 12px;white-space:nowrap}.kmidm{padding:8px 4px 4px;font-size:13px}
+.ktbl tr.sub .subnm{padding-left:28px}.ktbl tr.kmid td{background:var(--soft);padding:10px 12px;white-space:nowrap;border-left:0}.ktbl tr.kmid.open td{background:#e3f1ea}.kmidm.click{cursor:pointer}.kmidm{padding:8px 4px 4px;font-size:13px}
 
 .pill{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--bg);color:var(--sub);white-space:nowrap}
 .pill.g{background:var(--soft);color:var(--accent)}
@@ -331,7 +331,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-28w';
+var APP_BUILD = '2026-10-28x';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -1368,7 +1368,7 @@ function sizeKey(v){
 }
 function sizeCmp(a,b){ var x=sizeKey(a), y=sizeKey(b); return x[0]-y[0] || x[1]-y[1] || String(x[2]).localeCompare(String(y[2])); }
 /* ---------- 크림 판매자센터 (입찰 · 진행 · 정산) ---------- */
-var KR = null, KF = {acct:'전체', kind:'전체', tab:'live', q:'', page:1, open:{}, allOpen:false};
+var KR = null, KF = {acct:'전체', kind:'전체', tab:'live', q:'', page:1, open:{}, openK:{}, allOpen:false};
 var KR_BM = "javascript:(function(){var s=document.createElement('script');s.src='https://select-in.github.io/sales-app/hub/kream.js?'+Date.now();document.body.appendChild(s);})()";
 function krLoad(force){
   if (KR && !force) return Promise.resolve(KR);
@@ -1525,7 +1525,7 @@ function krList(){
       var sz={}, rows=[];
       g.items.forEach(function(x){ var k=x.option+'|'+krKind(x), o=sz[k]; if(!o){ o=sz[k]={option:x.option, kind:krKind(x), n:0, pmin:Infinity, pmax:0, rank:Infinity, payout:x.payout, style:x.style, account:x.account}; rows.push(o); } o.n++; o.pmin=Math.min(o.pmin,+x.price||0); o.pmax=Math.max(o.pmax,+x.price||0); if(+x.rank) o.rank=Math.min(o.rank,+x.rank); });
       rows.forEach(function(o){ var s=SM[o.account+'|'+o.style+'|'+o.option+'|'+o.kind]; o.sold=s||null; });
-      rows.sort(function(a,b){ return (a.kind==='일반'?0:1)-(b.kind==='일반'?0:1) || sizeCmp(a.option,b.option); });
+      rows.sort(function(a,b){ return (a.kind==='보관'?0:1)-(b.kind==='보관'?0:1) || sizeCmp(a.option,b.option); });
       g.rows=rows; g.first=rows.filter(function(o){ return o.rank===1; }).length;
     } else g.items.sort(function(a,b){ return sizeCmp(a.option,b.option) || String(b.settledAt||b.orderedAt).localeCompare(String(a.settledAt||a.orderedAt)); });
   });
@@ -1565,18 +1565,24 @@ function krList(){
           '<td class="r num">'+two(+r.lastN, +r.lastI)+'</td>'+
           '<td class="r num">'+c2(won(gs.n)+'개', gs.at?won(gs.price)+' · '+esc(gs.at.slice(5,10)):'')+'</td>'+
           '<td class="c num">'+appCell(g.app,null)+'</td></tr>';
-        var prevK='';
-        return h+(open?g.rows.map(function(o){
-          var m=mkt(r,o.kind), diff=m.low?o.pmin-m.low:null, mid='';
-          if (o.kind!==prevK){ prevK=o.kind; var kr=g.rows.filter(function(x){ return x.kind===o.kind; }), kn=kr.reduce(function(t,x){ return t+x.n; },0), k1=kr.filter(function(x){ return x.rank===1; }).length;
-            mid='<tr class="kmid"><td colspan="8">'+kpill(o.kind)+' <b>'+(o.kind==='보관'?'보관판매':'일반판매')+'</b> <span class="sm">사이즈 '+kr.length+' · 걸어둔 '+kn+'개'+(k1?' · 1위 '+k1:'')+' · 크림 최저 '+(m.low?won(m.low):'—')+' · 최근 체결 '+(m.last?won(m.last):'—')+'</span></td></tr>'; }
-          return mid+'<tr class="sub"><td><div class="subnm c2"><b>'+esc(o.option)+'</b></div></td><td></td>'+
-            '<td class="r num">'+c2(o.n+'개','')+'</td>'+
-            '<td class="r num">'+c2(price(o), rankTxt(o))+'</td>'+
-            '<td class="r num">'+c2(m.low?won(m.low):'—', diff!=null&&diff>0?'<em class="wn">내가 +'+won(diff)+'</em>':(diff!=null?'<em class="ok">내가 최저</em>':''))+'</td>'+
-            '<td class="r num">'+c2(m.last?won(m.last):'—','')+'</td>'+
-            '<td class="r num">'+(o.sold?c2(o.sold.n30+'개', won(o.sold.price)+' · '+esc(o.sold.at.slice(5,10))):c2('0개','체결 없음'))+'</td>'+
-            '<td class="c num">'+appCell(g.app,o.option)+'</td></tr>';
+        var KK=['보관','일반'].filter(function(k){ return g.rows.some(function(o){ return o.kind===k; }); });
+        return h+(open?KK.map(function(kind){
+          var kr=g.rows.filter(function(o){ return o.kind===kind; }), kk=g.k+'|'+kind, ko=!!KF.openK[kk], m=mkt(r,kind);
+          var kn=kr.reduce(function(t,x){ return t+x.n; },0), k1=kr.filter(function(x){ return x.rank===1; }).length;
+          var ks=kr.reduce(function(t,x){ return t+(x.sold?x.sold.n30:0); },0), kmin=Math.min.apply(null,kr.map(function(x){ return x.pmin; }));
+          var mid='<tr class="click kmid'+(ko?' open':'')+'" data-kk="'+esc(kk)+'"><td><div class="c2" style="padding-left:12px"><b>'+kpill(kind)+' '+(kind==='보관'?'보관판매':'일반판매')+' <span class="optc"><i class="ti ti-chevron-'+(ko?'up':'down')+'"></i>사이즈 '+kr.length+'</span></b><span>'+esc(kr.map(function(x){ return x.option; }).join(', '))+'</span></div></td><td></td>'+
+            '<td class="r num">'+c2(kn+'개','')+'</td><td class="r num">'+c2(won(kmin)+'~', k1?'<em class="ok">1위 '+k1+'/'+kr.length+'</em>':'1위 없음')+'</td>'+
+            '<td class="r num">'+c2(m.low?won(m.low):'—','')+'</td><td class="r num">'+c2(m.last?won(m.last):'—','')+'</td><td class="r num">'+c2(ks+'개','')+'</td><td></td></tr>';
+          return mid+(ko?kr.map(function(o){
+            var diff=m.low?o.pmin-m.low:null;
+            return '<tr class="sub"><td><div class="subnm c2"><b>'+esc(o.option)+'</b></div></td><td></td>'+
+              '<td class="r num">'+c2(o.n+'개','')+'</td>'+
+              '<td class="r num">'+c2(price(o), rankTxt(o))+'</td>'+
+              '<td class="r num">'+c2(m.low?won(m.low):'—', diff!=null&&diff>0?'<em class="wn">내가 +'+won(diff)+'</em>':(diff!=null?'<em class="ok">내가 최저</em>':''))+'</td>'+
+              '<td class="r num">'+c2(m.last?won(m.last):'—','')+'</td>'+
+              '<td class="r num">'+(o.sold?c2(o.sold.n30+'개', won(o.sold.price)+' · '+esc(o.sold.at.slice(5,10))):c2('0개','체결 없음'))+'</td>'+
+              '<td class="c num">'+appCell(g.app,o.option)+'</td></tr>';
+          }).join(''):'');
         }).join(''):'');
       }).join('')+'</tbody></table></div>'+
       '<div class="mcards">'+CS.map(function(g){
@@ -1585,7 +1591,7 @@ function krList(){
           '<div class="s num">걸어둔 '+won(g.items.length)+'개 ('+split(g.nN,g.nI)+') · 30일 체결 '+won(gs.n)+'개</div>'+
           '<div class="s num">크림 최저 '+[r.lowN?'일반 '+won(r.lowN):'', r.lowI?'보관 '+won(r.lowI):''].filter(Boolean).join(' · ')+'</div></div>'+
           '<div class="e num"><b>'+(g.first?'1위 '+g.first:'')+'</b></div></div>'+
-          (open?'<div class="mcsub">'+(function(){ var pk=''; return g.rows.map(function(o){ var m=mkt(r,o.kind), hd=''; if(o.kind!==pk){ pk=o.kind; hd='<div class="kmidm">'+kpill(o.kind)+' <b>'+(o.kind==='보관'?'보관판매':'일반판매')+'</b></div>'; } return hd+'<div class="mc"><div class="m"><div class="t" style="font-size:14px"><b>'+esc(o.option)+'</b> '+o.n+'개 · '+rankTxt(o)+'</div><div class="s num">내 입찰 <b>'+price(o)+'</b> · 크림 최저 '+(m.low?won(m.low):'—')+' · 최근 체결 '+(m.last?won(m.last):'—')+'</div><div class="s num">30일 체결 '+(o.sold?o.sold.n30+'개 · 최근 '+won(o.sold.price):'0개')+' · 앱 재고 '+appCell(g.app,o.option)+'</div></div></div>'; }).join(''); })()+'</div>':'');
+          (open?'<div class="mcsub">'+(function(){ var pk=''; return g.rows.map(function(o){ var m=mkt(r,o.kind), hd='', kk=g.k+'|'+o.kind; if(o.kind!==pk){ pk=o.kind; var kr=g.rows.filter(function(x){ return x.kind===o.kind; }); hd='<div class="kmidm click" data-kk="'+esc(kk)+'">'+kpill(o.kind)+' <b>'+(o.kind==='보관'?'보관판매':'일반판매')+'</b> <span class="optc">사이즈 '+kr.length+' · '+kr.reduce(function(t,x){ return t+x.n; },0)+'개 '+(KF.openK[kk]?'▲':'▼')+'</span></div>'; } if(!KF.openK[kk]) return hd; return hd+'<div class="mc"><div class="m"><div class="t" style="font-size:14px"><b>'+esc(o.option)+'</b> '+o.n+'개 · '+rankTxt(o)+'</div><div class="s num">내 입찰 <b>'+price(o)+'</b> · 크림 최저 '+(m.low?won(m.low):'—')+' · 최근 체결 '+(m.last?won(m.last):'—')+'</div><div class="s num">30일 체결 '+(o.sold?o.sold.n30+'개 · 최근 '+won(o.sold.price):'0개')+' · 앱 재고 '+appCell(g.app,o.option)+'</div></div></div>'; }).join(''); })()+'</div>':'');
       }).join('')+'</div>';
   } else {
     var stSum=function(L){ var c={}, o=[]; L.forEach(function(x){ var k=x.status||'—'; if(!c[k]){ c[k]=0; o.push(k); } c[k]++; }); return o.map(function(k){ return esc(k)+' '+c[k]; }).join(' · '); };
@@ -1615,6 +1621,7 @@ function krList(){
   }
   el.innerHTML = grpBar(G.map(function(g){ return {items:live?g.rows:g.items}; })) + html + pagerHtml(G.length, KF.page, PG.size).replace('개 ·','개 품번 ·');
   el.querySelectorAll('[data-g]').forEach(function(r){ r.onclick=function(){ KF.open[r.dataset.g]=!KF.open[r.dataset.g]; krList(); }; });
+  el.querySelectorAll('[data-kk]').forEach(function(r){ r.onclick=function(e){ e.stopPropagation(); KF.openK[r.dataset.kk]=!KF.openK[r.dataset.kk]; krList(); }; });
   bindGrpBar(el, KF, krList);
   bindPager(el, function(n){ KF.page=n; krList(); });
 }
