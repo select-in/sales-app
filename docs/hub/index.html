@@ -53,7 +53,7 @@ a{color:var(--accent)}
 main{margin-left:var(--side);min-height:100vh;padding:28px 32px 60px}
 .wrap{max-width:1120px;margin:0 auto}
 .topbar{display:none}
-.otabs{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;position:sticky;top:0;z-index:14;background:var(--bg);padding:10px 32px 0;border-bottom:1px solid var(--line);margin-bottom:8px}.otabs::-webkit-scrollbar{display:none}.otabs:empty{display:none}
+.otabs{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;position:sticky;top:0;z-index:14;background:var(--bg);padding:10px 0 0;border-bottom:1px solid var(--line);max-width:1120px;margin:0 auto 12px}.otabs::-webkit-scrollbar{display:none}.otabs:empty{display:none}
 .otab{display:inline-flex;align-items:center;gap:6px;flex:none;padding:8px 10px 8px 12px;border:1px solid var(--line);border-bottom:0;border-radius:9px 9px 0 0;background:var(--bg);font-size:13px;color:var(--sub);text-decoration:none;white-space:nowrap;margin-bottom:-1px}
 .otab:hover{background:var(--card)}.otab.on{background:var(--card);color:var(--ink);font-weight:700;box-shadow:0 -1px 0 var(--accent) inset}.otab i{font-size:15px}.otab .cx{font-weight:400;opacity:.45;padding:0 2px;margin-left:2px;border-radius:4px}.otab .cx:hover{opacity:1;background:var(--line)}
 @media (max-width:900px){.otabs{position:static;padding:4px 0 0;margin:0 0 8px}.otab{padding:6px 8px 6px 10px;font-size:12.5px}}
@@ -336,7 +336,7 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-29x';
+var APP_BUILD = '2026-10-29y';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
