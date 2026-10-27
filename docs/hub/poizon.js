@@ -41,7 +41,7 @@
     return nextResp(20000).then(function () { return W(1500); });
   }
   function findTab(label) {
-    var c = [].slice.call(document.querySelectorAll('div,span,li,button,a')).filter(function (e) { var t = (e.textContent || '').trim(); return t.indexOf(label) === 0 && /\(\s*[\d+]+\s*\)\s*$/.test(t) && t.length < 24; });
+    var c = [].slice.call(document.querySelectorAll('div,span,li,button,a')).filter(function (e) { var t = (e.textContent || '').trim().replace(/\s+/g, ' '); return t === label || (t.indexOf(label) === 0 && /^\s*\(\s*[\d+,]+\s*\)\s*$/.test(t.slice(label.length))); });
     c.sort(function (a, b) { return a.querySelectorAll('*').length - b.querySelectorAll('*').length; });
     return c[0] || null;
   }
