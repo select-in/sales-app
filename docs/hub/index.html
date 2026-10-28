@@ -425,7 +425,7 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-30k-x1';
+var APP_BUILD = '2026-10-30k-x1-x2';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -980,7 +980,7 @@ function prDraw(){
     else if (EXT.err) body='<div class="empty">'+esc(EXT.err)+'</div>';
     else {
       var need=ext.filter(function(x){ return !x.e || (Date.now()-new Date(String(x.e.at).replace(' ','T')+':00+09:00').getTime())>864e5; });
-      body=(EXT.key?'':'<div style="margin:0 0 12px;padding:12px 14px;border-radius:10px;background:var(--amberbg);color:var(--amber);font-size:14px"><b>네이버 검색 API 키가 아직 없어요.</b> 대표님이 키를 넣어 주시면 바로 가져올 수 있어요. (설정 방법은 채팅 안내 참고)</div>')+
+      body=(EXT.key?'':'<div style="margin:0 0 12px;padding:12px 14px;border-radius:10px;background:var(--amberbg);color:var(--amber);font-size:14px"><b>네이버 쇼핑 검색 API는 2026년 7월 31일부터 신규 신청이 막혀 있어요.</b> 그 전에 만들어 둔 네이버 개발자 앱(검색 API)이 있을 때만 쓸 수 있어요. 다른 방법으로 바꾸는 중이에요.</div>')+
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px"><button class="btn pri sm" id="prx"'+(EXT.key&&need.length?'':' disabled')+'><i class="ti ti-search"></i>네이버 최저가 가져오기 '+(need.length?'('+Math.min(40,need.length)+'개)':'')+'</button><span class="sm">이 채널에서 팔린 상품 중 아직 안 가져왔거나 하루 지난 것부터 40개씩 · 차이 3% 넘게 비싼 상품 <b>'+extHi+'</b>개</span></div>'+
         (ext.length?'<div class="tblwrap"><table class="tbl"><thead><tr><th style="min-width:240px">상품</th><th class="r">여기 실판매가</th><th class="r">네이버 최저가</th><th class="r">차이</th><th class="r">우리 스토어</th><th class="r">여기 30일</th><th class="r">재고</th></tr></thead><tbody>'+
           lim(ext).map(function(x){ var e=x.e; return '<tr><td><div style="display:flex;gap:8px;align-items:center">'+img(x.o.prd)+'<div><b>'+esc(nm(x.o.prd))+'</b><div class="sm">'+esc(x.o.prd)+(e?' · 검색 「'+esc(e.q)+'」 '+esc(e.match)+' 일치 '+e.n+'건':'')+'</div></div></div></td><td class="r num"><b>'+won(Math.round(x.here.unit))+'</b></td>'+
