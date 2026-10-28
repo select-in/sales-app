@@ -30,6 +30,7 @@ var HUB_TABS = {
   포이즌판매: ['계정', '주문번호', '상태', '탭', '구분', '품번', '상품명', '브랜드', '사이즈', '판매가', '수수료', '정산액', '주문일', '발송기한', '동기화'],
   크림보관: ['계정', '보관id', '주문번호', '단계', '상태', '품번', '상품명', '사이즈', '운송장', '신청일', '수정일', '동기화'],
   크림매핑: ['크림품번', '사방넷상품코드', '컬러', '수정일', '수정자', '사이즈연결'],
+  외부시세: ['상품코드', '검색어', '최저가', '판매처', '링크', '상품명', '일치', '결과수', '우리최저', '조회일시'],
   크림판매: ['계정', '주문번호', '입찰id', '상태', '구분', '품번', '상품명', '옵션', '판매가', '수수료', '정산액', '주문일', '정산일', '지급예정일', '동기화']
 };
 var HUB_P_FIELDS = ['id', 'sku', 'barcode', 'name', 'brand', 'option', 'corp', 'type', 'cost', 'price', 'stock', 'safety', 'loc', 'memo', 'updatedAt', 'updatedBy', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg', 'barPending', 'stocMng', 'vstock', 'owner', 'link', 'setDiv'];
@@ -77,6 +78,8 @@ function doPost(e) {
       case 'sales': return hubOut_(hubSales_(me));
       case 'ops_today': return hubOut_(hubOpsToday_(req.force));
       case 'plat_reco': return hubOut_(hubPlatReco_(req.force));
+      case 'ext_price': return hubOut_(hubExtPrice_(req.items || []));      // 네이버 쇼핑 최저가 조회 (조회 전용)
+      case 'ext_price_list': return hubOut_(hubExtPriceList_());
       case 'sbn_order_fields': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 사방넷 주문 API 응답 항목 이름 확인용 (읽기 전용, 개인정보 항목은 값 제외)
         return hubOut_(hubSbnOrderFields_(req.items));
       case 'krm_req': return hubOut_(hubLocked_(function () { hubConfigSet_('krm_req', String(Date.now()), me); return { ok: true }; }));   // 휴대폰에서 [지금 동기화] → PC 크림 창이 받아서 실행
@@ -967,6 +970,80 @@ function hubPlatReco_(force) {
     for (var j = 0; j < cnt; j++) put['preco_' + j] = txt2.slice(j * size, (j + 1) * size);
     if (cnt <= 20) { cache.putAll(put, 1800); cache.put('preco_n', String(cnt), 1800); } } catch (e) {}
   return out;
+}
+/* ===================== 외부 최저가 (네이버 쇼핑 검색 API) =====================
+ * 스크립트 속성 NAVER_CLIENT_ID / NAVER_CLIENT_SECRET (네이버 개발자센터 '검색' API 앱) 필요.
+ * 상품명에서 모델코드(영문+숫자 5자 이상 또는 숫자 6자 이상)를 찾아 그 코드가 들어간 결과만 비교 → 다른 상품과 섞이지 않게.
+ * 모델코드가 없으면 상품명 단어가 60% 이상 겹치는 결과만. 우리 스토어(겐더샵·셀렉트인하우스·모아하우스 등)는 최저가에서 빼고 따로 표시.
+ * 결과는 OPS DB '외부시세' 탭에 상품코드별로 저장(덮어쓰기). 조회 전용. */
+var HUB_NV_OWN = ['겐더샵', '셀렉트인', '모아하우스', '셀로라', 'gandershop', 'gantheshop', 'selectin', 'select-in', 'sellora'];
+function hubNvQuery_(name, brand) {
+  var s = String(name || '').replace(/\[[^\]]*\]|【[^】]*】/g, ' ').replace(/^\s*(겐더샵|셀렉트인)\)\s*/, '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+  var codes = s.match(/(?:^|\s)((?=[A-Za-z0-9-]*\d)(?=[A-Za-z0-9-]*[A-Za-z])[A-Za-z0-9-]{5,}|\d{6,})(?=\s|$)/g) || [];
+  codes = codes.map(function (c) { return c.trim(); }).sort(function (a, b) { return b.length - a.length; });
+  var code = codes[0] || '', b = String(brand || '').trim();
+  var words = s.split(' ').filter(function (w) { return w.length >= 2 && w !== code; });
+  var q = code ? (b ? b + ' ' : (words[0] ? words[0] + ' ' : '')) + code : words.slice(0, 6).join(' ');
+  return { q: q.trim(), code: code, words: words.slice(0, 8) };
+}
+function hubNvNorm_(t) { return String(t || '').replace(/<[^>]+>/g, '').replace(/&[a-z]+;/g, ' ').toUpperCase(); }
+function hubExtPrice_(items) {
+  var pr = PropertiesService.getScriptProperties(), id = pr.getProperty('NAVER_CLIENT_ID') || '', sec = pr.getProperty('NAVER_CLIENT_SECRET') || '';
+  if (!id || !sec) return { error: 'naver_key' };
+  items = (items || []).slice(0, 40).filter(function (x) { return x && x.prd; });
+  var now = hubNow_(), out = [];
+  for (var i = 0; i < items.length; i += 8) {
+    var chunk = items.slice(i, i + 8).map(function (x) { var q = hubNvQuery_(x.name, x.brand); q.prd = String(x.prd); return q; }).filter(function (q) { return q.q; });
+    var res = UrlFetchApp.fetchAll(chunk.map(function (q) {
+      return { url: 'https://openapi.naver.com/v1/search/shop.json?display=40&sort=sim&exclude=used:rental&query=' + encodeURIComponent(q.q),
+        headers: { 'X-Naver-Client-Id': id, 'X-Naver-Client-Secret': sec }, muteHttpExceptions: true };
+    }));
+    res.forEach(function (r, k) {
+      var q = chunk[k], code = r.getResponseCode();
+      if (code === 401 || code === 403) throw new Error('네이버 API 키가 맞지 않아요 (' + code + ')');
+      if (code !== 200) { out.push({ prd: q.prd, q: q.q, err: 'HTTP ' + code }); return; }
+      var L = (JSON.parse(r.getContentText()).items || []), nc = q.code.replace(/[-\s]/g, '').toUpperCase();
+      var ok = L.filter(function (it) {
+        var t = hubNvNorm_(it.title).replace(/[-\s]/g, '');
+        if (nc) return t.indexOf(nc) >= 0;
+        var tt = hubNvNorm_(it.title), hit = q.words.filter(function (w) { return tt.indexOf(w.toUpperCase()) >= 0; }).length;
+        return q.words.length && hit / q.words.length >= 0.6;
+      });
+      var low = null, own = null;
+      ok.forEach(function (it) {
+        var price = Number(it.lprice) || 0; if (!price) return;
+        var mall = String(it.mallName || ''), mine = HUB_NV_OWN.some(function (w) { return mall.toLowerCase().indexOf(w.toLowerCase()) >= 0; });
+        if (mine) { if (!own || price < own) own = price; return; }
+        if (!low || price < low.price) low = { price: price, mall: mall, link: String(it.link || ''), title: hubNvNorm_(it.title).slice(0, 80) };
+      });
+      out.push({ prd: q.prd, q: q.q, low: low ? low.price : 0, mall: low ? low.mall : '', link: low ? low.link : '', title: low ? low.title : '',
+        match: nc ? '모델코드' : '상품명', n: ok.length, own: own || 0, at: now });
+    });
+    if (i + 8 < items.length) Utilities.sleep(800);
+  }
+  // 저장 (상품코드별 덮어쓰기)
+  hubLocked_(function () {
+    var r = hubRows_('외부시세'), idx = {};
+    r.vals.forEach(function (v, j) { idx[String(v[0])] = j + 2; });
+    var add = [];
+    out.forEach(function (o) {
+      if (o.err) return;
+      var row = ["'" + o.prd, o.q, o.low, o.mall, o.link, o.title, o.match, o.n, o.own, o.at];
+      if (idx[o.prd]) r.sh.getRange(idx[o.prd], 1, 1, 10).setValues([row]); else add.push(row);
+    });
+    if (add.length) r.sh.getRange(r.sh.getLastRow() + 1, 1, add.length, 10).setValues(add);
+    return true;
+  });
+  return { ok: true, rows: out };
+}
+function hubExtPriceList_() {
+  var has = !!PropertiesService.getScriptProperties().getProperty('NAVER_CLIENT_ID');
+  var map = {};
+  hubRows_('외부시세').vals.forEach(function (v) {
+    var at = v[9] instanceof Date ? Utilities.formatDate(v[9], 'Asia/Seoul', 'yyyy-MM-dd HH:mm') : String(v[9]);
+    map[String(v[0])] = { prd: String(v[0]), q: String(v[1]), low: hubNum_(v[2]), mall: String(v[3]), link: String(v[4]), title: String(v[5]), match: String(v[6]), n: hubNum_(v[7]), own: hubNum_(v[8]), at: at };
+  });
+  return { key: has, map: map };
 }
 function hubSalesHm_(x, tz) { return x instanceof Date ? Utilities.formatDate(x, tz, 'HH:mm') : String(x || '').trim(); }
 
