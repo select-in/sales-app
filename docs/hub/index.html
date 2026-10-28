@@ -425,7 +425,7 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-30k-x1-x2';
+var APP_BUILD = '2026-10-30k-x1-x2-x3';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -957,7 +957,8 @@ function prDraw(){
   var ext=best.map(function(x){ var e=EXT&&EXT.map[x.o.prd]; return {o:x.o, here:x.here, e:e, gap:(e&&e.low)? (x.here.unit-e.low)/e.low*100 : null}; })
     .sort(function(a,b){ var ga=a.gap==null?-1e9:a.gap, gb=b.gap==null?-1e9:b.gap; return gb-ga || b.here.amt-a.here.amt; });
   var extHi=ext.filter(function(x){ return x.gap!=null && x.gap>3; }).length;
-  var tabs=[['price','비싼 채널 · 가격 조정',price.length],['miss','여기선 안 팔림 · 등록/노출',miss.length],['best','이 채널 베스트',best.length],['ext','외부 최저가 · 네이버',EXT?extHi:'·'],['stale','재고 소진 · 30일 판매 0',stale.length]];
+  var tabs=[['price','비싼 채널 · 가격 조정',price.length],['miss','여기선 안 팔림 · 등록/노출',miss.length],['best','이 채널 베스트',best.length],['stale','재고 소진 · 30일 판매 0',stale.length]].concat(EXT&&EXT.key?[['ext','외부 최저가 · 네이버',extHi]]:[]);
+  if (PRF.tab==='ext' && !(EXT&&EXT.key)) PRF.tab='price';
   var img=function(prd){ var m=M[prd]; return thumb(m||{}); };
   var stockTxt=function(prd){ var m=M[prd]; return m? (m.type==='위탁'?'위탁':won(m.stock)) : '<span class="sm">앱 미등록</span>'; };
   var marg=function(prd, unit){ var m=M[prd]; if(!m||!m.cost||!unit) return '—'; var v=(unit-m.cost)/unit*100; return '<span style="color:'+(v<10?'var(--red)':'inherit')+'">'+v.toFixed(0)+'%</span>'; };
