@@ -76,6 +76,16 @@ function doPost(e) {
       case 'sbn_sales_check': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 사방넷 API(주문일) 기준 일별·법인·쇼핑몰 집계 — 매출판 대조용 (읽기 전용)
         return hubOut_(hubSbnSalesRange_(req.from, req.to));
       case 'sales': return hubOut_(hubSales_(me));
+      case 'archive_list': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });
+        return hubOut_(hubLocked_(function () { var o = hubArchList_(); o.nv = hubNvStatus_(); return o; }));
+      case 'archive_save': if (!admin) return hubOut_({ error: '관리자만 바꿀 수 있습니다' });
+        return hubOut_(hubLocked_(function () { return hubArchSave_(req, me); }));
+      case 'nv_save': if (!admin) return hubOut_({ error: '관리자만 바꿀 수 있습니다' });   // 스마트스토어 연결 정보 → 스크립트 속성 (화면에는 다시 보내지 않음)
+        return hubOut_(hubNvSave_(req));
+      case 'nv_check': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 하루치 네이버 값과 매출판 비교 (쓰기 없음)
+        return hubOut_({ ok: true, date: req.date, rows: hubNvRunDay_(String(req.date || ''), true) });
+      case 'nv_sync': if (!admin) return hubOut_({ error: '관리자만 실행할 수 있습니다' });
+        return hubOut_((function () { hubNvSync(); return { ok: true, status: hubNvStatus_() }; })());
       case 'month_close': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 월 마감 미리보기 (읽기 전용)
         return hubOut_(hubMonthClosePreview_(req.ym));
       case 'month_close_send': if (!admin) return hubOut_({ error: '관리자만 보낼 수 있습니다' });
@@ -1815,4 +1825,198 @@ function hubMonthCloseSetup() {
   ScriptApp.newTrigger('hubMonthCloseAuto').timeBased().everyDays(1).atHour(HUB_MC_HOUR).inTimezone('Asia/Seoul').create();
   hubMcBook_();
   Logger.log('월 마감 자동 점검을 매일 ' + HUB_MC_HOUR + '시로 설정했어요. 지난달(' + hubMcYm_() + ') 상태: ' + hubMonthCloseBuild_(hubMcYm_(), { noApi: true }).status);
+}
+
+/* ===================== 스마트스토어 → 매출판 (일일매출 프로젝트에서 이전) =====================
+ * 예전 「일일매출」 Code.gs(syncAll·runToday·run_·parseGongu_·onSyncEdit)를 그대로 옮김. 규칙 동일.
+ *  - 어제 확정: '일별입력'에 스토어별 [공구]/[일반] 두 줄 (이미 있으면 건너뜀) + '공구입력'에 인플루언서·상품별 줄
+ *  - 오늘 실시간: '오늘현황' 300~500행 덮어쓰기 (결제 기준 주문 + 발송)
+ *  - 네이버는 등록 IP만 허용 → 카페24 중계(naver_sales.php)를 거쳐 조회
+ *  - ID·시크릿·중계 키는 코드에 두지 않음 (저장소가 공개) → 스크립트 속성 NV_STORES / NV_RELAY_KEY
+ *    OPS → 설정 → 보관함 화면의 「스마트스토어 연결」에서 관리자가 입력
+ * 같은 날짜 줄이 이미 있으면 건너뛰므로 예전 프로젝트와 잠깐 같이 돌아도 중복으로 쓰지 않음 */
+var HUB_NV = { relay: 'https://sln0217.mycafe24.com/naver_sales.php', sheet: '일별입력', first: 3, last: 10002, gongu: '공구입력' };
+function hubNvStores_() {
+  var p = PropertiesService.getScriptProperties(), raw = p.getProperty('NV_STORES'), key = p.getProperty('NV_RELAY_KEY');
+  var list = []; try { list = JSON.parse(raw || '[]'); } catch (e) {}
+  list = (list || []).filter(function (s) { return s && s.channel && s.id && s.secret; }).map(function (s) { return { channel: String(s.channel).trim(), id: String(s.id).trim(), secret: String(s.secret).trim() }; });
+  if (!list.length || !key) throw new Error('스마트스토어 연결 정보가 없어요 (OPS 보관함 → 스마트스토어 연결에서 입력)');
+  return { list: list, key: key };
+}
+function hubNvFetch_(payload) {
+  var st = hubNvStores_(); payload.stores = st.list;
+  var res = UrlFetchApp.fetch(HUB_NV.relay + '?key=' + encodeURIComponent(st.key), { method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify(payload) });
+  if (res.getResponseCode() !== 200) throw new Error('네이버 중계 ' + res.getResponseCode() + ' ' + res.getContentText().slice(0, 200));
+  return JSON.parse(res.getContentText());
+}
+function hubNvGongu_(name) {
+  var n = String(name || '').trim(), seps = [/\s+[xX×]\s+/, /×/, /(?<=[가-힣a-zA-Z0-9_.])[xX](?=[가-힣])/];
+  for (var k = 0; k < seps.length; k++) {
+    var m = n.match(seps[k]);
+    if (m && m.index > 0 && m.index <= 20) {
+      var inf = n.slice(0, m.index).replace(/^\[[^\]]*\]\s*/, '').trim(), brand = n.slice(m.index + m[0].length).trim();
+      brand = brand.replace(/\s*(공동구매|공구)[\s\S]*$/, '').trim() || brand;
+      if (inf) return { influencer: inf, brand: brand };
+    }
+  }
+  if (/공동구매|공구/.test(n)) return { influencer: '(미확인)', brand: n };
+  return null;
+}
+/** 하루치 확정 반영 (dry=true면 쓰지 않고 시트와 비교만) */
+function hubNvRunDay_(dateStr, dry) {
+  var r = hubNvFetch_({ date: dateStr }), ss = SpreadsheetApp.openById(HUB_SALES_ID);
+  var sh = ss.getSheetByName(HUB_NV.sheet), gs = ss.getSheetByName(HUB_NV.gongu);
+  var abc = sh.getRange(HUB_NV.first, 1, HUB_NV.last - HUB_NV.first + 1, 8).getDisplayValues();
+  var gLast = Math.max(gs.getLastRow(), 1), gExist = gLast > 1 ? gs.getRange(2, 1, gLast - 1, 5).getDisplayValues() : [];
+  var dateObj = Utilities.parseDate(dateStr, ss.getSpreadsheetTimeZone(), 'yyyy-MM-dd'), out = [];
+  (r.stores || []).forEach(function (s) {
+    if (s.error) { out.push({ ch: s.channel, error: String(s.error).slice(0, 120) }); return; }
+    var g = { count: 0, sales: 0, fee: 0 }, n = { count: 0, sales: 0, fee: 0 }, gRows = [];
+    (s.items || []).forEach(function (it) {
+      var p = hubNvGongu_(it.product), t = p ? g : n;
+      t.count += it.count; t.sales += it.sales; t.fee += it.fee;
+      if (p) gRows.push([dateObj, s.channel, p.influencer, p.brand, it.product, it.count, it.qty, it.sales, it.fee, it.sales - it.fee, '네이버 커머스API(결제일)']);
+    });
+    [['공구', g], ['일반', n]].forEach(function (x) {
+      var label = x[0], t = x[1], plat = s.channel + ' ' + label;
+      var have = abc.filter(function (v) { return v[0] === dateStr && v[1] === s.channel && v[2] === plat; })[0];
+      var o = { ch: plat, api: { cnt: t.count, amt: t.sales }, sheet: have ? { cnt: hubNum_(have[6]), amt: hubNum_(have[7]) } : null };
+      o.ok = have ? (o.sheet.cnt === t.count && o.sheet.amt === t.sales) : !t.count;
+      if (!t.count || have || dry) { o.wrote = false; out.push(o); return; }
+      var i = abc.findIndex(function (v) { return v[0] === ''; });
+      if (i < 0) throw new Error('일별입력이 가득 찼어요');
+      var row = HUB_NV.first + i;
+      sh.getRange(row, 1, 1, 3).setValues([[dateObj, s.channel, plat]]);
+      sh.getRange(row, 7, 1, 2).setValues([[t.count, t.sales]]);
+      sh.getRange(row, 11).setValue(t.fee);
+      sh.getRange(row, 20).setValue('네이버 커머스API(결제일), 취소·반품 제외');
+      abc[i] = [dateStr, s.channel, plat, '', '', '', String(t.count), String(t.sales)];
+      o.wrote = true; out.push(o);
+    });
+    if (!dry) {
+      var newG = gRows.filter(function (x) { return !gExist.some(function (v) { return v[0] === dateStr && v[1] === s.channel && v[4] === x[4]; }); });
+      if (newG.length) { gs.getRange(gs.getLastRow() + 1, 1, newG.length, 11).setValues(newG); newG.forEach(function (x) { gExist.push([dateStr, s.channel, '', '', x[4]]); }); }
+    }
+  });
+  return out;
+}
+/** 오늘 실시간 → 오늘현황 300~500행 */
+function hubNvToday_() {
+  var tz = 'Asia/Seoul', today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd'), ss = SpreadsheetApp.openById(HUB_SALES_ID), sh = ss.getSheetByName('오늘현황');
+  var now = new Date(), dateObj = Utilities.parseDate(today, ss.getSpreadsheetTimeZone(), 'yyyy-MM-dd'), rows = [], got = 0;
+  [['주문', 'PAYED_DATETIME'], ['발송', 'DISPATCHED_DATETIME']].forEach(function (lr) {
+    var label = lr[0], r;
+    try { r = hubNvFetch_({ date: today, rangeType: lr[1] }); } catch (e) { Logger.log(label + ' ' + e.message); return; }
+    got++;
+    (r.stores || []).forEach(function (s) {
+      if (s.error) return;
+      var g = { c: 0, s: 0 }, n = { c: 0, s: 0 }, inf = {};
+      (s.items || []).forEach(function (it) {
+        var p = hubNvGongu_(it.product), t = p ? g : n; t.c += it.count; t.s += it.sales;
+        if (p && label === '주문') { var k = p.influencer + '|' + p.brand; inf[k] = inf[k] || { i: p.influencer, b: p.brand, c: 0, s: 0 }; inf[k].c += it.count; inf[k].s += it.sales; }
+      });
+      Object.keys(inf).forEach(function (k) { var x = inf[k]; rows.push(['공구', s.channel, '셀렉트인', x.i, x.b, x.c, x.s, now, dateObj]); });
+      [['공구', g], ['일반', n]].forEach(function (x) { if (x[1].c) rows.push([label, s.channel, '셀렉트인', s.channel + ' ' + x[0], '', x[1].c, x[1].s, now, dateObj]); });
+    });
+  });
+  if (!got) return 0;   // 둘 다 실패하면 기존 값을 지우지 않음
+  sh.getRange(300, 1, 201, 9).clearContent();
+  if (rows.length) sh.getRange(300, 1, rows.length, 9).setValues(rows);
+  return rows.length;
+}
+/** 트리거: 어제 확정 + 오늘 실시간 (매일 10:30·18:00) */
+function hubNvSync() {
+  var lock = LockService.getScriptLock(); if (!lock.tryLock(60000)) return;
+  try {
+    var y = Utilities.formatDate(new Date(Date.now() - 864e5), 'Asia/Seoul', 'yyyy-MM-dd');
+    try { hubNvRunDay_(y, false); } catch (e) { Logger.log('어제 반영 오류: ' + e.message); }
+    hubNvToday_();
+    PropertiesService.getScriptProperties().setProperty('NV_LAST', hubNow_());
+  } finally { lock.releaseLock(); }
+}
+/** 매출판 🔄 체크박스 (대시보드 E4 · 오늘현황 E2) — 설치형 수정 트리거 */
+function hubNvOnEdit(e) {
+  if (!e || !e.range) return;
+  var sh = e.range.getSheet().getName(), a1 = e.range.getA1Notation();
+  if (!((sh === '대시보드' && a1 === 'E4') || (sh === '오늘현황' && a1 === 'E2'))) return;
+  if (e.range.getValue() !== true) return;
+  var ss = e.source || SpreadsheetApp.openById(HUB_SALES_ID);
+  try { ss.toast('스마트스토어 동기화 중…', '🔄', 5); hubNvSync(); ss.toast('완료: ' + Utilities.formatDate(new Date(), 'Asia/Seoul', 'HH:mm'), '🔄', 5); }
+  finally { e.range.setValue(false); }
+}
+/** 편집기에서 한 번: 트리거 설치 (연결 정보 입력 후) */
+function hubNvInstall() {
+  hubNvStores_();
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (['hubNvSync', 'hubNvOnEdit'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('hubNvSync').timeBased().atHour(10).nearMinute(30).everyDays(1).inTimezone('Asia/Seoul').create();
+  ScriptApp.newTrigger('hubNvSync').timeBased().atHour(18).nearMinute(0).everyDays(1).inTimezone('Asia/Seoul').create();
+  ScriptApp.newTrigger('hubNvOnEdit').forSpreadsheet(HUB_SALES_ID).onEdit().create();
+  Logger.log('스마트스토어 동기화: 매일 10:30·18:00 + 매출판 🔄 체크박스 연결 완료');
+}
+function hubNvStatus_() {
+  var p = PropertiesService.getScriptProperties(), list = []; try { list = JSON.parse(p.getProperty('NV_STORES') || '[]'); } catch (e) {}
+  var trig = []; try { trig = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); }).filter(function (f) { return /^hubNv/.test(f); }); } catch (e) {}
+  return { channels: (list || []).map(function (s) { return { channel: s.channel, id: s.id ? String(s.id).slice(0, 4) + '…' : '', secret: !!s.secret }; }), relayKey: !!p.getProperty('NV_RELAY_KEY'), last: p.getProperty('NV_LAST') || '', triggers: trig };
+}
+function hubNvSave_(req) {
+  var p = PropertiesService.getScriptProperties(), cur = []; try { cur = JSON.parse(p.getProperty('NV_STORES') || '[]'); } catch (e) {}
+  var next = (req.stores || []).map(function (s, k) {
+    var old = cur.filter(function (c) { return c.channel === String(s.channel || '').trim(); })[0] || {};
+    return { channel: hubStr_(s.channel, 40), id: hubStr_(s.id, 100) || old.id || '', secret: hubStr_(s.secret, 200) || old.secret || '' };
+  }).filter(function (s) { return s.channel; });
+  p.setProperty('NV_STORES', JSON.stringify(next));
+  if (hubStr_(req.relayKey, 200)) p.setProperty('NV_RELAY_KEY', hubStr_(req.relayKey, 200));
+  return { ok: true, status: hubNvStatus_() };
+}
+
+/* ===================== 보관함 (예전 프로그램·시트·자동화 목록) =====================
+ * OPS로 옮기고 안 쓰는 것은 지우지 않고 '보관'으로 둠. OPS DB '보관' 탭에서 한 곳에 관리 (시트에서 직접 고쳐도 됨) */
+var HUB_ARCH_HEAD = ['구분', '이름', '하던 일', '상태', '대체(OPS)', '링크', '보관일', '메모', '수정일', '수정자'];
+function hubArchSeed_() {
+  var SC = 'https://script.google.com/home/projects/', d = '2026-11-02';
+  return [
+    ['Apps Script', '일일매출', '스마트스토어 매출 → 매출판(일별입력·공구입력·오늘현황), 예전 매출앱 서버(drWarm), 월말 메일', '이전 중', '매출 · 월 마감 (OPS 서버 hubNvSync)', SC + '1f6_YrvLytqskt90Idtfmp-sW965751JwZVhty5gXq4xZ-BOu-sBya7CS/edit', '', '월말 메일 트리거 삭제(11/2). 스마트스토어 동기화가 OPS에서 확인되면 나머지 트리거 끄고 보관'],
+    ['자동화', '일일매출 월말 메일 (monthlyReport)', '매월 1일 매출판 대시보드 스냅샷 메일', '보관', '월 마감', '', d, '기준일·이익 계산 부정확으로 교체'],
+    ['자동화', '일일매출 drWarm', '예전 매출 앱 캐시 데우기 (몇 분마다)', '이전 중', '필요 없음 (앱 보관)', '', '', ''],
+    ['앱', '예전 데일리 매출 앱', '매출 보기 (select-in.github.io/sales-app/)', '보관', '매출', 'https://github.com/select-in/sales-app/tree/main/archive/daily-sales-app', '2026-10-27', '예전 주소는 OPS 매출로 이동'],
+    ['시트', '셀렉트인_데일리매출판', '매출 원본 데이터 (1월~)', '사용중', '매출 · 월 마감이 읽고 씀', 'https://docs.google.com/spreadsheets/d/' + HUB_SALES_ID + '/edit', '', '지우면 안 됨'],
+    ['Apps Script', '일일매출 (금영 소유 사본, 10/27 수정)', '확인 필요', '확인 필요', '', 'https://script.google.com/home/all', '', ''],
+    ['Apps Script', '일일매출 (10/8 수정 사본)', '확인 필요', '확인 필요', '', 'https://script.google.com/home/all', '', ''],
+    ['Apps Script', '공동구매 db자동취합', '공동구매 파일 자동 취합 (지금취합)', '사용중', '', SC + '1BB5chu9Ph4FEAfcrRK2dM04do9ToeL2dVeJwBuqUIzGQH8fr1O6ll-6c/edit', '', ''],
+    ['Apps Script', '노션캘린더', '노션 ↔ 캘린더 동기화 (syncAllAuto)', '사용중', '', 'https://script.google.com/home/all', '', ''],
+    ['Apps Script', '셀)발주서 통합본', '셀렉트인 발주서 주문 가져오기', '사용중', '', 'https://script.google.com/home/all', '', ''],
+    ['Apps Script', '오더자동화_M', '폴더 → 마스터 동기화, 재고·발주 요청', '사용중', '', 'https://script.google.com/home/all', '', ''],
+    ['Apps Script', '가격 비교 감시', '네이버 가격비교 묶임 감시', '확인 필요', '', 'https://script.google.com/home/all', '', ''],
+    ['Apps Script', '셀렉트인제안서및정산서', '공구 제안서·정산서', '확인 필요', '', 'https://script.google.com/home/all', '', ''],
+    ['Apps Script', '오더자동화 (겐더샵)', '확인 필요', '확인 필요', '', 'https://script.google.com/home/all', '', ''],
+    ['Apps Script', 'B2C행사 캘린더 자동화', '확인 필요', '확인 필요', '', 'https://script.google.com/home/all', '', ''],
+    ['Apps Script', 'B2C행사시트 코드 (겐더샵)', '확인 필요', '확인 필요', '', 'https://script.google.com/home/all', '', ''],
+    ['Apps Script', '매크로 기록됨(제목 없는 스프레드시트)', '확인 필요', '확인 필요', '', 'https://script.google.com/home/all', '', '']
+  ];
+}
+function hubArchSheet_() {
+  var ss = hubBook_(), sh = ss.getSheetByName('보관');
+  if (!sh) {
+    sh = ss.insertSheet('보관');
+    sh.getRange(1, 1, 1, HUB_ARCH_HEAD.length).setValues([HUB_ARCH_HEAD]).setFontWeight('bold').setBackground('#e8f5ef'); sh.setFrozenRows(1);
+    var seed = hubArchSeed_().map(function (r) { return r.concat([hubNow_(), '자동']); });
+    sh.getRange(2, 1, seed.length, HUB_ARCH_HEAD.length).setValues(seed);
+  }
+  return sh;
+}
+function hubArchList_() {
+  var sh = hubArchSheet_(), n = sh.getLastRow() - 1;
+  var rows = n > 0 ? sh.getRange(2, 1, n, HUB_ARCH_HEAD.length).getDisplayValues().map(function (r, i) { return { row: i + 2, v: r }; }).filter(function (x) { return x.v[1]; }) : [];
+  return { head: HUB_ARCH_HEAD, rows: rows, url: hubBook_().getUrl() + '#gid=' + sh.getSheetId() };
+}
+function hubArchSave_(req, me) {
+  var sh = hubArchSheet_(), v = (req.v || []).slice(0, 8).map(function (x, k) { return hubStr_(x, k === 2 || k === 7 ? 500 : 300); });
+  while (v.length < 8) v.push('');
+  if (!v[1]) throw new Error('이름을 넣어 주세요');
+  if (v[3] === '보관' && !v[6]) v[6] = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
+  var row = Number(req.row) || 0;
+  if (req.del && row >= 2) { sh.getRange(row, 4).setValue('삭제됨'); sh.getRange(row, 9, 1, 2).setValues([[hubNow_(), me.name]]); return hubArchList_(); }   // 행은 지우지 않고 표시만
+  var vals = [v.concat([hubNow_(), me.name])];
+  if (row >= 2 && row <= sh.getLastRow()) sh.getRange(row, 1, 1, HUB_ARCH_HEAD.length).setValues(vals); else sh.appendRow(vals[0]);
+  return hubArchList_();
 }

@@ -364,6 +364,8 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 .mclist .t{display:flex;justify-content:space-between;gap:8px;align-items:baseline}.mclist .t b:first-child{min-width:0;overflow-wrap:anywhere}.mclist .t .num{flex:none}
 .mclist .s{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:4px;font-size:12px;color:var(--sub)}
 @media (max-width:900px){.mcg{grid-template-columns:1fr!important}.mcbtns .btn{flex:1 1 100%;justify-content:center}.mcst{width:100%;justify-content:center}#mcym{flex:1}}
+.arnv{display:grid;grid-template-columns:120px 1fr 1fr;gap:8px;align-items:center;margin-bottom:8px}
+@media (max-width:900px){.arnv{grid-template-columns:1fr}}
 .moonly{display:none}
 @media (max-width:900px){.moonly{display:block}}
 .mbars{border:1px solid var(--line);border-radius:12px;padding:12px 14px}
@@ -432,7 +434,7 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-11-02mc2';
+var APP_BUILD = '2026-11-02ar';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -667,6 +669,7 @@ var MENU = [
     {k:'influencer',t:'인플루언서',ic:'brand-instagram',sub:'인플루언서',soon:1}]},
   {grp:'기타', ic:'dots', items:[
     {k:'links',t:'기존 프로그램',ic:'apps'},
+    {k:'archive',t:'보관함',ic:'archive'},
     {k:'settings',t:'설정',ic:'settings'}]}
 ];
 function lowCount(){ return S.products.filter(function(p){ return stockState(p)==='low'; }).length; }
@@ -973,6 +976,76 @@ VIEWS.close = {
     $('mcref').onclick=function(){ mcLoad(); };
     if(MC.d && MC.d.report && MC.d.report.ym===MC.ym) mcDraw(); else { MC.d=null; mcLoad(); }
   }
+};
+
+/* ---------- 보관함: 예전 프로그램·시트·자동화 목록 (OPS DB '보관' 탭) + 스마트스토어 연결 ---------- */
+var AR={d:null, f:'전체', edit:null};
+var AR_ST={'사용중':['var(--accent)','var(--accentbg,var(--bg))'],'이전 중':['var(--amber)','var(--amberbg)'],'보관':['var(--sub)','var(--bg)'],'확인 필요':['var(--red)','var(--redbg)'],'삭제됨':['var(--mute)','var(--bg)']};
+function arPill(st){ var c=AR_ST[st]||['var(--sub)','var(--bg)']; return '<span class="pill" style="background:'+c[1]+';color:'+c[0]+';white-space:nowrap">'+esc(st||'—')+'</span>'; }
+function arLink(u){ return u?'<a href="'+esc(u)+'" target="_blank" rel="noopener" class="btn sm"><i class="ti ti-external-link"></i>열기</a>':''; }
+function arDraw(){
+  var el=$('arbox'); if(!el||!AR.d) return;
+  var R=AR.d.rows.filter(function(x){ return x.v[3]!=='삭제됨'; }), cnt={};
+  R.forEach(function(x){ cnt[x.v[3]]=(cnt[x.v[3]]||0)+1; });
+  var tabs=['전체','사용중','이전 중','보관','확인 필요'], L=R.filter(function(x){ return AR.f==='전체'||x.v[3]===AR.f; });
+  var nv=AR.d.nv||{}, ch=(nv.channels||[]);
+  var nvRow=function(name){ var c=ch.filter(function(x){ return x.channel===name; })[0]||{}; return '<div class="arnv"><b>'+esc(name)+'</b><input class="inp" data-nv="'+esc(name)+'" data-k="id" placeholder="'+(c.id?'저장됨 '+esc(c.id)+' (바꿀 때만 입력)':'애플리케이션 ID')+'" autocomplete="off"><input class="inp" type="password" data-nv="'+esc(name)+'" data-k="secret" placeholder="'+(c.secret?'저장됨 (바꿀 때만 입력)':'시크릿')+'" autocomplete="new-password"></div>'; };
+  var names=['셀렉트인하우스','모아하우스']; ch.forEach(function(c){ if(names.indexOf(c.channel)<0) names.push(c.channel); });
+  var ready=ch.length&&nv.relayKey, trig=(nv.triggers||[]).length;
+  XL_CUR=function(){ return {file:'보관함', sheets:[{name:'보관함', head:AR.d.head.slice(0,8), rows:R.map(function(x){ return x.v.slice(0,8); })}]}; };
+  el.innerHTML=
+    '<div class="card" style="margin-bottom:16px"><h2>스마트스토어 연결 <small>예전 「일일매출」이 하던 매출판 채우기를 OPS가 해요</small></h2>'+
+      '<div class="sm" style="line-height:1.7;margin-bottom:10px">상태: '+(ready?'<b style="color:var(--accent)">연결 정보 저장됨</b>':'<b style="color:var(--red)">연결 정보 없음</b>')+' · 자동 동기화 '+(trig?'<b style="color:var(--accent)">켜짐</b> (매일 10:30·18:00 + 매출판 🔄 체크박스)':'<b>꺼짐</b>')+(nv.last?' · 마지막 '+esc(nv.last):'')+'<br>네이버 커머스API ID·시크릿과 중계 키는 OPS 서버 속성에만 저장되고 화면·저장소에는 남지 않아요.</div>'+
+      names.map(nvRow).join('')+
+      '<label class="fld" style="margin-top:8px"><span>카페24 중계 키 (naver_sales.php)</span><input class="inp" type="password" id="nvkey" placeholder="'+(nv.relayKey?'저장됨 (바꿀 때만 입력)':'중계 키')+'" autocomplete="new-password"></label>'+
+      '<div class="mcbtns"><button class="btn" id="nvsave"><i class="ti ti-device-floppy"></i><span>저장</span></button><button class="btn" id="nvchk"'+(ready?'':' disabled')+'><i class="ti ti-scale"></i><span>어제 값 대조</span></button><button class="btn pri" id="nvrun"'+(ready?'':' disabled')+'><i class="ti ti-refresh"></i><span>지금 동기화</span></button></div><div id="nvout"></div></div>'+
+    '<div class="card"><div class="mchead"><h2 style="margin:0">보관함 <small>예전 프로그램·시트·자동화를 지우지 않고 한 곳에서 관리</small></h2><div style="display:flex;gap:6px;flex-wrap:wrap"><a class="btn sm" href="'+esc(AR.d.url)+'" target="_blank" rel="noopener"><i class="ti ti-table"></i>시트에서 보기</a><button class="btn sm pri" id="aradd"><i class="ti ti-plus"></i>추가</button></div></div>'+
+      '<div class="seg" style="margin:12px 0" id="arf">'+tabs.map(function(t){ return '<button data-v="'+t+'" class="'+(AR.f===t?'on':'')+'">'+t+'</button>'; }).join('')+'</div>'+
+      '<div class="sm" style="margin-bottom:8px">총 '+L.length+'개'+(AR.f==='전체'?' · '+tabs.slice(1).map(function(t){ return t+' '+(cnt[t]||0); }).join(' · '):'')+'</div>'+
+      '<div id="arform"></div>'+
+      (L.length?'<div class="tblwrap pconly"><table class="tbl"><thead><tr><th>상태</th><th>구분</th><th>이름</th><th>하던 일</th><th>대체(OPS)</th><th>보관일</th><th></th></tr></thead><tbody>'+
+        L.map(function(x){ var v=x.v; return '<tr><td>'+arPill(v[3])+'</td><td class="sm">'+esc(v[0])+'</td><td><b>'+esc(v[1])+'</b>'+(v[7]?'<div class="sm" style="overflow-wrap:anywhere">'+esc(v[7])+'</div>':'')+'</td><td style="overflow-wrap:anywhere">'+esc(v[2])+'</td><td class="sm">'+esc(v[4])+'</td><td class="num sm">'+esc(v[6])+'</td><td style="white-space:nowrap">'+arLink(v[5])+' <button class="btn sm" data-ared="'+x.row+'"><i class="ti ti-pencil"></i></button></td></tr>'; }).join('')+'</tbody></table></div>'+
+        '<div class="moonly mclist">'+L.map(function(x){ var v=x.v; return '<div class="mcrow"><div class="t"><b>'+esc(v[1])+'</b>'+arPill(v[3])+'</div><div class="s"><span>'+esc(v[0])+'</span>'+(v[4]?'<span>→ '+esc(v[4])+'</span>':'')+(v[6]?'<span>보관 '+esc(v[6])+'</span>':'')+'</div><div class="sm" style="margin-top:4px;overflow-wrap:anywhere">'+esc(v[2])+(v[7]?' · '+esc(v[7]):'')+'</div><div style="display:flex;gap:6px;margin-top:6px">'+arLink(v[5])+'<button class="btn sm" data-ared="'+x.row+'"><i class="ti ti-pencil"></i>수정</button></div></div>'; }).join('')+'</div>'
+      :'<div class="empty">이 상태의 항목이 없어요</div>')+'</div>';
+  el.querySelectorAll('#arf button').forEach(function(b){ b.onclick=function(){ AR.f=b.dataset.v; arDraw(); }; });
+  el.querySelectorAll('[data-ared]').forEach(function(b){ b.onclick=function(){ arForm(+b.dataset.ared); }; });
+  $('aradd').onclick=function(){ arForm(0); };
+  $('nvsave').onclick=function(){ var b=this, st={};
+    el.querySelectorAll('[data-nv]').forEach(function(i){ var o=st[i.dataset.nv]||(st[i.dataset.nv]={channel:i.dataset.nv,id:'',secret:''}); o[i.dataset.k]=i.value.trim(); });
+    b.disabled=true; api('nv_save',{stores:Object.keys(st).map(function(k){ return st[k]; }), relayKey:$('nvkey').value.trim()}).then(function(){ toast('저장했어요'); return arLoad(); }).catch(fail).then(function(){ b.disabled=false; }); };
+  var out=function(h){ $('nvout').innerHTML=h; };
+  $('nvchk').onclick=function(){ var b=this, d=ymdAdd(today(),-1); b.disabled=true; out('<div class="sm" style="margin-top:10px">'+d+' 네이버 값을 매출판과 대조하는 중…</div>');
+    api('nv_check',{date:d}).then(function(j){ out('<div class="tblwrap" style="margin-top:10px"><table class="tbl"><thead><tr><th>'+esc(j.date)+'</th><th class="r">네이버</th><th class="r">매출판</th><th>결과</th></tr></thead><tbody>'+j.rows.map(function(r){ return '<tr><td>'+esc(r.ch)+'</td><td class="r num">'+(r.api?won(r.api.amt)+' ('+r.api.cnt+')':esc(r.error||''))+'</td><td class="r num">'+(r.sheet?won(r.sheet.amt)+' ('+r.sheet.cnt+')':'—')+'</td><td>'+(r.error?arPill('확인 필요'):r.ok?'<span class="pill" style="color:var(--accent)">일치</span>':'<span class="pill" style="background:var(--redbg);color:var(--red)">다름</span>')+'</td></tr>'; }).join('')+'</tbody></table></div>'); })
+      .catch(function(e){ out(''); fail(e); }).then(function(){ b.disabled=false; }); };
+  $('nvrun').onclick=function(){ var b=this; b.disabled=true; toast('스마트스토어 동기화 중… (10~20초)'); api('nv_sync',{}).then(function(){ toast('동기화 완료 · 어제 확정 + 오늘 실시간'); SALES=null; return arLoad(); }).catch(fail).then(function(){ b.disabled=false; }); };
+}
+function arForm(row){
+  var x=row?AR.d.rows.filter(function(r){ return r.row===row; })[0]:{v:['Apps Script','','','보관','','','','']}, v=x.v, f=$('arform');
+  var sel=function(id,opts,cur){ return '<select class="inp" id="'+id+'">'+opts.map(function(o){ return '<option'+(o===cur?' selected':'')+'>'+o+'</option>'; }).join('')+'</select>'; };
+  f.innerHTML='<div class="card" style="margin:0 0 14px;background:var(--bg)"><div class="grid g2 mcg">'+
+    '<label class="fld"><span>구분</span>'+sel('arv0',['Apps Script','시트','앱','자동화','폴더','기타'],v[0])+'</label>'+
+    '<label class="fld"><span>상태</span>'+sel('arv3',['사용중','이전 중','보관','확인 필요'],v[3])+'</label></div>'+
+    '<label class="fld"><span>이름</span><input class="inp" id="arv1" value="'+esc(v[1])+'"></label>'+
+    '<label class="fld"><span>하던 일</span><input class="inp" id="arv2" value="'+esc(v[2])+'"></label>'+
+    '<label class="fld"><span>대체(OPS 메뉴)</span><input class="inp" id="arv4" value="'+esc(v[4])+'"></label>'+
+    '<label class="fld"><span>링크</span><input class="inp" id="arv5" value="'+esc(v[5])+'"></label>'+
+    '<label class="fld"><span>메모</span><input class="inp" id="arv7" value="'+esc(v[7])+'"></label>'+
+    '<div class="mcbtns"><button class="btn pri" id="arsv"><i class="ti ti-device-floppy"></i><span>저장</span></button><button class="btn" id="arcx">닫기</button>'+(row?'<button class="btn" id="ardl" style="color:var(--red)"><i class="ti ti-eye-off"></i><span>목록에서 숨기기</span></button>':'')+'</div></div>';
+  var g=function(){ return [$('arv0').value,$('arv1').value,$('arv2').value,$('arv3').value,$('arv4').value,$('arv5').value,v[6]||'',$('arv7').value]; };
+  var go=function(body,b){ b.disabled=true; api('archive_save',body).then(function(j){ AR.d.rows=j.rows; f.innerHTML=''; arDraw(); toast('저장했어요'); }).catch(fail).then(function(){ b.disabled=false; }); };
+  $('arsv').onclick=function(){ go({row:row,v:g()},this); };
+  $('arcx').onclick=function(){ f.innerHTML=''; };
+  if($('ardl')) $('ardl').onclick=function(){ go({row:row,v:g(),del:1},this); };
+  f.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+function arLoad(){
+  var el=$('arbox'); if(!el) return Promise.resolve();
+  return api('archive_list',{}).then(function(j){ AR.d=j; arDraw(); })
+    .catch(function(e){ var m=String(e&&e.message||''); el.innerHTML='<div class="card"><div class="empty" style="overflow-wrap:anywhere">'+(m==='unknown_action'?'보관함 서버 기능이 곧 켜져요 (서버 새 버전 배포 대기 중). 다른 메뉴는 그대로 쓰시면 돼요.':'보관함을 불러오지 못했어요 · '+esc(m))+'</div></div>'; });
+}
+VIEWS.archive = {
+  html: function(){ return '<div class="ph"><div><h1>보관함</h1><p>OPS로 옮긴 예전 프로그램·시트·자동화를 지우지 않고 보관·관리해요</p></div><div class="acts"><button class="btn" data-xl="1"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button></div></div><div id="arbox"><div class="card"><div class="empty">불러오는 중…</div></div></div>'; },
+  bind: function(){ if(!isAdmin()){ $('arbox').innerHTML='<div class="card"><div class="empty">보관함은 관리자만 볼 수 있어요</div></div>'; return; } if(AR.d) arDraw(); arLoad(); }
 };
 
 /* ---------- 홈: 오늘 처리 현황 (사방넷 API 직접 조회) ---------- */
