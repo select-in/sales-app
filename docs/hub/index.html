@@ -435,6 +435,42 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 .todo-c .tc2 i:first-child{font-size:11.5px;color:var(--mute)}
 .todo-c .tc2 i:last-child{font-size:13px;color:var(--ink);font-weight:600}
 .todo-c{min-width:0}
+
+/* 홈 캘린더 */
+.calhd{display:flex;align-items:center;gap:10px 16px;flex-wrap:wrap}
+.calnav{display:flex;align-items:center;gap:6px}.calnav b{font-size:15px;min-width:92px;text-align:center}
+.calleg{display:flex;gap:10px;flex-wrap:wrap;margin-left:auto;font-size:12px;color:var(--sub)}
+.calleg span{display:inline-flex;align-items:center;gap:4px}.calleg b{width:10px;height:10px;border-radius:3px;display:inline-block}
+.calw,.calg{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
+.calw .wd{font-size:12px;color:var(--mute);text-align:center;padding:4px 0}.calw .sun{color:var(--red)}.calw .sat{color:#3b6fd8}
+.calg{border-top:1px solid var(--line);border-left:1px solid var(--line)}
+.calg .cd{min-height:92px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:4px;cursor:pointer;min-width:0;overflow:hidden}
+.calg .cd.em{background:var(--bg);cursor:default}
+.calg .cd .dno{font-size:12px;color:var(--sub);display:inline-block;width:22px;height:22px;line-height:22px;text-align:center;border-radius:50%}
+.calg .cd.td .dno{background:var(--brand);color:#fff;font-weight:700}
+.calg .cd.sel{background:var(--soft)}
+.calg .cd:hover:not(.em){background:var(--soft)}
+.evs{display:flex;flex-direction:column;gap:2px;margin-top:2px}
+.evs .ev{font-style:normal;opacity:.82;font-size:11px;line-height:17px;height:17px;padding:0 5px;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.evs .ev.st{opacity:1;font-weight:600}
+.evs em{font-style:normal;font-size:11px;color:var(--mute);padding-left:4px}
+.ev.ok,.calleg b.ok,.dots b.ok,.evb.ok{background:#d6efe3;color:#0b5a3c}
+.ev.wn,.calleg b.wn,.dots b.wn,.evb.wn{background:#fcebc8;color:#8a5a00}
+.ev.mu,.calleg b.mu,.dots b.mu,.evb.mu{background:#e6e8ec;color:#555c66}
+.ev.dn,.calleg b.dn,.dots b.dn,.evb.dn{background:#eef0f2;color:#9aa1aa}
+.calleg b.ok,.dots b.ok,.evb.ok{background:#2f9e6b}.calleg b.wn,.dots b.wn,.evb.wn{background:#e0a21b}.calleg b.mu,.dots b.mu,.evb.mu{background:#9aa1aa}.calleg b.dn,.dots b.dn,.evb.dn{background:#d3d7dc}
+@media (prefers-color-scheme: dark){.ev.ok{background:#173d2d;color:#8fe0b8}.ev.wn{background:#3d2f12;color:#f2c56b}.ev.mu{background:#2a2e34;color:#b5bcc5}.ev.dn{background:#24272b;color:#7d848c}}
+.dots{display:none;gap:2px;justify-content:center;margin-top:2px}.dots b{width:6px;height:6px;border-radius:50%}
+.evh{margin:16px 0 6px;font-size:15px}
+.evl .evr{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.evl .evr:first-child{border-top:0}
+.evr .evb{width:4px;align-self:stretch;border-radius:2px;flex:none}
+.evr .m{flex:1;min-width:0}.evr .t{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.evr .s{font-size:12.5px;color:var(--mute);margin-top:2px}
+@media (max-width:900px){
+  .calg .cd{min-height:46px;padding:2px;text-align:center}
+  .evs{display:none}.dots{display:flex}
+  .calleg{margin-left:0;width:100%}
+}
 </style>
 </head>
 <body>
@@ -655,6 +691,7 @@ function persist(){ if (DEMO) return; clearTimeout(_pt); _pt=setTimeout(function
 var MENU = [
   {grp:'', items:[{k:'home',t:'홈',ic:'home'}]},
   {grp:'상품', ic:'package', items:[
+    {k:'todo',t:'확인할 일',ic:'list-check',sub:'상품 · 재고'},
     {k:'products',t:'상품 관리',ic:'package',sub:'상품 · 재고'},
     {k:'stock',t:'재고 입출고',ic:'barcode',sub:'상품 · 재고'},
     {k:'barcode',t:'바코드 점검',ic:'barcode-off',sub:'상품 · 재고'},
@@ -877,12 +914,13 @@ function salesDraw(){
     (!full&&(CO.length||GL.length)?'<div class="grid g2 hsplit">'+(SF.corp==='전체'?miniBars('법인별',CO,amt):'')+miniBars('채널별',GL,amt)+'</div>':'')+
     '<div class="salesbars'+(days.length>16?' many':'')+'" title="일별 매출">'+days.map(function(x){ return '<div class="sb'+(x[2]?' on':'')+'" title="'+esc(x[0])+' · '+won(x[1])+'원"><i style="height:'+Math.max(2,Math.round(x[1]/dmx*100))+'%"></i><span>'+esc(x[0])+'</span></div>'; }).join('')+'</div>'+
     (full ? (SF.corp==='전체'&&CO.length>1?grpTbl('법인별',CO,true):'')+(GL.length?grpTbl('채널그룹별',GL,false):'') : '')+
+    (!full ? '<div style="margin-top:12px;display:flex;justify-content:flex-end"><a class="btn sm" href="#sales">플랫폼별 · 자세히 보기 <i class="ti ti-chevron-right"></i></a></div>' : (
     (full?'<h3 style="margin:18px 0 6px;font-size:15px">플랫폼별</h3>':'')+
     (!full&&PL.length?'<div class="moonly" style="margin-top:12px">'+miniBars('플랫폼별',PL.map(function(o){ return {k:o.pf+(SF.corp==='전체'?' · '+o.corp:''), amt:o.amt}; }),amt)+'</div>':'')+
     (PL.length ? '<div class="tblwrap'+(full?'':' pconly')+'" style="margin-top:8px"><table class="tbl"><thead><tr><th>플랫폼</th>'+(SF.corp==='전체'?'<th>법인</th>':'')+'<th class="r">주문</th><th class="r">매출</th><th style="width:28%">비중</th><th class="r">정산 예정</th></tr></thead><tbody>'+
       PL.slice(0, full?999:8).map(function(o){ return '<tr><td><b>'+esc(o.pf)+'</b> <span class="sm">'+esc(o.grp)+(o.live?' · 실시간':'')+'</span></td>'+(SF.corp==='전체'?'<td><span class="pill">'+esc(o.corp)+'</span></td>':'')+'<td class="r num">'+won(o.cnt)+'</td><td class="r num"><b>'+won(o.amt)+'</b></td><td><div class="sbar"><i style="width:'+Math.max(1,Math.round(o.amt/mx*100))+'%"></i><span>'+(amt?(o.amt/amt*100).toFixed(1):0)+'%</span></div></td><td class="r num">'+(o.st?won(o.st):'—')+'</td></tr>'; }).join('')+
       '</tbody></table></div>'+(!full&&PL.length>8?'<div style="margin-top:8px"><a class="btn sm" href="#sales">플랫폼 '+PL.length+'개 전체 보기</a></div>':'') : '<div class="empty">이 기간 매출 기록이 없어요</div>')+
-    pay+salesFoot();
+    pay+salesFoot()));
   [['sfc','corp'],['sfp','per']].forEach(function(g){ el.querySelectorAll('#'+g[0]+' button').forEach(function(b){ b.onclick=function(){ SF[g[1]]=b.dataset.v; salesSave(); salesDraw(); }; }); });
   ['sfa','sfb'].forEach(function(id,i){ var x=$(id); if(x) x.onchange=function(){ SF[i?'b':'a']=this.value; salesSave(); salesDraw(); }; });
   var rf=$('sref'); if(rf) rf.onclick=function(e){ e.preventDefault(); el.style.opacity=.5; salesLoad(true).then(function(){ el.style.opacity=1; salesDraw(); toast('매출을 다시 불러왔어요'); }).catch(function(e2){ el.style.opacity=1; fail(e2); }); };
@@ -1289,6 +1327,48 @@ function cmDraw(){
   box.querySelectorAll('#cmo button').forEach(function(b){ b.onclick=function(){ CM.only=b.dataset.v; cmDraw(); }; });
 }
 
+/* ---------- 홈: 매출 + 행사 일정 캘린더 ---------- */
+var EV=null, EVM=(function(){ var d=new Date(Date.now()+9*36e5); return d.toISOString().slice(0,7); })(), EVSEL='';
+var EV_ST={'공구/확정':'ok','가픽스':'wn','미확정':'mu','진행완료':'dn','취소':'cx'};
+function evLoad(force){ if (EV && !force && Date.now()-EV._t<10*60e3) return Promise.resolve(EV); return api('events',{force:!!force}).then(function(j){ if(j.error) throw {message:j.error}; EV=j; EV._t=Date.now(); return j; }); }
+function evDraw(){
+  var el=$('hcal'); if(!el) return;
+  if (!EV){ el.innerHTML='<h2>행사 일정</h2><div class="empty">일정 불러오는 중…</div>'; return; }
+  var td=today(), y=+EVM.slice(0,4), m=+EVM.slice(5,7), first=new Date(Date.UTC(y,m-1,1)), dim=new Date(Date.UTC(y,m,0)).getUTCDate(), lead=first.getUTCDay();
+  var ms=EVM+'-01', me=EVM+'-'+String(dim).padStart(2,'0');
+  var R=EV.rows.filter(function(r){ return r.st!=='취소' && r.b>=ms && r.a<=me; }).sort(function(a,b){ return a.a.localeCompare(b.a)||a.b.localeCompare(b.b); });
+  var cnt={}; R.forEach(function(r){ cnt[r.st]=(cnt[r.st]||0)+1; });
+  var cell=function(d){ var ds=EVM+'-'+String(d).padStart(2,'0'), L=R.filter(function(r){ return r.a<=ds && r.b>=ds; });
+    return '<div class="cd'+(ds===td?' td':'')+(ds===EVSEL?' sel':'')+(L.length?' has':'')+'" data-d="'+ds+'"><span class="dno">'+d+'</span>'+
+      '<div class="evs">'+L.slice(0,3).map(function(r){ return '<i class="ev '+(EV_ST[r.st]||'mu')+(r.a===ds?' st':'')+'" title="'+esc(r.title+' · '+r.st+' · '+r.a.slice(5)+'~'+r.b.slice(5))+'">'+esc(r.seller||r.title)+'</i>'; }).join('')+(L.length>3?'<em>+'+(L.length-3)+'</em>':'')+'</div>'+
+      '<div class="dots">'+L.slice(0,4).map(function(r){ return '<b class="'+(EV_ST[r.st]||'mu')+'"></b>'; }).join('')+'</div></div>'; };
+  var grid=''; for(var i=0;i<lead;i++) grid+='<div class="cd em"></div>'; for(var d=1; d<=dim; d++) grid+=cell(d);
+  var list=EVSEL ? R.filter(function(r){ return r.a<=EVSEL && r.b>=EVSEL; }) : R.filter(function(r){ return r.b>=(EVM===td.slice(0,7)?td:ms); });
+  var row=function(r){ var on=r.a<=td&&r.b>=td; return '<div class="evr"><span class="evb '+(EV_ST[r.st]||'mu')+'"></span><div class="m"><div class="t">'+esc(r.title)+'</div><div class="s">'+esc(r.a.slice(5).replace('-','/'))+' ~ '+esc(r.b.slice(5).replace('-','/'))+' · '+esc(r.st)+(r.kind?' · '+esc(r.kind):'')+(on?' · <b style="color:var(--accent)">진행 중</b>':'')+'</div></div>'+(r.link?'<a class="x" href="'+esc(r.link)+'" target="_blank" rel="noopener" title="셀러 링크"><i class="ti ti-external-link"></i></a>':'')+'</div>'; };
+  el.innerHTML='<div class="calhd"><h2 style="margin:0">행사 일정</h2><div class="calnav"><button class="x" data-mv="-1" title="이전 달"><i class="ti ti-chevron-left"></i></button><b>'+y+'년 '+m+'월</b><button class="x" data-mv="1" title="다음 달"><i class="ti ti-chevron-right"></i></button>'+(EVM!==td.slice(0,7)?'<button class="btn sm" data-mv="0">오늘</button>':'')+'</div>'+
+      '<div class="calleg">'+[['공구/확정','ok'],['가픽스','wn'],['미확정','mu'],['진행완료','dn']].map(function(x){ return '<span><b class="'+x[1]+'"></b>'+x[0]+'</span>'; }).join('')+'</div></div>'+
+    '<div class="segcnt" style="margin:6px 0 10px">이번 달 '+R.length+'건'+(cnt['공구/확정']?' · 확정 '+cnt['공구/확정']:'')+(cnt['가픽스']?' · 가픽스 '+cnt['가픽스']:'')+(cnt['미확정']?' · 미확정 '+cnt['미확정']:'')+'</div>'+
+    '<div class="calw">'+'일월화수목금토'.split('').map(function(x,i){ return '<div class="wd'+(i===0?' sun':i===6?' sat':'')+'">'+x+'</div>'; }).join('')+'</div><div class="calg">'+grid+'</div>'+
+    '<h3 class="evh">'+(EVSEL?esc(EVSEL.slice(5).replace('-','/'))+' 일정 <a href="#" id="evall" style="font-size:12.5px;font-weight:500;color:var(--accent)">전체 보기</a>':(EVM===td.slice(0,7)?'다가오는 일정':m+'월 일정'))+'</h3>'+
+    (list.length?'<div class="evl">'+list.map(row).join('')+'</div>':'<div class="empty">일정이 없어요</div>')+
+    '<p style="margin:10px 0 0;font-size:12px;color:var(--mute)">공동구매 일정 시트 「일정」 탭 기준 · 취소 제외 · '+esc(EV.at||'')+' <a href="'+esc(EV.url||'#')+'" target="_blank" rel="noopener" style="color:var(--accent)">시트 열기</a></p>';
+  el.querySelectorAll('[data-mv]').forEach(function(b){ b.onclick=function(){ var k=+b.dataset.mv; if(!k){ EVM=td.slice(0,7); } else { var dd=new Date(Date.UTC(y,m-1+k,1)); EVM=dd.toISOString().slice(0,7); } EVSEL=''; evDraw(); }; });
+  el.querySelectorAll('.cd[data-d]').forEach(function(c){ c.onclick=function(){ EVSEL = EVSEL===c.dataset.d ? '' : c.dataset.d; evDraw(); }; });
+  var ea=$('evall'); if(ea) ea.onclick=function(e){ e.preventDefault(); EVSEL=''; evDraw(); };
+}
+VIEWS.home = {
+  html: function(){
+    var td=today(), d=new Date(Date.now()+9*36e5), wd='일월화수목금토'.charAt(d.getUTCDay());
+    return '<div class="ph"><div><h1>'+esc(S.me.name)+'님, 안녕하세요</h1><p>'+td.replace(/-/g,'.')+' ('+wd+')</p></div>'+
+      '<div class="acts"><a class="btn" href="#todo"><i class="ti ti-list-check"></i><span>확인할 일</span></a><a class="btn pri" href="#stock"><i class="ti ti-barcode"></i><span>입출고</span></a></div></div>'+
+      salesHtml()+'<div class="card" id="hcal"><h2>행사 일정</h2><div class="empty">일정 불러오는 중…</div></div>';
+  },
+  bind: function(){
+    salesBind();
+    evDraw(); evLoad().then(evDraw).catch(function(e){ var el=$('hcal'); if(el) el.innerHTML='<h2>행사 일정</h2><div class="empty">일정을 불러오지 못했어요 · '+esc(e&&e.message||'')+'</div>'; });
+  }
+};
+
 /* ---------- 홈: 상품 확인할 것 기준 (상품 화면 필터와 공유) ---------- */
 var PCHK = {
   nocost:  {t2:'원가 미입력',   ic:'coin-off',      d:'원가 넣어야 마진·이익 계산돼요',  t:function(p){ return p.type!=='위탁' && !isVirtual(p) && !(+p.cost>0); }},
@@ -1312,7 +1392,7 @@ function homeRegLoad(){
 }
 
 /* ---------- 홈 ---------- */
-VIEWS.home = {
+VIEWS.todo = {
   html: function(){
     var P = S.products, sa = P.filter(function(p){ return p.type!=='위탁' && !isVirtual(p); });
     var low = P.filter(function(p){ return stockState(p)==='low'; }), out = P.filter(function(p){ return stockState(p)==='out'; });
@@ -1327,9 +1407,9 @@ VIEWS.home = {
     var chk = Object.keys(PCHK).map(function(k){ var c=PCHK[k]; return {k:k, c:c, n:A.filter(c.t).length}; });
     var regL = P.filter(function(p){ return p.regStatus; }), rc=function(st){ return regL.filter(function(p){ return p.regStatus===st; }).length; };
     var row=function(ic, cls, t, sub, href){ return '<a class="todo hk" href="'+href+'"><div class="ic '+cls+'"><i class="ti ti-'+ic+'"></i></div><div class="m"><div class="t">'+t+'</div><div class="s">'+sub+'</div></div><i class="ti ti-chevron-right" style="color:var(--mute)"></i></a>'; };
-    return '<div class="ph"><div><h1>'+esc(S.me.name)+'님, 안녕하세요</h1><p>'+td.replace(/-/g,'.')+' ('+wd+') · 매출과 상품부터 정리했어요</p></div>'+
+    return '<div class="ph"><div><h1>확인할 일</h1><p>'+td.replace(/-/g,'.')+' ('+wd+') · 상품 확인 · 등록 · 오늘 운영</p></div>'+
       '<div class="acts"><button class="btn" data-xl="1" title="지금 보이는 조건 그대로 엑셀로 받기"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button><a class="btn pri" href="#stock"><i class="ti ti-barcode"></i>입출고 시작</a></div></div>'+
-      salesHtml()+
+      
       '<h2 class="hsec">상품</h2>'+
       '<div class="grid g4">'+
         '<a class="kpi" href="#products"><div class="k"><i class="ti ti-package"></i>등록 상품</div><div class="v num">'+won(P.length)+'<small>개</small></div></a>'+
@@ -1364,7 +1444,7 @@ VIEWS.home = {
       '<div class="card" style="margin-top:16px"><h2>자주 쓰는 프로그램</h2><div class="grid g3">'+toolCards(true)+'</div></div>';
   },
   bind: function(){
-    salesBind(); opsTodayLoad(); homeRegLoad();
+    opsTodayLoad(); homeRegLoad();
     $('schk').onclick = function(){
       this.disabled = true;
       api('config_set',{key:'scheduler_check',value:'ok'}).then(function(j){ S.config=j.config; persist(); toast('사방넷 스케줄러 점검 완료로 기록했어요'); route(); }).catch(function(e){ fail(e); route(); });

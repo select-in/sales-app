@@ -76,6 +76,7 @@ function doPost(e) {
       case 'sbn_sales_check': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 사방넷 API(주문일) 기준 일별·법인·쇼핑몰 집계 — 매출판 대조용 (읽기 전용)
         return hubOut_(hubSbnSalesRange_(req.from, req.to));
       case 'sales': return hubOut_(hubSales_(me));
+      case 'events': return hubOut_(hubEvents_(req.force));   // 홈 행사 일정 캘린더 (공동구매 일정 시트 「일정」 탭, 읽기 전용)
       case 'sbn_reg_daily': return hubOut_(hubSbnRegDaily_(req.days, req.force));   // 사방넷 수집일 기준 법인별 건수 (조회 전용)
       case 'archive_list': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });
         return hubOut_(hubLocked_(function () { var o = hubArchList_(); o.nv = hubNvStatus_(); return o; }));
@@ -780,6 +781,30 @@ function hubKrmMapSet_(req, me) {
  *  - 검증: 매출판 '대시보드' 탭의 월누적 매출과 같은 기간 합계를 맞춰 보고 결과를 함께 보냄
  *  - 입금예정일·입금확인은 관리자에게만 보냄 */
 var HUB_SALES_ID = '1TSYSFjgcqo1Gu1Ryq9CHjdNN1Fm1QYmASKlV77xsjl0';
+var HUB_EVENT_ID = '1rHbpjZa12ZDfw2OQXLSdd0QexqqXrv2xxjTo0egYtOs';   // 정산/일정) 셀렉트인 공동구매 일정 정리 및 정산
+/** 행사 일정: 「일정」 탭 A 년/월(yyyymm) · B 시작일-종료일(MMDD-MMDD) · C 확정구분 · D 진행구분 · E 벤더사 · F 제목 · G 셀러 · H 링크 · I 브랜드 */
+function hubEvents_(force) {
+  var cache = CacheService.getScriptCache();
+  if (!force) { var hit = cache.get('events_v1'); if (hit) { try { return JSON.parse(hit); } catch (e) {} } }
+  try {
+    var sh = SpreadsheetApp.openById(HUB_EVENT_ID).getSheetByName('일정');
+    if (!sh) return { error: '일정 시트에 「일정」 탭이 없어요' };
+    var n = Math.max(1, sh.getLastRow() - 3), v = sh.getRange(4, 1, n, 9).getDisplayValues();
+    var tz = 'Asia/Seoul', from = Utilities.formatDate(new Date(Date.now() - 150 * 864e5), tz, 'yyyy-MM-dd'), rows = [];
+    v.forEach(function (r) {
+      var ym = String(r[0]).trim(), m = String(r[1]).replace(/\s/g, '').match(/^(\d{2})(\d{2})-(\d{2})(\d{2})$/);
+      if (!/^\d{6}$/.test(ym) || !m) return;
+      var y = Number(ym.slice(0, 4)), ymM = Number(ym.slice(4)), sm = Number(m[1]), em = Number(m[3]);
+      var sy = y + (sm - ymM > 6 ? -1 : ymM - sm > 6 ? 1 : 0), ey = sy + (em < sm ? 1 : 0);
+      var a = sy + '-' + m[1] + '-' + m[2], b = ey + '-' + m[3] + '-' + m[4];
+      if (b < from) return;
+      rows.push({ a: a, b: b, st: String(r[2]).trim(), kind: String(r[3]).trim(), vendor: String(r[4]).trim(), title: String(r[5]).replace(/\s+/g, ' ').trim(), seller: String(r[6]).trim(), link: /^https?:\/\//.test(String(r[7])) ? String(r[7]).trim() : '', brand: String(r[8]).trim() });
+    });
+    var out = { rows: rows, at: Utilities.formatDate(new Date(), tz, 'MM-dd HH:mm'), url: 'https://docs.google.com/spreadsheets/d/' + HUB_EVENT_ID + '/edit' };
+    try { cache.put('events_v1', JSON.stringify(out), 600); } catch (e) {}
+    return out;
+  } catch (e) { return { error: '일정 시트를 읽지 못했어요: ' + String(e.message || e).slice(0, 120) }; }
+}
 function hubSalesYmd_(v, tz) {
   if (v instanceof Date) return Utilities.formatDate(v, tz, 'yyyy-MM-dd');
   var m = String(v || '').trim().match(/^(\d{4})\s*[-.\/]\s*(\d{1,2})\s*[-.\/]\s*(\d{1,2})/);
