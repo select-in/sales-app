@@ -76,6 +76,7 @@ function doPost(e) {
       case 'sbn_sales_check': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 사방넷 API(주문일) 기준 일별·법인·쇼핑몰 집계 — 매출판 대조용 (읽기 전용)
         return hubOut_(hubSbnSalesRange_(req.from, req.to));
       case 'sales': return hubOut_(hubSales_(me));
+      case 'sbn_reg_daily': return hubOut_(hubSbnRegDaily_(req.days, req.force));   // 사방넷 수집일 기준 법인별 건수 (조회 전용)
       case 'archive_list': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });
         return hubOut_(hubLocked_(function () { var o = hubArchList_(); o.nv = hubNvStatus_(); return o; }));
       case 'archive_save': if (!admin) return hubOut_({ error: '관리자만 바꿀 수 있습니다' });
@@ -2019,4 +2020,37 @@ function hubArchSave_(req, me) {
   var vals = [v.concat([hubNow_(), me.name])];
   if (row >= 2 && row <= sh.getLastRow()) sh.getRange(row, 1, 1, HUB_ARCH_HEAD.length).setValues(vals); else sh.appendRow(vals[0]);
   return hubArchList_();
+}
+
+/* ===================== 사방넷 수집일 기준 법인별 건수 =====================
+ * 송장 출력은 수집일 기준이라 매출(주문일)과 따로 봄. 사방넷 API dateSearchCondition 1(수집일)로 하루씩 조회.
+ * 규칙: 취소 제외 · 반품/교환 재생성 행 제외 · 설정 ③ 쇼핑몰ID→법인('제외' 빼기). 지난 날은 6시간, 오늘은 5분 캐시 */
+function hubSbnRegDaily_(days, force) {
+  var tz = 'Asia/Seoul', n = Math.max(1, Math.min(31, Number(days) || 14)), cache = CacheService.getScriptCache();
+  var ss = SpreadsheetApp.openById(HUB_SALES_ID), corp = {};
+  ss.getSheetByName('설정').getRange('A57:B120').getValues().forEach(function (r) { var id = String(r[0]).trim(); if (id) corp[id] = String(r[1]).trim(); });
+  var out = [];
+  for (var k = 0; k < n; k++) {
+    var d = Utilities.formatDate(new Date(Date.now() - k * 864e5), tz, 'yyyyMMdd'), ck = 'sbn_reg_' + d, hit = force ? null : cache.get(ck);
+    if (hit) { try { out.push(JSON.parse(hit)); continue; } catch (e) {} }
+    var o = { d: d.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'), 겐더샵: 0, 셀렉트인: 0, 기타: 0, amt: { 겐더샵: 0, 셀렉트인: 0, 기타: 0 } }, page = 1;
+    try {
+      while (page <= 20) {
+        var r = hubSbnCall_('POST', '/v3/sb/order', { dateSearchCondition: 1, startDate: d, endDate: d, updateOrderStsYn: 'N', page: page, perPage: 1000,
+          responseItems: ['SB_ORD_NO', 'ORDER_STATUS', 'SHOP_LOGIN_ID', 'ORDER_TOT_AMT', 'ORG_SB_ORD_NO'] });
+        var dt = (r && r.data) || {};
+        (dt.results || []).forEach(function (x) {
+          if (/CANCEL/i.test(String(x.ORDER_STATUS))) return;
+          if (x.ORG_SB_ORD_NO && String(x.ORG_SB_ORD_NO) !== '0') return;
+          var c = corp[String(x.SHOP_LOGIN_ID || '').trim()] || '기타'; if (c === '제외') return;
+          if (c !== '겐더샵' && c !== '셀렉트인') c = '기타';
+          o[c]++; o.amt[c] += Number(x.ORDER_TOT_AMT) || 0;
+        });
+        if (!dt.hasNext) break; page++;
+      }
+    } catch (e) { o.error = String(e.message || e).slice(0, 80); }
+    if (!o.error) { try { cache.put(ck, JSON.stringify(o), k === 0 ? 300 : 21600); } catch (e) {} }
+    out.push(o);
+  }
+  return { rows: out, at: Utilities.formatDate(new Date(), tz, 'HH:mm') };
 }

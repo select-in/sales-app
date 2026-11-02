@@ -434,7 +434,7 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-11-02ar';
+var APP_BUILD = '2026-11-02reg';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -889,9 +889,30 @@ function salesBind(){
   if (SALES) salesDraw();
   salesLoad().then(salesDraw).catch(function(e){ if($('hsales')) $('hsales').innerHTML='<div class="empty">매출을 불러오지 못했어요 · '+esc(e&&e.message||'')+'</div>'; });
 }
+/* 사방넷 수집일 기준 법인별 건수 (송장 출력 기준) */
+var SREG=null;
+function sregDraw(){
+  var el=$('hsreg'); if(!el||!SREG) return;
+  var R=SREG.rows, tot={g:0,s:0,e:0}; R.forEach(function(o){ tot.g+=o['겐더샵']; tot.s+=o['셀렉트인']; tot.e+=o['기타']; });
+  var hasE=tot.e>0, wd=['일','월','화','수','목','금','토'];
+  var lab=function(d){ var x=new Date(d+'T00:00:00Z'); return (+d.slice(5,7))+'/'+(+d.slice(8))+' ('+wd[x.getUTCDay()]+')'; };
+  el.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="margin:0">사방넷 수집일 기준 건수 <small>송장 출력 기준 · 취소 제외 · '+esc(SREG.at)+'</small></h2><a href="#" id="sregr" class="btn sm"><i class="ti ti-refresh"></i>새로고침</a></div>'+
+    '<div class="tblwrap pconly" style="margin-top:10px"><table class="tbl"><thead><tr><th>수집일</th><th class="r">겐더샵</th><th class="r">셀렉트인</th>'+(hasE?'<th class="r">미분류</th>':'')+'<th class="r">합계</th><th class="r">금액</th></tr></thead><tbody>'+
+      R.map(function(o){ var t=o['겐더샵']+o['셀렉트인']+o['기타'], a=o.amt['겐더샵']+o.amt['셀렉트인']+o.amt['기타']; return '<tr><td>'+lab(o.d)+(o.error?' <span class="pill" style="color:var(--red)">조회 실패</span>':'')+'</td><td class="r num"><b>'+won(o['겐더샵'])+'</b></td><td class="r num"><b>'+won(o['셀렉트인'])+'</b></td>'+(hasE?'<td class="r num">'+won(o['기타'])+'</td>':'')+'<td class="r num">'+won(t)+'</td><td class="r num">'+won(a)+'</td></tr>'; }).join('')+
+      '<tr><td><b>'+R.length+'일 합계</b></td><td class="r num"><b>'+won(tot.g)+'</b></td><td class="r num"><b>'+won(tot.s)+'</b></td>'+(hasE?'<td class="r num">'+won(tot.e)+'</td>':'')+'<td class="r num"><b>'+won(tot.g+tot.s+tot.e)+'</b></td><td></td></tr></tbody></table></div>'+
+    '<div class="moonly mclist" style="margin-top:6px">'+R.map(function(o){ return '<div class="mcrow"><div class="t"><b>'+lab(o.d)+'</b><span class="num">'+won(o['겐더샵']+o['셀렉트인']+o['기타'])+'건</span></div><div class="s"><span>겐더샵 <b>'+won(o['겐더샵'])+'</b></span><span>셀렉트인 <b>'+won(o['셀렉트인'])+'</b></span>'+(o['기타']?'<span>미분류 '+won(o['기타'])+'</span>':'')+(o.error?'<span style="color:var(--red)">조회 실패</span>':'')+'</div></div>'; }).join('')+'</div>';
+  $('sregr').onclick=function(e){ e.preventDefault(); el.style.opacity=.5; sregLoad(true); };
+}
+function sregLoad(force){
+  var el=$('hsreg'); if(!el) return;
+  if(SREG && !force && Date.now()-SREG._t<5*60e3) return sregDraw();
+  if(!SREG) el.innerHTML='<h2>사방넷 수집일 기준 건수</h2><div class="empty">사방넷에서 불러오는 중… (처음엔 10~30초)</div>';
+  api('sbn_reg_daily',{days:14, force:!!force}).then(function(j){ SREG=j; SREG._t=Date.now(); el.style.opacity=1; sregDraw(); })
+    .catch(function(e){ el.style.opacity=1; var m=String(e&&e.message||''); el.innerHTML='<h2>사방넷 수집일 기준 건수</h2><div class="empty">'+(m==='unknown_action'?'곧 켜져요 (서버 배포 대기 중)':'불러오지 못했어요 · '+esc(m.slice(0,80)))+'</div>'; });
+}
 VIEWS.sales = {
-  html: function(){ return '<div class="ph"><div><h1>매출</h1><p>겐더샵·셀렉트인 매출을 기간·법인·채널별로 봐요</p></div><div class="acts">'+(isAdmin()?'<a class="btn" href="#close"><i class="ti ti-calendar-check"></i><span>월 마감</span></a>':'')+'<button class="btn" data-xl="1"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button></div></div>'+salesHtml(true); },
-  bind: salesBind
+  html: function(){ return '<div class="ph"><div><h1>매출</h1><p>겐더샵·셀렉트인 매출을 기간·법인·채널별로 봐요</p></div><div class="acts">'+(isAdmin()?'<a class="btn" href="#close"><i class="ti ti-calendar-check"></i><span>월 마감</span></a>':'')+'<button class="btn" data-xl="1"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button></div></div>'+salesHtml(true)+'<div class="card" id="hsreg" style="margin-bottom:16px"></div>'; },
+  bind: function(){ salesBind(); sregLoad(); }
 };
 
 
