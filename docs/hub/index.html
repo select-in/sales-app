@@ -487,6 +487,8 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 .evgrp{min-width:0}.evgh{display:flex;align-items:baseline;gap:8px;padding:6px 0;border-bottom:2px solid var(--line)}
 .evgh b{font-size:14px}.evmore{margin-top:8px;width:100%;justify-content:center}
 @media (max-width:900px){.evcols{grid-template-columns:1fr}.evgrp+.evgrp{margin-top:14px}}
+
+.otab.ohome{position:sticky;left:0;z-index:2}
 </style>
 </head>
 <body>
@@ -767,14 +769,17 @@ function setActive(k){
 var OTABS = (function(){ try{ var x=JSON.parse(localStorage.getItem('hubTabs')||'[]'); return Array.isArray(x)?x:[]; }catch(e){ return []; } })();
 function viewTitle(k){ var t=''; MENU.forEach(function(g){ g.items.forEach(function(i){ if(i.k===k) t=i.t; }); }); return t || {more:'전체 메뉴'}[k] || k; }
 function viewIcon(k){ var t='point'; MENU.forEach(function(g){ g.items.forEach(function(i){ if(i.k===k) t=i.ic; }); }); return t; }
-function otabsSave(){ try{ localStorage.setItem('hubTabs', JSON.stringify(OTABS)); }catch(e){} }
+function otabsFix(){ OTABS=OTABS.filter(function(t){ return t.k!=='home'; }); OTABS.unshift({k:'home', h:'#home'}); }
+otabsFix();
+function otabsSave(){ otabsFix(); try{ localStorage.setItem('hubTabs', JSON.stringify(OTABS)); }catch(e){} }
 function otabsDraw(k){
   var el=$('otabs'); if(!el) return;
   if (k){ var hash=location.hash||'#home', i=OTABS.findIndex(function(t){ return t.k===k; });
-    if (i<0){ OTABS.push({k:k, h:hash}); if (OTABS.length>8) OTABS.splice(OTABS.findIndex(function(t){ return t.k!==k; }),1); } else OTABS[i].h=hash;
+    if (k==='home') hash='#home';
+    if (i<0){ OTABS.push({k:k, h:hash}); if (OTABS.length>9) OTABS.splice(OTABS.findIndex(function(t){ return t.k!==k && t.k!=='home'; }),1); } else OTABS[i].h=hash;
     otabsSave(); }
   var cur=k||((location.hash||'#home').slice(1).split('?')[0]||'home');
-  el.innerHTML = '<button class="osync'+(SYNC_BUSY?' busy':'')+'" id="osync" title="상품·재고·매출·크림 최신 내용 바로 가져오기"><i class="ti ti-refresh"></i><span>'+(SYNC_BUSY?'동기화 중…':'동기화')+'</span>'+(SYNC_AT?'<small>'+esc(SYNC_AT)+'</small>':'')+'</button>' + OTABS.map(function(t){ return '<a class="otab'+(t.k===cur?' on':'')+'" href="'+esc(t.h)+'" data-ot="'+esc(t.k)+'"><i class="ti ti-'+esc(viewIcon(t.k))+'"></i><span>'+esc(viewTitle(t.k))+'</span>'+(OTABS.length>1?'<b class="cx" data-cx="'+esc(t.k)+'" title="탭 닫기">×</b>':'')+'</a>'; }).join('');
+  el.innerHTML = '<button class="osync'+(SYNC_BUSY?' busy':'')+'" id="osync" title="상품·재고·매출·크림 최신 내용 바로 가져오기"><i class="ti ti-refresh"></i><span>'+(SYNC_BUSY?'동기화 중…':'동기화')+'</span>'+(SYNC_AT?'<small>'+esc(SYNC_AT)+'</small>':'')+'</button>' + OTABS.map(function(t){ return '<a class="otab'+(t.k===cur?' on':'')+(t.k==='home'?' ohome':'')+'" href="'+esc(t.h)+'" data-ot="'+esc(t.k)+'"><i class="ti ti-'+esc(viewIcon(t.k))+'"></i><span>'+esc(viewTitle(t.k))+'</span>'+(t.k!=='home'?'<b class="cx" data-cx="'+esc(t.k)+'" title="탭 닫기">×</b>':'')+'</a>'; }).join('');
   el.querySelectorAll('[data-cx]').forEach(function(x){ x.onclick=function(e){ e.preventDefault(); e.stopPropagation();
     var i=OTABS.findIndex(function(t){ return t.k===x.dataset.cx; }); if(i<0) return; OTABS.splice(i,1); otabsSave();
     if (x.dataset.cx===cur){ var n=OTABS[Math.min(i,OTABS.length-1)]; location.hash=n?n.h:'#home'; } else otabsDraw(); }; });
