@@ -76,6 +76,10 @@ function doPost(e) {
       case 'sbn_sales_check': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 사방넷 API(주문일) 기준 일별·법인·쇼핑몰 집계 — 매출판 대조용 (읽기 전용)
         return hubOut_(hubSbnSalesRange_(req.from, req.to));
       case 'sales': return hubOut_(hubSales_(me));
+      case 'month_close': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 월 마감 미리보기 (읽기 전용)
+        return hubOut_(hubMonthClosePreview_(req.ym));
+      case 'month_close_send': if (!admin) return hubOut_({ error: '관리자만 보낼 수 있습니다' });
+        return hubOut_(hubMonthCloseSend_(req.ym, me, !!req.test));
       case 'ops_today': return hubOut_(hubOpsToday_(req.force));
       case 'plat_reco': return hubOut_(hubPlatReco_(req.force));
       case 'ext_price': return hubOut_(hubExtPrice_(req.items || []));      // 네이버 쇼핑 최저가 조회 (조회 전용)
@@ -1568,4 +1572,247 @@ function hubBoot_(me, compact) {
   var out = { me: me, pcols: HUB_P_FIELDS, prows: rows, history: hubHistory_(null, 200), config: hubConfig_() };
   if (me.role === '관리자') out.users = hubUsers_();
   return out;
+}
+
+/* ===================== 월 마감 (매출 마감 자료 메일) =====================
+ * 매출판 「일별입력」(OPS 매출과 같은 원본·같은 규칙)으로 지난달 마감 자료를 만들어 메일로 보냄.
+ * 예전 「일일매출」 월말 메일과 다른 점
+ *  - 데이터가 다 들어왔는지 먼저 점검: 사방넷·스마트스토어·크림·포이즌·도소매가 말일 이후까지 반영됐는지,
+ *    사방넷 API(주문일) 합계와 매출판 사방넷 합계가 맞는지, 법인 '확인필요' 행, 원가 미입력 매출
+ *  - 다 맞으면 「확정」, 아니면 기다렸다가(매일 10시 다시 점검) 8일에 「가마감」으로 미반영 항목을 표시해 보냄
+ *  - 이익은 매입원가가 입력된 매출만으로 계산 (원가 없는 행은 정산액이 통째로 이익이 되는 문제 제외)
+ *  - 첨부 엑셀: 고정 파일 「셀렉트인 OPS 월마감」 하나를 매번 다시 채워서 내보냄 (스프레드시트를 새로 만들지 않음)
+ * 처음 한 번: 편집기에서 hubMonthCloseSetup 실행 → 권한 허용 (메일 보내기·트리거) → 매일 10시 자동 점검 */
+var HUB_MC_TO = 'biz@select-in.com', HUB_MC_CC = 'select_in@naver.com,skai1464@naver.com';
+var HUB_MC_GROUPS = ['사방넷', '스마트스토어', '크림', '포이즌', '도소매'];
+var HUB_MC_HOUR = 10, HUB_MC_LAST_DAY = 8;
+
+function hubMcYm_(ym) {
+  var tz = 'Asia/Seoul';
+  if (/^\d{4}-\d{2}$/.test(String(ym || ''))) return String(ym);
+  var t = Utilities.formatDate(new Date(), tz, 'yyyy-MM').split('-');
+  var d = new Date(Date.UTC(+t[0], +t[1] - 2, 1));
+  return d.getUTCFullYear() + '-' + ('0' + (d.getUTCMonth() + 1)).slice(-2);
+}
+function hubMcEnd_(ym) { var p = ym.split('-'); return ym + '-' + ('0' + new Date(Date.UTC(+p[0], +p[1], 0)).getUTCDate()).slice(-2); }
+function hubMcSetting_() {
+  var c = hubConfig_(), v = function (k, d) { return c[k] && String(c[k].value).trim() ? String(c[k].value).trim() : d; };
+  return { to: v('mc_to', HUB_MC_TO), cc: v('mc_cc', HUB_MC_CC), auto: v('mc_auto', 'Y') !== 'N', cfg: c };
+}
+
+/** 마감 자료 계산 (읽기 전용) */
+function hubMonthCloseBuild_(ym, opt) {
+  opt = opt || {};
+  var tz = 'Asia/Seoul', from = ym + '-01', to = hubMcEnd_(ym), today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  var ss = SpreadsheetApp.openById(HUB_SALES_ID), sh = ss.getSheetByName('일별입력');
+  if (!sh) throw new Error("매출판에 '일별입력' 탭이 없어요");
+  var v = sh.getRange(1, 1, Math.max(1, sh.getLastRow()), sh.getLastColumn()).getValues(), h = -1;
+  for (var i = 0; i < Math.min(10, v.length); i++) if (String(v[i][0]).trim() === '날짜') { h = i; break; }
+  if (h < 0) throw new Error("일별입력 탭에서 '날짜' 머리글을 찾지 못했어요");
+  var I = {}; v[h].forEach(function (c, j) { var k = String(c).trim(); if (k && !(k in I)) I[k] = j; });
+  var miss = ['날짜', '법인', '채널그룹', '주문건수', '매출액'].filter(function (k) { return I[k] == null; });
+  if (miss.length) throw new Error('일별입력 머리글이 바뀌었어요: ' + miss.join(', '));
+  var col = function (r, k) { return I[k] == null ? '' : r[I[k]]; };
+  var N = hubNum_, last = {}, rows = [];
+  v.slice(h + 1).forEach(function (r) {
+    var d = hubSalesYmd_(col(r, '날짜'), tz); if (!d) return;
+    var corp = String(col(r, '법인')).trim(); if (corp === '제외') return;
+    var grp = String(col(r, '채널그룹')).trim() || '기타';
+    var pf = String(col(r, '플랫폼(자동)') || col(r, '쇼핑몰') || col(r, '채널')).trim() || grp;
+    var lk = grp === '리셀' ? (/포이즌/i.test(pf + col(r, '채널')) ? '포이즌' : '크림') : grp;
+    if (d <= today && (!last[lk] || d > last[lk])) last[lk] = d;
+    if (d < from || d > to) return;
+    var amt = N(col(r, '매출액')), settle = N(col(r, '정산예정액')), cost = N(col(r, '매입원가')), etc = N(col(r, '기타비용'));
+    var fee = I['수수료'] != null ? N(col(r, '수수료')) : Math.max(0, amt - settle);
+    rows.push({
+      d: d, corp: corp || '확인필요', grp: grp, lk: lk, pf: pf, ch: String(col(r, '채널')).trim(), mall: String(col(r, '쇼핑몰')).trim(), mid: String(col(r, '쇼핑몰ID')).trim(),
+      cnt: N(col(r, '주문건수')), amt: amt, fee: fee, settle: settle, cost: cost, etc: etc,
+      costed: cost > 0, profit: cost > 0 ? settle - cost - etc : 0,
+      payDay: hubSalesYmd_(col(r, '입금예정일'), tz), paid: String(col(r, '입금확인(Y)')).trim().toUpperCase() === 'Y', memo: String(col(r, '비고')).trim()
+    });
+  });
+  var zero = function (k) { return { k: k, cnt: 0, amt: 0, fee: 0, settle: 0, cost: 0, etc: 0, profit: 0, costedAmt: 0, paid: 0, unpaid: 0 }; };
+  var add = function (o, r) {
+    o.cnt += r.cnt; o.amt += r.amt; o.fee += r.fee; o.settle += r.settle; o.etc += r.etc;
+    if (r.costed) { o.cost += r.cost; o.profit += r.profit; o.costedAmt += r.amt; }
+    if (r.paid) o.paid += r.settle; else o.unpaid += r.settle;
+  };
+  var group = function (key) {
+    var M = {}; rows.forEach(function (r) { var k = key(r); add(M[k] || (M[k] = Object.assign(zero(k), { corp: r.corp, grp: r.grp, pf: r.pf })), r); });
+    return Object.keys(M).map(function (k) { return M[k]; }).filter(function (o) { return o.amt || o.cnt; }).sort(function (a, b) { return b.amt - a.amt; });
+  };
+  var tot = zero('합계'); rows.forEach(function (r) { add(tot, r); });
+  var byCorp = group(function (r) { return r.corp; });
+  var byGrp = group(function (r) { return r.grp; });
+  var byCorpGrp = group(function (r) { return r.corp + ' · ' + r.grp; });
+  var byPf = group(function (r) { return r.corp + '|' + r.grp + '|' + r.pf; });
+  var days = [];
+  for (var dd = from; dd <= to; dd = Utilities.formatDate(new Date(new Date(dd + 'T00:00:00+09:00').getTime() + 864e5), tz, 'yyyy-MM-dd')) {
+    var o = { d: dd, 겐더샵: 0, 셀렉트인: 0, 기타: 0, cnt: 0, amt: 0, sbn: 0 };
+    days.push(o);
+  }
+  var DI = {}; days.forEach(function (o, k) { DI[o.d] = k; });
+  rows.forEach(function (r) { var o = days[DI[r.d]]; if (!o) return; o.cnt += r.cnt; o.amt += r.amt; if (r.corp === '겐더샵' || r.corp === '셀렉트인') o[r.corp] += r.amt; else o.기타 += r.amt; if (r.grp === '사방넷') o.sbn += r.amt; });
+
+  /* ---- 점검 ---- */
+  var checks = [], push = function (lv, item, msg) { checks.push({ lv: lv, item: item, msg: msg }); };
+  HUB_MC_GROUPS.forEach(function (g) {
+    var L = last[g] || '';
+    if (g === '도소매') { push(L ? 'ok' : 'warn', '도소매 반영', L ? '마지막 입력 ' + L : '도소매 입력 기록이 없어요 (세금계산서 발행 건 확인)'); return; }
+    if (L >= to) push('ok', g + ' 반영', '말일(' + to.slice(5) + ')까지 반영됨 · 마지막 ' + L);
+    else push('bad', g + ' 반영', '마지막 ' + (L || '없음') + ' — 말일(' + to.slice(5) + ')까지 아직 안 들어왔어요' + (g === '크림' || g === '포이즌' ? ' (매주 월요일 반영)' : ''));
+  });
+  var noSbn = days.filter(function (o) { return !o.sbn && o.d <= today; }).map(function (o) { return o.d.slice(8) * 1 + '일'; });
+  if (noSbn.length) push('bad', '사방넷 빈 날짜', noSbn.join(', ') + ' 사방넷 매출이 0원 — 주문 수집 누락 확인');
+  var unk = rows.filter(function (r) { return r.corp === '확인필요' || (r.corp !== '겐더샵' && r.corp !== '셀렉트인'); });
+  if (unk.length) push('warn', '법인 미분류', unk.length + '행 · ' + won_(unk.reduce(function (t, r) { return t + r.amt; }, 0)) + '원 — 매출판 설정 ③에 쇼핑몰ID 추가 필요');
+  var unc = tot.amt - tot.costedAmt;
+  if (unc > 0) push(unc / Math.max(1, tot.amt) > 0.05 ? 'warn' : 'ok', '원가 미입력', won_(unc) + '원 (' + (unc / Math.max(1, tot.amt) * 100).toFixed(1) + '%) — 이익 계산에서 뺐어요');
+  var sbnCheck = null;
+  if (!opt.noApi) {
+    try {
+      var api = hubSbnSalesRange_(from, to), A = {}, S = {};
+      api.rows.forEach(function (x) { var c = x[1]; A[c] = A[c] || { cnt: 0, amt: 0 }; A[c].cnt += x[3]; A[c].amt += x[4]; A['합계'] = A['합계'] || { cnt: 0, amt: 0 }; A['합계'].cnt += x[3]; A['합계'].amt += x[4]; });
+      rows.filter(function (r) { return r.grp === '사방넷'; }).forEach(function (r) { S[r.corp] = S[r.corp] || { cnt: 0, amt: 0 }; S[r.corp].cnt += r.cnt; S[r.corp].amt += r.amt; S['합계'] = S['합계'] || { cnt: 0, amt: 0 }; S['합계'].cnt += r.cnt; S['합계'].amt += r.amt; });
+      sbnCheck = ['겐더샵', '셀렉트인', '합계'].map(function (c) { var a = A[c] || { cnt: 0, amt: 0 }, s = S[c] || { cnt: 0, amt: 0 }; return { corp: c, apiCnt: a.cnt, apiAmt: a.amt, sheetCnt: s.cnt, sheetAmt: s.amt, diff: s.amt - a.amt }; });
+      var t = sbnCheck[2], rate = Math.abs(t.diff) / Math.max(1, t.apiAmt);
+      if (rate <= 0.005) push('ok', '사방넷 대조', '매출판 ' + won_(t.sheetAmt) + ' / 사방넷 API ' + won_(t.apiAmt) + ' (차이 ' + won_(t.diff) + ')');
+      else push(rate <= 0.02 ? 'warn' : 'bad', '사방넷 대조', '매출판 ' + won_(t.sheetAmt) + ' / 사방넷 API ' + won_(t.apiAmt) + ' — 차이 ' + won_(t.diff) + '원 (' + (rate * 100).toFixed(1) + '%)');
+    } catch (e) { push('warn', '사방넷 대조', '사방넷 API 조회 실패 — ' + String(e.message || e).slice(0, 100)); }
+  }
+  var bad = checks.filter(function (c) { return c.lv === 'bad'; }).length, warn = checks.filter(function (c) { return c.lv === 'warn'; }).length;
+  return {
+    ym: ym, from: from, to: to, status: bad ? '가마감' : '확정', bad: bad, warn: warn, at: hubNow_(),
+    tot: tot, byCorp: byCorp, byGrp: byGrp, byCorpGrp: byCorpGrp, byPf: byPf, days: days, checks: checks, sbn: sbnCheck, last: last,
+    rows: opt.rows ? rows : undefined, rowCount: rows.length
+  };
+}
+function won_(n) { n = Math.round(Number(n) || 0); return (n < 0 ? '-' : '') + String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+
+/** 첨부 엑셀: 고정 파일 하나를 다시 채워서 xlsx로 내보냄 */
+function hubMcBook_() {
+  var c = hubConfig_(), id = c.mc_book && c.mc_book.value;
+  if (id) { try { return SpreadsheetApp.openById(id); } catch (e) {} }
+  var ss = SpreadsheetApp.create('셀렉트인 OPS 월마감 (메일 첨부용 · 자동으로 다시 채움)');
+  hubConfigSet_('mc_book', ss.getId(), { name: '자동' });
+  return ss;
+}
+function hubMcXlsx_(rep) {
+  var ss = hubMcBook_(), pct = function (a, b) { return b ? Math.round(a / b * 1000) / 10 + '%' : ''; };
+  var tabs = [
+    ['요약', [['셀렉트인 ' + rep.ym.replace('-', '년 ') + '월 매출 마감 (' + rep.status + ')', '', '', '', '', '', '', '', ''],
+      ['기간', rep.from + ' ~ ' + rep.to, '만든 시각', rep.at, '', '', '', '', ''], ['', '', '', '', '', '', '', '', ''],
+      ['구분', '주문건수', '매출', '수수료', '정산예정', '매입원가', '이익(원가 입력분)', '이익률', '원가 미입력 매출']]
+      .concat([rep.tot].concat(rep.byCorp).map(function (o) { return [o.k, o.cnt, o.amt, o.fee, o.settle, o.cost, o.profit, pct(o.profit, o.costedAmt), o.amt - o.costedAmt]; }))
+      .concat([['', '', '', '', '', '', '', '', ''], ['입금', '입금완료(정산)', rep.tot.paid, '미입금(정산)', rep.tot.unpaid, '', '', '', '']])],
+    ['법인·채널', [['법인 · 채널그룹', '주문건수', '매출', '비중', '수수료', '정산예정', '매입원가', '이익(원가 입력분)', '이익률', '미입금']]
+      .concat(rep.byCorpGrp.map(function (o) { return [o.k, o.cnt, o.amt, pct(o.amt, rep.tot.amt), o.fee, o.settle, o.cost, o.profit, pct(o.profit, o.costedAmt), o.unpaid]; }))],
+    ['플랫폼별', [['법인', '채널그룹', '플랫폼', '주문건수', '매출', '비중', '수수료', '정산예정', '매입원가', '이익(원가 입력분)', '미입금']]
+      .concat(rep.byPf.map(function (o) { return [o.corp, o.grp, o.pf, o.cnt, o.amt, pct(o.amt, rep.tot.amt), o.fee, o.settle, o.cost, o.profit, o.unpaid]; }))],
+    ['일별', [['날짜', '주문건수', '매출', '겐더샵', '셀렉트인', '기타', '사방넷']].concat(rep.days.map(function (o) { return [o.d, o.cnt, o.amt, o.겐더샵, o.셀렉트인, o.기타, o.sbn]; }))],
+    ['상세', [['날짜', '법인', '채널그룹', '채널', '쇼핑몰', '쇼핑몰ID', '플랫폼', '주문건수', '매출', '수수료', '정산예정', '매입원가', '기타비용', '이익(원가 입력분)', '입금예정일', '입금확인', '비고']]
+      .concat((rep.rows || []).slice().sort(function (a, b) { return a.d < b.d ? -1 : a.d > b.d ? 1 : 0; }).map(function (r) { return [r.d, r.corp, r.grp, r.ch, r.mall, r.mid, r.pf, r.cnt, r.amt, r.fee, r.settle, r.cost || '', r.etc || '', r.costed ? r.profit : '', r.payDay, r.paid ? 'Y' : '', r.memo]; }))],
+    ['점검', [['결과', '항목', '내용']].concat(rep.checks.map(function (c) { return [{ ok: '정상', warn: '확인', bad: '미반영' }[c.lv], c.item, c.msg]; }))
+      .concat(rep.sbn ? [['', '', ''], ['사방넷 대조', '법인', '매출판 / 사방넷 API / 차이']].concat(rep.sbn.map(function (s) { return ['', s.corp, won_(s.sheetAmt) + ' / ' + won_(s.apiAmt) + ' / ' + won_(s.diff)]; })) : [])]
+  ];
+  tabs.forEach(function (t, k) {
+    var sh = ss.getSheetByName(t[0]) || ss.insertSheet(t[0], k);
+    sh.clear();
+    var w = t[1].reduce(function (m, r) { return Math.max(m, r.length); }, 1);
+    var vals = t[1].map(function (r) { r = r.slice(); while (r.length < w) r.push(''); return r; });
+    sh.getRange(1, 1, vals.length, w).setValues(vals);
+    var hr = t[0] === '요약' ? 4 : 1;
+    sh.getRange(hr, 1, 1, w).setFontWeight('bold').setBackground('#e8f5ef');
+    sh.setFrozenRows(hr);
+    if (vals.length > hr) sh.getRange(hr + 1, 1, vals.length - hr, w).setNumberFormat('#,##0;-#,##0;0');
+    if (t[0] === '상세' || t[0] === '일별') { sh.getRange(hr + 1, 1, Math.max(1, vals.length - hr), 1).setNumberFormat('@'); }
+    if (t[0] === '상세') sh.getRange(hr + 1, 15, Math.max(1, vals.length - hr), 1).setNumberFormat('@');
+    if (t[0] === '요약') sh.getRange(1, 1).setFontWeight('bold').setFontSize(13);
+    try { sh.autoResizeColumns(1, w); } catch (e) {}
+  });
+  ss.getSheets().forEach(function (s) { if (tabs.every(function (t) { return t[0] !== s.getName(); }) && ss.getSheets().length > 1) ss.deleteSheet(s); });
+  SpreadsheetApp.flush();
+  var resp = UrlFetchApp.fetch('https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export?format=xlsx', { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+  if (resp.getResponseCode() !== 200) throw new Error('엑셀 내보내기 실패 ' + resp.getResponseCode());
+  return { blob: resp.getBlob().setName('셀렉트인_월마감_' + rep.ym + (rep.status === '확정' ? '' : '_가마감') + '.xlsx'), url: ss.getUrl() };
+}
+
+/** 메일 본문 (PC·휴대폰 모두 보기 좋게: 표는 100% 폭, 글자 줄바꿈) */
+function hubMcHtml_(rep, note) {
+  var pct = function (a, b) { return b ? (a / b * 100).toFixed(1) + '%' : '—'; };
+  var man = function (n) { return won_(Math.round(n / 1e4)) + '만'; };
+  var C = { ok: ['#0b7a55', '#e8f5ef', '정상'], warn: ['#9a6400', '#fff4dc', '확인'], bad: ['#c62828', '#fdecec', '미반영'] };
+  var th = 'style="text-align:left;padding:7px 8px;border-bottom:1px solid #ddd;font-size:12px;color:#666;font-weight:600;white-space:nowrap"';
+  var td = 'style="padding:7px 8px;border-bottom:1px solid #eee;font-size:13px;word-break:keep-all"', tdr = 'style="padding:7px 8px;border-bottom:1px solid #eee;font-size:13px;text-align:right;white-space:nowrap"';
+  var tbl = function (head, body) { return '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;margin:6px 0 18px">' + '<tr>' + head.map(function (x, k) { return '<th ' + th.replace('text-align:left', 'text-align:' + (k ? 'right' : 'left')) + '>' + x + '</th>'; }).join('') + '</tr>' + body.join('') + '</table>'; };
+  var line = function (o) { return '<tr><td ' + td + '><b>' + o.k + '</b></td><td ' + tdr + '>' + won_(o.cnt) + '</td><td ' + tdr + '><b>' + won_(o.amt) + '</b></td><td ' + tdr + '>' + won_(o.settle) + '</td><td ' + tdr + '>' + won_(o.profit) + '<br><span style="color:#888;font-size:11px">' + pct(o.profit, o.costedAmt) + '</span></td></tr>'; };
+  var st = rep.status === '확정' ? ['#0b7a55', '#e8f5ef', '확정 — 모든 채널이 말일까지 반영됐고 사방넷과 맞아요'] : ['#c62828', '#fdecec', '가마감 — 아래 「미반영」 항목이 아직 남아 있어요. 반영되면 확정본을 다시 보내요'];
+  var kpi = function (k, v, s) { return '<td style="padding:10px 12px;border:1px solid #eee;border-radius:8px;vertical-align:top;width:25%"><div style="font-size:12px;color:#666">' + k + '</div><div style="font-size:19px;font-weight:700;margin-top:2px;white-space:nowrap">' + v + '</div><div style="font-size:11px;color:#888;margin-top:2px">' + (s || '') + '</div></td>'; };
+  return '<div style="max-width:720px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,\'Apple SD Gothic Neo\',\'Malgun Gothic\',sans-serif;color:#222;line-height:1.5">' +
+    '<h2 style="margin:0 0 4px;font-size:19px">셀렉트인 ' + rep.ym.slice(0, 4) + '년 ' + (+rep.ym.slice(5)) + '월 매출 마감</h2>' +
+    '<div style="font-size:12px;color:#888;margin-bottom:12px">' + rep.from + ' ~ ' + rep.to + ' · 셀렉트인 OPS · ' + rep.at + ' 기준</div>' +
+    (note ? '<div style="padding:10px 12px;background:#f4f5f7;border-radius:8px;font-size:13px;margin-bottom:10px">' + note + '</div>' : '') +
+    '<div style="padding:10px 12px;background:' + st[1] + ';color:' + st[0] + ';border-radius:8px;font-size:13px;font-weight:600;margin-bottom:14px">' + st[2] + '</div>' +
+    '<table role="presentation" width="100%" cellspacing="6" cellpadding="0" style="border-collapse:separate;width:100%;margin:0 -6px 12px"><tr>' +
+      kpi('매출', man(rep.tot.amt), won_(rep.tot.amt) + '원') + kpi('주문', won_(rep.tot.cnt) + '건', '객단가 ' + (rep.tot.cnt ? won_(rep.tot.amt / rep.tot.cnt) : '—')) + '</tr><tr>' +
+      kpi('정산 예정', man(rep.tot.settle), '수수료 ' + won_(rep.tot.fee)) + kpi('이익', man(rep.tot.profit), '이익률 ' + pct(rep.tot.profit, rep.tot.costedAmt) + ' · 원가 입력분') + '</tr></table>' +
+    '<h3 style="font-size:15px;margin:8px 0 0">법인별</h3>' + tbl(['법인', '주문', '매출', '정산 예정', '이익'], rep.byCorp.map(line)) +
+    '<h3 style="font-size:15px;margin:8px 0 0">법인 · 채널별</h3>' + tbl(['법인 · 채널', '주문', '매출', '정산 예정', '이익'], rep.byCorpGrp.map(line)) +
+    '<h3 style="font-size:15px;margin:8px 0 0">점검</h3>' + tbl(['결과', '내용'], rep.checks.map(function (c) { var x = C[c.lv]; return '<tr><td ' + td + '><span style="display:inline-block;padding:2px 8px;border-radius:10px;background:' + x[1] + ';color:' + x[0] + ';font-size:12px;font-weight:600;white-space:nowrap">' + x[2] + '</span></td><td ' + td.replace('font-size:13px', 'font-size:13px;text-align:right') + '><b>' + c.item + '</b><br><span style="color:#555">' + c.msg + '</span></td></tr>'; })) +
+    '<div style="font-size:12px;color:#888;margin-top:6px">입금완료 ' + won_(rep.tot.paid) + '원 · 미입금 ' + won_(rep.tot.unpaid) + '원 (정산예정액 기준)<br>' +
+    '이익은 매입원가가 입력된 매출만으로 계산했어요 (원가 미입력 매출 ' + won_(rep.tot.amt - rep.tot.costedAmt) + '원 제외).<br>' +
+    '플랫폼별·일별·상세 행은 첨부 엑셀에 있어요. OPS 매출: <a href="https://select-in.github.io/sales-app/hub/#close" style="color:#0b7a55">select-in.github.io/sales-app/hub</a></div></div>';
+}
+
+/** 메일 보내기 — kind: '확정'|'가마감'|'시험' */
+function hubMonthCloseSend_(ym, me, test) {
+  ym = hubMcYm_(ym);
+  var rep = hubMonthCloseBuild_(ym, { rows: true }), set = hubMcSetting_();
+  var x = hubMcXlsx_(rep);
+  var subj = (test ? '[시험] ' : '') + '[OPS 월마감] ' + ym.slice(0, 4) + '년 ' + (+ym.slice(5)) + '월 매출 마감 — ' + rep.status + ' · ' + won_(Math.round(rep.tot.amt / 1e4)) + '만원';
+  var note = test ? '시험 발송이에요 (받는 사람: ' + set.to + ' 만).' : (rep.status === '가마감' ? '말일 이후 ' + HUB_MC_LAST_DAY + '일이 지나도 일부 채널이 반영되지 않아 가마감으로 보내요.' : '');
+  var mail = { to: set.to, subject: subj, htmlBody: hubMcHtml_(rep, note), attachments: [x.blob], name: '셀렉트인 OPS' };
+  if (!test && set.cc) mail.cc = set.cc;
+  MailApp.sendEmail(mail);
+  if (!test) hubConfigSet_('mc_sent_' + ym, rep.status + ' · ' + won_(rep.tot.amt) + ' · ' + (me && me.name || '자동'), me || { name: '자동' });
+  delete rep.rows;
+  return { ok: true, sent: { to: set.to, cc: test ? '' : set.cc, subject: subj, status: rep.status, book: x.url }, report: rep };
+}
+
+/** 화면용: 미리보기 + 발송 기록 */
+function hubMonthClosePreview_(ym) {
+  ym = hubMcYm_(ym);
+  var rep = hubMonthCloseBuild_(ym), set = hubMcSetting_(), sent = set.cfg['mc_sent_' + ym], wait = set.cfg['mc_wait_' + ym];
+  var hist = Object.keys(set.cfg).filter(function (k) { return /^mc_sent_\d{4}-\d{2}$/.test(k); }).sort().reverse().slice(0, 12)
+    .map(function (k) { return { ym: k.slice(8), v: set.cfg[k].value, at: set.cfg[k].at, by: set.cfg[k].by }; });
+  var trig = false; try { trig = ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'hubMonthCloseAuto'; }); } catch (e) { trig = null; }
+  return { report: rep, setting: { to: set.to, cc: set.cc, auto: set.auto, hour: HUB_MC_HOUR, lastDay: HUB_MC_LAST_DAY, trigger: trig },
+    sent: sent ? { v: sent.value, at: sent.at, by: sent.by } : null, wait: wait ? wait.at : '', hist: hist };
+}
+
+/** 매일 10시 자동 (트리거) — 1~8일에 지난달 마감 점검 → 확정되면 바로, 8일엔 가마감이라도 보냄. 한 달에 한 번만 */
+function hubMonthCloseAuto() {
+  var tz = 'Asia/Seoul', day = +Utilities.formatDate(new Date(), tz, 'd'), set = hubMcSetting_();
+  if (!set.auto || day > HUB_MC_LAST_DAY) return;
+  var ym = hubMcYm_(), lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var cfg = hubConfig_(); if (cfg['mc_sent_' + ym]) return;
+    var rep = hubMonthCloseBuild_(ym);
+    if (rep.status === '확정' || day >= HUB_MC_LAST_DAY) { hubMonthCloseSend_(ym, { name: '자동' }, false); return; }
+    if (!cfg['mc_wait_' + ym]) {   // 1회만: 마감 대기 안내 (첨부 없음)
+      var pend = rep.checks.filter(function (c) { return c.lv === 'bad'; }).map(function (c) { return '· ' + c.item + ' — ' + c.msg; }).join('<br>');
+      MailApp.sendEmail({ to: set.to, subject: '[OPS 월마감] ' + ym.slice(0, 4) + '년 ' + (+ym.slice(5)) + '월 마감 대기 — 미반영 ' + rep.bad + '건', name: '셀렉트인 OPS',
+        htmlBody: hubMcHtml_(rep, '아직 마감 자료를 확정할 수 없어요. 아래 항목이 반영되면 확정본(엑셀 첨부)을 자동으로 보내요. 늦어도 ' + HUB_MC_LAST_DAY + '일 10시에는 가마감으로 보내요.<br><br>' + pend) });
+      hubConfigSet_('mc_wait_' + ym, rep.bad + '건 대기', { name: '자동' });
+    }
+  } finally { lock.releaseLock(); }
+}
+
+/** 처음 한 번 (편집기에서 실행): 권한 허용 + 매일 10시 트리거 */
+function hubMonthCloseSetup() {
+  Logger.log('메일 남은 한도: ' + MailApp.getRemainingDailyQuota());
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'hubMonthCloseAuto') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('hubMonthCloseAuto').timeBased().everyDays(1).atHour(HUB_MC_HOUR).inTimezone('Asia/Seoul').create();
+  hubMcBook_();
+  Logger.log('월 마감 자동 점검을 매일 ' + HUB_MC_HOUR + '시로 설정했어요. 지난달(' + hubMcYm_() + ') 상태: ' + hubMonthCloseBuild_(hubMcYm_(), { noApi: true }).status);
 }

@@ -357,6 +357,13 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 
 /* 홈: 매출 법인별·채널별 / 섹션 / 바로가기 행 */
 .hsplit{margin:14px 0 4px}
+.mchead{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
+.mcchk{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--line)}.mcchk:last-of-type{border-bottom:0}.mcchk .pill{flex:none;white-space:nowrap}
+.mcbtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.mclist .mcrow{padding:10px 0;border-bottom:1px solid var(--line)}.mclist .mcrow:last-child{border-bottom:0}
+.mclist .t{display:flex;justify-content:space-between;gap:8px;align-items:baseline}.mclist .t b:first-child{min-width:0;overflow-wrap:anywhere}.mclist .t .num{flex:none}
+.mclist .s{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:4px;font-size:12px;color:var(--sub)}
+@media (max-width:900px){.mcg{grid-template-columns:1fr!important}.mcbtns .btn{flex:1 1 100%;justify-content:center}.mcst{width:100%;justify-content:center}#mcym{flex:1}}
 .moonly{display:none}
 @media (max-width:900px){.moonly{display:block}}
 .mbars{border:1px solid var(--line);border-radius:12px;padding:12px 14px}
@@ -425,7 +432,7 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-10-30k-x1-x2-x3';
+var APP_BUILD = '2026-11-02mc';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -653,6 +660,7 @@ var MENU = [
     {k:'channel',t:'크림 · 포이즌 출고',ic:'shoe',sub:'크림 · 포이즌'}]},
   {grp:'매출 · 주문', ic:'chart-bar', items:[
     {k:'sales',t:'매출',ic:'chart-bar',sub:'매출'},
+    {k:'close',t:'월 마감',ic:'calendar-check',sub:'매출'},
     {k:'orders',t:'주문 · 발주 · 송장',ic:'truck-delivery',sub:'주문',soon:1}]},
   {grp:'마케팅', ic:'speakerphone', items:[
     {k:'gonggu',t:'공동구매',ic:'users-group',sub:'공동구매',soon:1},
@@ -879,10 +887,93 @@ function salesBind(){
   salesLoad().then(salesDraw).catch(function(e){ if($('hsales')) $('hsales').innerHTML='<div class="empty">매출을 불러오지 못했어요 · '+esc(e&&e.message||'')+'</div>'; });
 }
 VIEWS.sales = {
-  html: function(){ return '<div class="ph"><div><h1>매출</h1><p>겐더샵·셀렉트인 매출을 기간·법인·채널별로 봐요</p></div><div class="acts"><button class="btn" data-xl="1"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button></div></div>'+salesHtml(true); },
+  html: function(){ return '<div class="ph"><div><h1>매출</h1><p>겐더샵·셀렉트인 매출을 기간·법인·채널별로 봐요</p></div><div class="acts">'+(isAdmin()?'<a class="btn" href="#close"><i class="ti ti-calendar-check"></i><span>월 마감</span></a>':'')+'<button class="btn" data-xl="1"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button></div></div>'+salesHtml(true); },
   bind: salesBind
 };
 
+
+/* ---------- 월 마감 (매출 마감 자료 메일) ----------
+ * 서버 hubMonthClose*: 매출판 「일별입력」으로 지난달 마감 자료 + 점검(채널 반영·사방넷 대조·법인 미분류·원가 미입력)
+ * 다 맞으면 「확정」, 아니면 「가마감」. 매일 10시 자동 점검, 1~8일 사이 한 번 메일 (엑셀 첨부) */
+var MC={ym:'', d:null};
+function mcYms(){ var t=today(), y=+t.slice(0,4), m=+t.slice(5,7), out=[]; for(var k=1;k<=12;k++){ var d=new Date(Date.UTC(y,m-1-k,1)); out.push(d.toISOString().slice(0,7)); } return out; }
+function mcPct(a,b){ return b?(a/b*100).toFixed(1)+'%':'—'; }
+var MC_LV={ok:['정상','var(--accent)','var(--accentbg,var(--bg))','circle-check'], warn:['확인','var(--amber)','var(--amberbg)','alert-circle'], bad:['미반영','var(--red)','var(--redbg)','alert-triangle']};
+function mcTable(L, tot, first){
+  var rows=L.map(function(o){ return [o.k, o.cnt, o.amt, o.settle, o.profit, mcPct(o.profit,o.costedAmt), o.unpaid]; });
+  var pc='<div class="tblwrap pconly"><table class="tbl"><thead><tr><th>'+first+'</th><th class="r">주문</th><th class="r">매출</th><th style="width:20%">비중</th><th class="r">정산 예정</th><th class="r">이익</th><th class="r">이익률</th><th class="r">미입금</th></tr></thead><tbody>'+
+    rows.map(function(r){ return '<tr><td><b>'+esc(r[0])+'</b></td><td class="r num">'+won(r[1])+'</td><td class="r num"><b>'+won(r[2])+'</b></td><td><div class="sbar"><i style="width:'+Math.max(1,Math.round(r[2]/(tot||1)*100))+'%"></i><span>'+mcPct(r[2],tot)+'</span></div></td><td class="r num">'+won(r[3])+'</td><td class="r num">'+won(r[4])+'</td><td class="r num">'+r[5]+'</td><td class="r num">'+(r[6]?won(r[6]):'—')+'</td></tr>'; }).join('')+'</tbody></table></div>';
+  var mo='<div class="moonly mclist">'+rows.map(function(r){ return '<div class="mcrow"><div class="t"><b>'+esc(r[0])+'</b><span class="num"><b>'+won(r[2])+'</b>원</span></div><div class="s"><span>주문 '+won(r[1])+'</span><span>비중 '+mcPct(r[2],tot)+'</span><span>정산 '+won(r[3])+'</span><span>이익 '+won(r[4])+' ('+r[5]+')</span>'+(r[6]?'<span>미입금 '+won(r[6])+'</span>':'')+'</div></div>'; }).join('')+'</div>';
+  return pc+mo;
+}
+function mcDraw(){
+  var el=$('mcbox'); if(!el) return;
+  var j=MC.d; if(!j) return;
+  var R=j.report, T=R.tot, set=j.setting||{}, st=R.status==='확정';
+  var chk=R.checks.map(function(c){ var x=MC_LV[c.lv]; return '<div class="mcchk"><span class="pill" style="background:'+x[2]+';color:'+x[1]+'"><i class="ti ti-'+x[3]+'"></i>'+x[0]+'</span><div><b>'+esc(c.item)+'</b><div class="sm" style="overflow-wrap:anywhere">'+esc(c.msg)+'</div></div></div>'; }).join('');
+  var sbn=R.sbn?'<div class="tblwrap" style="margin-top:8px"><table class="tbl"><thead><tr><th>사방넷 대조</th><th class="r">매출판</th><th class="r">사방넷 API</th><th class="r">차이</th></tr></thead><tbody>'+R.sbn.map(function(s){ return '<tr><td>'+esc(s.corp)+'</td><td class="r num">'+won(s.sheetAmt)+'</td><td class="r num">'+won(s.apiAmt)+'</td><td class="r num" style="color:'+(Math.abs(s.diff)>Math.max(1,s.apiAmt)*.005?'var(--red)':'inherit')+'">'+won(s.diff)+'</td></tr>'; }).join('')+'</tbody></table></div>':'';
+  var dmx=Math.max.apply(null,R.days.map(function(o){ return o.amt; }).concat([1]));
+  var hist=(j.hist||[]).length?'<div class="tblwrap"><table class="tbl"><thead><tr><th>마감월</th><th>보낸 내용</th><th>보낸 시각</th></tr></thead><tbody>'+j.hist.map(function(h){ return '<tr><td>'+esc(h.ym)+'</td><td style="overflow-wrap:anywhere">'+esc(h.v)+'</td><td class="num">'+esc(h.at)+'</td></tr>'; }).join('')+'</tbody></table></div>':'<div class="empty">아직 OPS에서 보낸 마감 메일이 없어요</div>';
+  XL_CUR=function(){ return {file:'월마감_'+R.ym+'_'+R.status, sheets:[
+    {name:'법인·채널', head:['법인 · 채널그룹','주문건수','매출','수수료','정산예정','매입원가','이익(원가 입력분)','미입금'], rows:R.byCorpGrp.map(function(o){ return [o.k,o.cnt,o.amt,o.fee,o.settle,o.cost,o.profit,o.unpaid]; })},
+    {name:'플랫폼별', head:['법인','채널그룹','플랫폼','주문건수','매출','수수료','정산예정','매입원가','이익(원가 입력분)','미입금'], rows:R.byPf.map(function(o){ return [o.corp,o.grp,o.pf,o.cnt,o.amt,o.fee,o.settle,o.cost,o.profit,o.unpaid]; })},
+    {name:'일별', head:['날짜','주문건수','매출','겐더샵','셀렉트인','기타','사방넷'], rows:R.days.map(function(o){ return [o.d,o.cnt,o.amt,o.겐더샵,o.셀렉트인,o.기타,o.sbn]; })},
+    {name:'점검', head:['결과','항목','내용'], rows:R.checks.map(function(c){ return [MC_LV[c.lv][0],c.item,c.msg]; })}]}; };
+  el.innerHTML=
+    '<div class="card" style="margin-bottom:16px">'+
+      '<div class="mchead"><div><h2 style="margin:0">'+esc(R.ym.slice(0,4))+'년 '+(+R.ym.slice(5))+'월 마감 <small>'+esc(R.from)+' ~ '+esc(R.to)+'</small></h2>'+
+        '<div class="sm" style="margin-top:4px">'+(j.sent?'<i class="ti ti-mail-check"></i> 보냄 · '+esc(j.sent.v)+' · '+esc(j.sent.at):'아직 안 보냄')+(j.wait&&!j.sent?' · 마감 대기 안내 '+esc(j.wait):'')+'</div></div>'+
+        '<span class="pill mcst" style="background:'+(st?'var(--accentbg,var(--bg))':'var(--redbg)')+';color:'+(st?'var(--accent)':'var(--red)')+'"><i class="ti ti-'+(st?'circle-check':'clock-exclamation')+'"></i>'+(st?'확정 가능':'가마감 · 미반영 '+R.bad+'건')+'</span></div>'+
+      '<div class="grid g4" style="margin-top:14px">'+
+        '<div class="kpi"><div class="k"><i class="ti ti-chart-bar"></i>매출</div><div class="v num">'+salesMan(T.amt)+'</div><div class="sm">'+won(T.amt)+'원</div></div>'+
+        '<div class="kpi"><div class="k"><i class="ti ti-receipt"></i>주문</div><div class="v num">'+won(T.cnt)+'<small>건</small></div><div class="sm">객단가 '+(T.cnt?won(Math.round(T.amt/T.cnt)):'—')+'원</div></div>'+
+        '<div class="kpi"><div class="k"><i class="ti ti-wallet"></i>정산 예정</div><div class="v num">'+salesMan(T.settle)+'</div><div class="sm">수수료 '+won(T.fee)+' · 미입금 '+won(T.unpaid)+'</div></div>'+
+        '<div class="kpi"><div class="k"><i class="ti ti-trending-up"></i>이익</div><div class="v num">'+salesMan(T.profit)+'</div><div class="sm">이익률 '+mcPct(T.profit,T.costedAmt)+' · 원가 입력분만</div></div>'+
+      '</div>'+
+      '<div class="salesbars'+(R.days.length>16?' many':'')+'" title="일별 매출">'+R.days.map(function(o){ return '<div class="sb on" title="'+esc(o.d)+' · '+won(o.amt)+'원"><i style="height:'+Math.max(2,Math.round(o.amt/dmx*100))+'%"></i><span>'+(+o.d.slice(8))+'</span></div>'; }).join('')+'</div>'+
+    '</div>'+
+    '<div class="grid g2 mcg">'+
+      '<div class="card"><h2>점검 <small>'+(st?'모두 반영됨':'반영되면 자동으로 확정본을 보내요')+'</small></h2>'+chk+sbn+'</div>'+
+      '<div class="card"><h2>메일 보내기</h2>'+
+        '<div class="sm" style="line-height:1.7">매일 '+set.hour+'시에 지난달을 점검해요. <b>확정되면 바로</b>, 늦어도 <b>'+set.lastDay+'일</b>엔 가마감으로 한 번 보내요 (엑셀 첨부).<br>자동 점검 '+(set.trigger===true?'<b style="color:var(--accent)">켜짐</b>':set.trigger===false?'<b style="color:var(--red)">꺼짐 — Apps Script에서 hubMonthCloseSetup 실행 필요</b>':'확인 불가')+(set.auto?'':' · <b style="color:var(--amber)">자동 발송 끔</b>')+'</div>'+
+        '<label class="fld" style="margin-top:12px"><span>받는 사람</span><input class="inp" id="mcto" type="email" value="'+esc(set.to)+'"></label>'+
+        '<label class="fld"><span>참조 (쉼표로 구분)</span><input class="inp" id="mccc" value="'+esc(set.cc)+'"></label>'+
+        '<label class="ck" style="display:flex;gap:6px;align-items:center;font-size:14px;cursor:pointer"><input type="checkbox" id="mcauto"'+(set.auto?' checked':'')+'> 자동으로 보내기</label>'+
+        '<div class="mcbtns"><button class="btn" id="mcsave"><i class="ti ti-device-floppy"></i><span>받는 사람 저장</span></button><button class="btn" id="mctest"><i class="ti ti-send"></i><span>나에게 시험 발송</span></button><button class="btn pri" id="mcsend"><i class="ti ti-mail-forward"></i><span>'+(st?'확정본':'가마감본')+' 지금 보내기</span></button></div>'+
+      '</div>'+
+    '</div>'+
+    '<div class="card" style="margin-top:16px"><h2>법인별</h2>'+mcTable(R.byCorp,T.amt,'법인')+'<h3 style="margin:18px 0 6px;font-size:15px">법인 · 채널별</h3>'+mcTable(R.byCorpGrp,T.amt,'법인 · 채널')+
+      '<h3 style="margin:18px 0 6px;font-size:15px">플랫폼별 <small style="color:var(--mute);font-weight:400">'+R.byPf.length+'개</small></h3>'+mcTable(R.byPf.map(function(o){ return Object.assign({},o,{k:o.pf+' · '+o.corp}); }),T.amt,'플랫폼 · 법인')+'</div>'+
+    '<div class="card" style="margin-top:16px"><h2>보낸 기록</h2>'+hist+'</div>';
+  var sv=function(){ return api('config_set',{key:'mc_to',value:$('mcto').value.trim()}).then(function(){ return api('config_set',{key:'mc_cc',value:$('mccc').value.trim()}); }).then(function(){ return api('config_set',{key:'mc_auto',value:$('mcauto').checked?'Y':'N'}); }); };
+  $('mcsave').onclick=function(){ var b=this; b.disabled=true; sv().then(function(){ toast('저장했어요'); return mcLoad(); }).catch(fail).then(function(){ b.disabled=false; }); };
+  var send=function(test){ return function(){ var b=this;
+    if(!test && !confirm((st?'확정본':'가마감본(미반영 '+R.bad+'건 표시)')+'을 보낼까요?\n받는 사람: '+$('mcto').value+'\n참조: '+$('mccc').value)) return;
+    b.disabled=true; toast('엑셀을 만들고 보내는 중… (20~40초)');
+    sv().then(function(){ return api('month_close_send',{ym:MC.ym,test:test}); }).then(function(r){ toast((test?'시험 메일':'마감 메일')+'을 보냈어요 · '+r.sent.to); return mcLoad(); })
+      .catch(function(e){ var m=String(e&&e.message||''); if(/MailApp|권한|permission|authorization/i.test(m)) e={message:'메일 보내기 권한이 아직 없어요. Apps Script에서 hubMonthCloseSetup을 실행해 허용해 주세요'}; fail(e); }).then(function(){ b.disabled=false; }); }; };
+  $('mctest').onclick=send(true); $('mcsend').onclick=send(false);
+}
+function mcLoad(){
+  var el=$('mcbox'); if(!el) return Promise.resolve();
+  if(!MC.d) el.innerHTML='<div class="card"><div class="empty">'+esc(MC.ym)+' 마감 자료를 계산하는 중… (사방넷 대조 포함 10~30초)</div></div>'; else el.style.opacity=.5;
+  return api('month_close',{ym:MC.ym}).then(function(j){ MC.d=j; el.style.opacity=1; mcDraw(); })
+    .catch(function(e){ el.style.opacity=1; el.innerHTML='<div class="card"><div class="empty" style="overflow-wrap:anywhere">마감 자료를 만들지 못했어요 · '+esc(e&&e.message||'')+'</div></div>'; });
+}
+VIEWS.close = {
+  html: function(){
+    if(!MC.ym) MC.ym=mcYms()[0];
+    return '<div class="ph"><div><h1>월 마감</h1><p>지난달 매출 마감 자료를 점검하고 메일로 보내요 · 매출판 원본 + 사방넷 대조</p></div><div class="acts">'+
+      (isAdmin()?'<select class="inp" id="mcym" style="width:auto">'+mcYms().map(function(m){ return '<option value="'+m+'"'+(m===MC.ym?' selected':'')+'>'+m.slice(0,4)+'년 '+(+m.slice(5))+'월</option>'; }).join('')+'</select><button class="btn" data-xl="1"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button><button class="btn" id="mcref"><i class="ti ti-refresh"></i><span>다시 점검</span></button>':'')+
+      '</div></div><div id="mcbox"></div>';
+  },
+  bind: function(){
+    if(!isAdmin()){ $('mcbox').innerHTML='<div class="card"><div class="empty">월 마감은 관리자만 볼 수 있어요</div></div>'; return; }
+    $('mcym').onchange=function(){ MC.ym=this.value; MC.d=null; mcLoad(); };
+    $('mcref').onclick=function(){ mcLoad(); };
+    if(MC.d && MC.d.report && MC.d.report.ym===MC.ym) mcDraw(); else { MC.d=null; mcLoad(); }
+  }
+};
 
 /* ---------- 홈: 오늘 처리 현황 (사방넷 API 직접 조회) ---------- */
 var OPT=null;
