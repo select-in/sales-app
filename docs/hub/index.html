@@ -344,7 +344,8 @@ textarea.inp{height:auto;min-height:96px;padding:10px 12px;resize:vertical;line-
 @media (max-width:900px){
   .sfilt{width:100%;flex-direction:column;align-items:stretch}
   .sfilt .seg{display:grid;width:100%;grid-template-columns:repeat(3,1fr);overflow:visible}
-  .sfilt #sfp{grid-template-columns:repeat(4,1fr)}
+  .sfilt #sfp{grid-template-columns:repeat(3,1fr)}
+  .sfilt #sfp.p7{grid-template-columns:repeat(4,1fr)}
   .sfilt .seg button{padding:7px 4px;font-size:13.5px;text-align:center}
   .sfilt>span{flex-wrap:wrap}
   .sfilt input[type=date]{flex:1;min-width:0}
@@ -478,6 +479,9 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 .ev.dn2{opacity:.5!important}
 .calleg b.gd,.dots b.gd,.evb.gd{background:#3b78d8}.calleg b.sl,.dots b.sl,.evb.sl{background:#8a4fd6}.calleg b.dl,.dots b.dl,.evb.dl{background:#d64545}
 @media (prefers-color-scheme: dark){.ev.gd{background:#1b2c4a;color:#9cc0f5}.ev.sl{background:#2d1f45;color:#c9a8f3}.ev.dl{background:#401d1d;color:#f3a3a3}}
+
+.kpi .sm .nw,.kpi .sm b{white-space:nowrap}
+.kpi .sm{word-break:keep-all;line-height:1.55}
 </style>
 </head>
 <body>
@@ -910,10 +914,10 @@ function salesDraw(){
   el.innerHTML =
     '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:12px"><h2 style="margin:0">'+(full?'':'<a href="#sales" style="color:inherit;text-decoration:none">')+'매출 <small>'+esc(rg.a===rg.b?rg.a:rg.a+' ~ '+rg.b)+'</small>'+(full?'':' <i class="ti ti-chevron-right" style="font-size:16px;color:var(--mute)"></i></a>')+'</h2>'+
       '<div class="sfilt"><div class="seg" id="sfc">'+['전체','겐더샵','셀렉트인'].map(function(c){ return '<button data-v="'+c+'" class="'+(SF.corp===c?'on':'')+'">'+c+'</button>'; }).join('')+'</div>'+
-      '<div class="seg" id="sfp">'+pers.map(function(p){ return '<button data-v="'+p[0]+'" class="'+(SF.per===p[0]?'on':'')+'">'+p[1]+'</button>'; }).join('')+'</div>'+
+      '<div class="seg'+(pers.length>6?' p7':'')+'" id="sfp">'+pers.map(function(p){ return '<button data-v="'+p[0]+'" class="'+(SF.per===p[0]?'on':'')+'">'+p[1]+'</button>'; }).join('')+'</div>'+
       (full&&SF.per==='custom'?'<span style="display:flex;gap:6px;align-items:center"><input type="date" id="sfa" value="'+esc(rg.a)+'" class="inp" style="width:auto"> ~ <input type="date" id="sfb" value="'+esc(rg.b)+'" class="inp" style="width:auto"></span>':'')+'</div></div>'+
     '<div class="grid g4">'+
-      '<div class="kpi"><div class="k"><i class="ti ti-chart-bar"></i>매출</div><div class="v num">'+salesMan(amt)+'</div><div class="sm">'+(chg==null?'':'<b style="color:'+(chg>=0?'var(--accent)':'var(--red)')+'">'+(chg>=0?'▲':'▼')+Math.abs(chg)+'%</b> '+esc(rg.cmp)+' 대비')+(lamt?'<br>확정 '+won(camt)+' + 오늘 실시간 '+won(lamt):'')+'</div></div>'+
+      '<div class="kpi"><div class="k"><i class="ti ti-chart-bar"></i>매출</div><div class="v num">'+salesMan(amt)+'</div><div class="sm">'+(chg==null?'':'<b style="color:'+(chg>=0?'var(--accent)':'var(--red)')+'">'+(chg>=0?'▲':'▼')+Math.abs(chg)+'%</b> <span class="nw">'+esc(rg.cmp)+' 대비</span>')+(lamt?'<br><span class="nw">확정 '+won(camt)+'</span> + <span class="nw">실시간 '+won(lamt)+'</span>':'')+'</div></div>'+
       '<div class="kpi"><div class="k"><i class="ti ti-receipt"></i>주문</div><div class="v num">'+won(cnt)+'<small>건</small></div><div class="sm">객단가 '+(cnt?won(Math.round(amt/cnt)):'—')+'원</div></div>'+
       '<div class="kpi"><div class="k"><i class="ti ti-wallet"></i>정산 예정</div><div class="v num">'+salesMan(st)+'</div><div class="sm">수수료 차감 후'+(lamt?' · 확정분만':'')+'</div></div>'+
       '<div class="kpi"><div class="k"><i class="ti ti-trending-up"></i>이익</div><div class="v num">'+salesMan(pf)+'</div><div class="sm">'+(camt?'이익률 '+(pf/camt*100).toFixed(1)+'%':'')+(lamt?' · 확정분만':'')+'</div></div>'+
