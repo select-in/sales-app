@@ -432,7 +432,7 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-11-02mc';
+var APP_BUILD = '2026-11-02mc2';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -958,7 +958,7 @@ function mcLoad(){
   var el=$('mcbox'); if(!el) return Promise.resolve();
   if(!MC.d) el.innerHTML='<div class="card"><div class="empty">'+esc(MC.ym)+' 마감 자료를 계산하는 중… (사방넷 대조 포함 10~30초)</div></div>'; else el.style.opacity=.5;
   return api('month_close',{ym:MC.ym}).then(function(j){ MC.d=j; el.style.opacity=1; mcDraw(); })
-    .catch(function(e){ el.style.opacity=1; el.innerHTML='<div class="card"><div class="empty" style="overflow-wrap:anywhere">마감 자료를 만들지 못했어요 · '+esc(e&&e.message||'')+'</div></div>'; });
+    .catch(function(e){ el.style.opacity=1; var m=String(e&&e.message||''); el.innerHTML='<div class="card"><div class="empty" style="overflow-wrap:anywhere">'+(m==='unknown_action'?'월 마감 서버 기능이 곧 켜져요 (서버 새 버전 배포 대기 중). 다른 메뉴는 그대로 쓰시면 돼요.':'마감 자료를 만들지 못했어요 · '+esc(m))+'</div></div>'; });
 }
 VIEWS.close = {
   html: function(){
