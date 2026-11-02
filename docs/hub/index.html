@@ -428,6 +428,13 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
   .tbl .sbar{min-width:64px}
   .tbl th{position:static}
 }
+
+/* 발송·입고 카드 제목: 법인 / 구분 두 줄 고정 (중간에서 끊기지 않게) */
+.todo-c .tc2{display:flex;flex-direction:column;gap:1px;max-width:100%}
+.todo-c .tc2 i{font-style:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.todo-c .tc2 i:first-child{font-size:11.5px;color:var(--mute)}
+.todo-c .tc2 i:last-child{font-size:13px;color:var(--ink);font-weight:600}
+.todo-c{min-width:0}
 </style>
 </head>
 <body>
@@ -1934,7 +1941,7 @@ function chKrDraw(){   // 크림 출고 대상 (일반판매 발송 · 보관판
   var used=krUsedOids();
   var cnt=function(a,k){ var L=krTodo(a,k); return [L.length, L.filter(function(r){ return used[r.oid]; }).length]; };
   var sum='<div class="todo-grid">'+CH_CORPS.map(function(a){ return ['일반판매','보관판매'].map(function(k){ var c=cnt(a,k), on=CH.corp===a&&CH.kind===k;
-      return '<button class="todo-c'+(on?' on':'')+(c[0]-c[1]>0?' has':'')+'" data-ta="'+a+'" data-tk="'+k+'"><span>'+a+' · '+(k==='일반판매'?'일반 발송':'보관 입고')+'</span><b class="num">'+(c[0]-c[1])+'<small>건 남음</small></b>'+(c[1]?'<small>스캔 '+c[1]+'/'+c[0]+'</small>':'')+'</button>'; }).join(''); }).join('')+'</div>';
+      return '<button class="todo-c'+(on?' on':'')+(c[0]-c[1]>0?' has':'')+'" data-ta="'+a+'" data-tk="'+k+'"><span class="tc2"><i>'+a+'</i><i>'+(k==='일반판매'?'일반 발송':'보관 입고')+'</i></span><b class="num">'+(c[0]-c[1])+'<small>건 남음</small></b>'+(c[1]?'<small>스캔 '+c[1]+'/'+c[0]+'</small>':'')+'</button>'; }).join(''); }).join('')+'</div>';
   var L=krTodo(CH.corp, CH.kind).slice().sort(function(a,b){ return String(a.style).localeCompare(String(b.style)) || sizeCmp(a.option,b.option); });
   var ic=(KR.invCount||{})[CH.corp]||{}, inv=CH.kind==='보관판매'?'<div class="s" style="margin:6px 0;color:var(--mute)">이동 중(입고 대기) '+won(ic.storage_pending||0)+'건 · 보관 중 '+won(ic.in_storage||0)+'개 · 보관 실패 '+won(ic.storage_failed||0)+'건</div>':'';
   var stk=function(r){ var ps=krAppMatch(r.style); if(!ps.length) return '<span class="sm">미연결</span>'; var h=krSizeHit(ps, r.option); if(!h.length) return '<span class="sm">옵션 없음</span>'; var p=h[0]; return '<b>'+won(Math.max(0,effStock(p)))+'</b>'+(p.loc?' <span class="sm">'+esc(p.loc)+'</span>':''); };
@@ -1947,7 +1954,7 @@ function pzTodoDraw(el){   // 포이즌 발송 대기 (계정별) — 스캔하�
   if (!PZ){ el.innerHTML='<div class="s" style="margin:4px 0 10px;color:var(--mute)">포이즌 출고 대상 불러오는 중…</div>'; pzLoad().then(function(){ if($('chtodo')) chKrDraw(); }).catch(function(e){ el.innerHTML='<div class="s" style="color:var(--mute)">포이즌 데이터를 불러오지 못했어요</div>'; }); return; }
   var used=krUsedOids();
   var sum='<div class="todo-grid" style="grid-template-columns:repeat(2,1fr)">'+CH_CORPS.map(function(a){ var L=pzWaiting(a), d=L.filter(function(r){ return used[r.oid]; }).length, on=CH.corp===a;
-      return '<button class="todo-c'+(on?' on':'')+(L.length-d>0?' has':'')+'" data-pa="'+a+'"><span>'+a+' · 포이즌 발송 대기</span><b class="num">'+(L.length-d)+'<small>건 남음</small></b>'+(d?'<small>스캔 '+d+'/'+L.length+'</small>':'')+(PZ.synced&&PZ.synced[a]?'':'<small style="color:var(--mute)">동기화 전</small>')+'</button>'; }).join('')+'</div>';
+      return '<button class="todo-c'+(on?' on':'')+(L.length-d>0?' has':'')+'" data-pa="'+a+'"><span class="tc2"><i>'+a+'</i><i>포이즌 발송 대기</i></span><b class="num">'+(L.length-d)+'<small>건 남음</small></b>'+(d?'<small>스캔 '+d+'/'+L.length+'</small>':'')+(PZ.synced&&PZ.synced[a]?'':'<small style="color:var(--mute)">동기화 전</small>')+'</button>'; }).join('')+'</div>';
   var L=pzWaiting(CH.corp).sort(function(a,b){ return String(a.deadline).localeCompare(String(b.deadline)); });
   var stk=function(r){ var ps=krAppMatch(r.style); if(!ps.length) return '<span class="sm">미연결</span>'; var h=krSizeHit(ps, r.option); if(!h.length) return '<span class="sm">옵션 없음</span>'; var p=h[0]; return '<b>'+won(Math.max(0,effStock(p)))+'</b>'+(p.loc?' <span class="sm">'+esc(p.loc)+'</span>':''); };
   var list = L.length ? '<div class="todo-list">'+L.map(function(r){ var u=used[r.oid]; return '<div class="todo-r'+(u?' done':'')+'"><i class="ti ti-'+(u?'circle-check':'circle-dashed')+'"></i><div class="m"><div class="t">'+esc(r.name)+' <b>'+esc(r.option)+'</b></div><div class="s">'+esc(r.style)+' · '+esc(r.oid)+(r.deadline?' · 발송기한 '+esc(String(r.deadline).slice(5,16)):'')+(r.payout?' · 정산 '+won(r.payout):'')+'</div></div><div class="e num">앱 재고 '+stk(r)+'</div></div>'; }).join('')+'</div>'
