@@ -471,6 +471,13 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
   .evs{display:none}.dots{display:flex}
   .calleg{margin-left:0;width:100%}
 }
+
+.calleg label{display:inline-flex;align-items:center;gap:4px;cursor:pointer;user-select:none}
+.calleg label input{display:none}.calleg label.off{opacity:.4;text-decoration:line-through}
+.ev.gd{background:#dbe7fb;color:#1d4f9c}.ev.sl{background:#ece0fa;color:#5b2f99}.ev.dl{background:#fde0e0;color:#a32727}
+.ev.dn2{opacity:.5!important}
+.calleg b.gd,.dots b.gd,.evb.gd{background:#3b78d8}.calleg b.sl,.dots b.sl,.evb.sl{background:#8a4fd6}.calleg b.dl,.dots b.dl,.evb.dl{background:#d64545}
+@media (prefers-color-scheme: dark){.ev.gd{background:#1b2c4a;color:#9cc0f5}.ev.sl{background:#2d1f45;color:#c9a8f3}.ev.dl{background:#401d1d;color:#f3a3a3}}
 </style>
 </head>
 <body>
@@ -1329,31 +1336,34 @@ function cmDraw(){
 
 /* ---------- 홈: 매출 + 행사 일정 캘린더 ---------- */
 var EV=null, EVM=(function(){ var d=new Date(Date.now()+9*36e5); return d.toISOString().slice(0,7); })(), EVSEL='';
-var EV_ST={'공구/확정':'ok','가픽스':'wn','미확정':'mu','진행완료':'dn','취소':'cx'};
+var EV_ST={'공구/확정':'ok','가픽스':'wn','미확정':'mu','진행완료':'dn','취소':'cx'}, EVF=(function(){ var v=lsGet('hubEvF'); return v&&typeof v==='object'?v:{'공구':1,'겐더샵':1,'셀렉트인':1,'마감':1}; })();
+function evCls(r){ if(r.dl) return 'dl'; if(r.src==='겐더샵') return /종료/.test(r.st)?'gd dn2':'gd'; if(r.src==='셀렉트인') return /종료/.test(r.st)?'sl dn2':'sl'; return EV_ST[r.st]||'mu'; }
+function evOn(r){ if(r.st==='취소') return false; if(r.dl) return !!EVF['마감'] && !!EVF[r.src]; return !!EVF[r.src||'공구']; }
 function evLoad(force){ if (EV && !force && Date.now()-EV._t<10*60e3) return Promise.resolve(EV); return api('events',{force:!!force}).then(function(j){ if(j.error) throw {message:j.error}; EV=j; EV._t=Date.now(); return j; }); }
 function evDraw(){
   var el=$('hcal'); if(!el) return;
   if (!EV){ el.innerHTML='<h2>행사 일정</h2><div class="empty">일정 불러오는 중…</div>'; return; }
   var td=today(), y=+EVM.slice(0,4), m=+EVM.slice(5,7), first=new Date(Date.UTC(y,m-1,1)), dim=new Date(Date.UTC(y,m,0)).getUTCDate(), lead=first.getUTCDay();
   var ms=EVM+'-01', me=EVM+'-'+String(dim).padStart(2,'0');
-  var R=EV.rows.filter(function(r){ return r.st!=='취소' && r.b>=ms && r.a<=me; }).sort(function(a,b){ return a.a.localeCompare(b.a)||a.b.localeCompare(b.b); });
+  var R=EV.rows.filter(function(r){ return evOn(r) && r.b>=ms && r.a<=me; }).sort(function(a,b){ return a.a.localeCompare(b.a)||a.b.localeCompare(b.b); });
   var cnt={}; R.forEach(function(r){ cnt[r.st]=(cnt[r.st]||0)+1; });
   var cell=function(d){ var ds=EVM+'-'+String(d).padStart(2,'0'), L=R.filter(function(r){ return r.a<=ds && r.b>=ds; });
     return '<div class="cd'+(ds===td?' td':'')+(ds===EVSEL?' sel':'')+(L.length?' has':'')+'" data-d="'+ds+'"><span class="dno">'+d+'</span>'+
-      '<div class="evs">'+L.slice(0,3).map(function(r){ return '<i class="ev '+(EV_ST[r.st]||'mu')+(r.a===ds?' st':'')+'" title="'+esc(r.title+' · '+r.st+' · '+r.a.slice(5)+'~'+r.b.slice(5))+'">'+esc(r.seller||r.title)+'</i>'; }).join('')+(L.length>3?'<em>+'+(L.length-3)+'</em>':'')+'</div>'+
-      '<div class="dots">'+L.slice(0,4).map(function(r){ return '<b class="'+(EV_ST[r.st]||'mu')+'"></b>'; }).join('')+'</div></div>'; };
+      '<div class="evs">'+L.slice(0,3).map(function(r){ return '<i class="ev '+evCls(r)+(r.a===ds?' st':'')+'" title="'+esc(r.title+' · '+r.st+' · '+r.a.slice(5)+'~'+r.b.slice(5))+'">'+esc(r.seller||r.title)+'</i>'; }).join('')+(L.length>3?'<em>+'+(L.length-3)+'</em>':'')+'</div>'+
+      '<div class="dots">'+L.slice(0,4).map(function(r){ return '<b class="'+evCls(r)+'"></b>'; }).join('')+'</div></div>'; };
   var grid=''; for(var i=0;i<lead;i++) grid+='<div class="cd em"></div>'; for(var d=1; d<=dim; d++) grid+=cell(d);
   var list=EVSEL ? R.filter(function(r){ return r.a<=EVSEL && r.b>=EVSEL; }) : R.filter(function(r){ return r.b>=(EVM===td.slice(0,7)?td:ms); });
-  var row=function(r){ var on=r.a<=td&&r.b>=td; return '<div class="evr"><span class="evb '+(EV_ST[r.st]||'mu')+'"></span><div class="m"><div class="t">'+esc(r.title)+'</div><div class="s">'+esc(r.a.slice(5).replace('-','/'))+' ~ '+esc(r.b.slice(5).replace('-','/'))+' · '+esc(r.st)+(r.kind?' · '+esc(r.kind):'')+(on?' · <b style="color:var(--accent)">진행 중</b>':'')+'</div></div>'+(r.link?'<a class="x" href="'+esc(r.link)+'" target="_blank" rel="noopener" title="셀러 링크"><i class="ti ti-external-link"></i></a>':'')+'</div>'; };
+  var row=function(r){ var on=r.a<=td&&r.b>=td; return '<div class="evr"><span class="evb '+evCls(r)+'"></span><div class="m"><div class="t">'+esc(r.title)+'</div><div class="s">'+(r.dl?esc(r.a.slice(5).replace('-','/'))+' 마감':esc(r.a.slice(5).replace('-','/'))+' ~ '+esc(r.b.slice(5).replace('-','/')))+' · '+esc(!r.src||r.src==='공구'?'공동구매':r.src+' 행사')+(r.st?' · '+esc(r.st):'')+(r.owner?' · '+esc(r.owner):'')+(on?' · <b style="color:var(--accent)">진행 중</b>':'')+'</div></div>'+(r.link?'<a class="x" href="'+esc(r.link)+'" target="_blank" rel="noopener" title="셀러 링크"><i class="ti ti-external-link"></i></a>':'')+'</div>'; };
   el.innerHTML='<div class="calhd"><h2 style="margin:0">행사 일정</h2><div class="calnav"><button class="x" data-mv="-1" title="이전 달"><i class="ti ti-chevron-left"></i></button><b>'+y+'년 '+m+'월</b><button class="x" data-mv="1" title="다음 달"><i class="ti ti-chevron-right"></i></button>'+(EVM!==td.slice(0,7)?'<button class="btn sm" data-mv="0">오늘</button>':'')+'</div>'+
-      '<div class="calleg">'+[['공구/확정','ok'],['가픽스','wn'],['미확정','mu'],['진행완료','dn']].map(function(x){ return '<span><b class="'+x[1]+'"></b>'+x[0]+'</span>'; }).join('')+'</div></div>'+
-    '<div class="segcnt" style="margin:6px 0 10px">이번 달 '+R.length+'건'+(cnt['공구/확정']?' · 확정 '+cnt['공구/확정']:'')+(cnt['가픽스']?' · 가픽스 '+cnt['가픽스']:'')+(cnt['미확정']?' · 미확정 '+cnt['미확정']:'')+'</div>'+
+      '<div class="calleg">'+[['공구','ok','공동구매'],['겐더샵','gd','겐더샵 행사'],['셀렉트인','sl','셀렉트인 행사'],['마감','dl','취합 마감']].map(function(x){ return '<label class="'+(EVF[x[0]]?'':'off')+'"><input type="checkbox" data-evf="'+x[0]+'"'+(EVF[x[0]]?' checked':'')+'><b class="'+x[1]+'"></b>'+x[2]+'</label>'; }).join('')+'</div></div>'+
+    '<div class="segcnt" style="margin:6px 0 10px">'+m+'월 '+R.filter(function(r){ return !r.dl; }).length+'건 · 공동구매 '+R.filter(function(r){ return !r.src||r.src==='공구'; }).length+(cnt['공구/확정']?'(확정 '+cnt['공구/확정']+')':'')+' · 겐더샵 '+R.filter(function(r){ return r.src==='겐더샵'&&!r.dl; }).length+' · 셀렉트인 '+R.filter(function(r){ return r.src==='셀렉트인'&&!r.dl; }).length+'</div>'+
     '<div class="calw">'+'일월화수목금토'.split('').map(function(x,i){ return '<div class="wd'+(i===0?' sun':i===6?' sat':'')+'">'+x+'</div>'; }).join('')+'</div><div class="calg">'+grid+'</div>'+
     '<h3 class="evh">'+(EVSEL?esc(EVSEL.slice(5).replace('-','/'))+' 일정 <a href="#" id="evall" style="font-size:12.5px;font-weight:500;color:var(--accent)">전체 보기</a>':(EVM===td.slice(0,7)?'다가오는 일정':m+'월 일정'))+'</h3>'+
     (list.length?'<div class="evl">'+list.map(row).join('')+'</div>':'<div class="empty">일정이 없어요</div>')+
-    '<p style="margin:10px 0 0;font-size:12px;color:var(--mute)">공동구매 일정 시트 「일정」 탭 기준 · 취소 제외 · '+esc(EV.at||'')+' <a href="'+esc(EV.url||'#')+'" target="_blank" rel="noopener" style="color:var(--accent)">시트 열기</a></p>';
+    '<p style="margin:10px 0 0;font-size:12px;color:var(--mute)">공동구매 「일정」 탭 + B2C 「겐)·셀)행사 리스트」 기준 · 취소 제외 · '+esc(EV.at||'')+' · <a href="'+esc(EV.url||'#')+'" target="_blank" rel="noopener" style="color:var(--accent)">공구 시트</a> · <a href="'+esc(EV.url2||'#')+'" target="_blank" rel="noopener" style="color:var(--accent)">B2C 행사 시트</a>'+((EV.errs||[]).length?'<br><span style="color:var(--red)">'+esc(EV.errs.join(' / '))+'</span>':'')+'</p>';
   el.querySelectorAll('[data-mv]').forEach(function(b){ b.onclick=function(){ var k=+b.dataset.mv; if(!k){ EVM=td.slice(0,7); } else { var dd=new Date(Date.UTC(y,m-1+k,1)); EVM=dd.toISOString().slice(0,7); } EVSEL=''; evDraw(); }; });
   el.querySelectorAll('.cd[data-d]').forEach(function(c){ c.onclick=function(){ EVSEL = EVSEL===c.dataset.d ? '' : c.dataset.d; evDraw(); }; });
+  el.querySelectorAll('[data-evf]').forEach(function(x){ x.onchange=function(){ EVF[x.dataset.evf]=x.checked?1:0; lsSet('hubEvF',EVF); evDraw(); }; });
   var ea=$('evall'); if(ea) ea.onclick=function(e){ e.preventDefault(); EVSEL=''; evDraw(); };
 }
 VIEWS.home = {

@@ -781,16 +781,22 @@ function hubKrmMapSet_(req, me) {
  *  - 검증: 매출판 '대시보드' 탭의 월누적 매출과 같은 기간 합계를 맞춰 보고 결과를 함께 보냄
  *  - 입금예정일·입금확인은 관리자에게만 보냄 */
 var HUB_SALES_ID = '1TSYSFjgcqo1Gu1Ryq9CHjdNN1Fm1QYmASKlV77xsjl0';
-var HUB_EVENT_ID = '1rHbpjZa12ZDfw2OQXLSdd0QexqqXrv2xxjTo0egYtOs';   // 정산/일정) 셀렉트인 공동구매 일정 정리 및 정산
-/** 행사 일정: 「일정」 탭 A 년/월(yyyymm) · B 시작일-종료일(MMDD-MMDD) · C 확정구분 · D 진행구분 · E 벤더사 · F 제목 · G 셀러 · H 링크 · I 브랜드 */
+var HUB_EVENT_ID = '1rHbpjZa12ZDfw2OQXLSdd0QexqqXrv2xxjTo0egYtOs';   // 정산/일정) 셀렉트인 공동구매 일정 정리 및 정산 — 「일정」 탭
+var HUB_B2C_ID = '1Vaor2PUoVdXILJJLQ2l9pnEnZNVcHbn0SqKeLdLTMDw';     // 공통) B2C 행사/관리 — 「겐)행사 리스트」「셀)행사 리스트」 탭
+/** 행사 일정 = 공동구매 일정 + 플랫폼(B2C) 행사(겐더샵·셀렉트인). 읽기 전용 */
 function hubEvents_(force) {
   var cache = CacheService.getScriptCache();
-  if (!force) { var hit = cache.get('events_v1'); if (hit) { try { return JSON.parse(hit); } catch (e) {} } }
+  if (!force) { var hit = cache.get('events_v2'); if (hit) { try { return JSON.parse(hit); } catch (e) {} } }
+  var tz = 'Asia/Seoul', from = Utilities.formatDate(new Date(Date.now() - 150 * 864e5), tz, 'yyyy-MM-dd'), rows = [], errs = [];
+  var ymd = function (v) {
+    if (v instanceof Date && !isNaN(v)) return Utilities.formatDate(v, tz, 'yyyy-MM-dd');
+    var m = String(v || '').match(/(\d{4})\s*[.\-\/]\s*(\d{1,2})\s*[.\-\/]\s*(\d{1,2})/);
+    return m ? m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2) : '';
+  };
+  // 1) 공동구매: A 년/월(yyyymm) · B 시작일-종료일(MMDD-MMDD) · C 확정구분 · D 진행구분 · E 벤더사 · F 제목 · G 셀러 · H 링크 · I 브랜드
   try {
     var sh = SpreadsheetApp.openById(HUB_EVENT_ID).getSheetByName('일정');
-    if (!sh) return { error: '일정 시트에 「일정」 탭이 없어요' };
-    var n = Math.max(1, sh.getLastRow() - 3), v = sh.getRange(4, 1, n, 9).getDisplayValues();
-    var tz = 'Asia/Seoul', from = Utilities.formatDate(new Date(Date.now() - 150 * 864e5), tz, 'yyyy-MM-dd'), rows = [];
+    var v = sh.getRange(4, 1, Math.max(1, sh.getLastRow() - 3), 9).getDisplayValues();
     v.forEach(function (r) {
       var ym = String(r[0]).trim(), m = String(r[1]).replace(/\s/g, '').match(/^(\d{2})(\d{2})-(\d{2})(\d{2})$/);
       if (!/^\d{6}$/.test(ym) || !m) return;
@@ -798,13 +804,30 @@ function hubEvents_(force) {
       var sy = y + (sm - ymM > 6 ? -1 : ymM - sm > 6 ? 1 : 0), ey = sy + (em < sm ? 1 : 0);
       var a = sy + '-' + m[1] + '-' + m[2], b = ey + '-' + m[3] + '-' + m[4];
       if (b < from) return;
-      rows.push({ a: a, b: b, st: String(r[2]).trim(), kind: String(r[3]).trim(), vendor: String(r[4]).trim(), title: String(r[5]).replace(/\s+/g, ' ').trim(), seller: String(r[6]).trim(), link: /^https?:\/\//.test(String(r[7])) ? String(r[7]).trim() : '', brand: String(r[8]).trim() });
+      rows.push({ src: '공구', a: a, b: b, st: String(r[2]).trim(), kind: String(r[3]).trim(), title: String(r[5]).replace(/\s+/g, ' ').trim(), seller: String(r[6]).trim(), link: /^https?:\/\//.test(String(r[7])) ? String(r[7]).trim() : '', brand: String(r[8]).trim() });
     });
-    var out = { rows: rows, at: Utilities.formatDate(new Date(), tz, 'MM-dd HH:mm'), url: 'https://docs.google.com/spreadsheets/d/' + HUB_EVENT_ID + '/edit' };
-    try { cache.put('events_v1', JSON.stringify(out), 600); } catch (e) {}
-    return out;
-  } catch (e) { return { error: '일정 시트를 읽지 못했어요: ' + String(e.message || e).slice(0, 120) }; }
+  } catch (e) { errs.push('공동구매 일정: ' + String(e.message || e).slice(0, 80)); }
+  // 2) 플랫폼 행사: A 기재일 · B 담당자 · C 채널 · D 행사명 · E 상태 · F 행사취합 마감일자 · G 시작 · H 종료
+  try {
+    var ss = SpreadsheetApp.openById(HUB_B2C_ID);
+    [['겐)행사 리스트', '겐더샵'], ['셀)행사 리스트', '셀렉트인']].forEach(function (t) {
+      var s2 = ss.getSheetByName(t[0]); if (!s2 || s2.getLastRow() < 2) return;
+      s2.getRange(2, 1, s2.getLastRow() - 1, 8).getValues().forEach(function (r) {
+        var ch = String(r[2]).trim(), nm = String(r[3]).replace(/\s+/g, ' ').trim(), a = ymd(r[6]), b = ymd(r[7]) || a, dl = ymd(r[5]);
+        if (!ch || !nm || !a || b < from) return;
+        var base = { src: t[1], st: String(r[4]).trim(), kind: ch, title: ch + ' · ' + nm, seller: ch, owner: String(r[1]).trim() };
+        rows.push(Object.assign({ a: a, b: b < a ? a : b }, base));
+        if (dl && dl >= from) rows.push(Object.assign({ a: dl, b: dl, dl: 1 }, base, { title: '취합 마감 · ' + ch + ' · ' + nm }));
+      });
+    });
+  } catch (e) { errs.push('B2C 행사: ' + String(e.message || e).slice(0, 80)); }
+  var out = { rows: rows, at: Utilities.formatDate(new Date(), tz, 'MM-dd HH:mm'), errs: errs,
+    url: 'https://docs.google.com/spreadsheets/d/' + HUB_EVENT_ID + '/edit', url2: 'https://docs.google.com/spreadsheets/d/' + HUB_B2C_ID + '/edit' };
+  if (!rows.length && errs.length) return { error: errs.join(' / ') };
+  try { cache.put('events_v2', JSON.stringify(out), 600); } catch (e) {}
+  return out;
 }
+
 function hubSalesYmd_(v, tz) {
   if (v instanceof Date) return Utilities.formatDate(v, tz, 'yyyy-MM-dd');
   var m = String(v || '').trim().match(/^(\d{4})\s*[-.\/]\s*(\d{1,2})\s*[-.\/]\s*(\d{1,2})/);
