@@ -1347,7 +1347,7 @@ function evDraw(){
   var ms=EVM+'-01', me=EVM+'-'+String(dim).padStart(2,'0');
   var R=EV.rows.filter(function(r){ return evOn(r) && r.b>=ms && r.a<=me; }).sort(function(a,b){ return a.a.localeCompare(b.a)||a.b.localeCompare(b.b); });
   var cnt={}; R.forEach(function(r){ cnt[r.st]=(cnt[r.st]||0)+1; });
-  var cell=function(d){ var ds=EVM+'-'+String(d).padStart(2,'0'), L=R.filter(function(r){ return r.a<=ds && r.b>=ds; });
+  var cell=function(d){ var ds=EVM+'-'+String(d).padStart(2,'0'), L=R.filter(function(r){ return r.a<=ds && r.b>=ds; }).sort(function(x,y){ var k=function(r){ return r.dl?0:(!r.src||r.src==='공구')?1:2; }; return k(x)-k(y) || ((new Date(x.b)-new Date(x.a))-(new Date(y.b)-new Date(y.a))); });
     return '<div class="cd'+(ds===td?' td':'')+(ds===EVSEL?' sel':'')+(L.length?' has':'')+'" data-d="'+ds+'"><span class="dno">'+d+'</span>'+
       '<div class="evs">'+L.slice(0,3).map(function(r){ return '<i class="ev '+evCls(r)+(r.a===ds?' st':'')+'" title="'+esc(r.title+' · '+r.st+' · '+r.a.slice(5)+'~'+r.b.slice(5))+'">'+esc(r.seller||r.title)+'</i>'; }).join('')+(L.length>3?'<em>+'+(L.length-3)+'</em>':'')+'</div>'+
       '<div class="dots">'+L.slice(0,4).map(function(r){ return '<b class="'+evCls(r)+'"></b>'; }).join('')+'</div></div>'; };
