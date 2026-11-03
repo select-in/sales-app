@@ -495,7 +495,7 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-11-02reg';
+var APP_BUILD = '2026-11-03sw';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -1383,6 +1383,21 @@ function evDraw(){
   el.querySelectorAll('[data-evf]').forEach(function(x){ x.onchange=function(){ EVF[x.dataset.evf]=x.checked?1:0; lsSet('hubEvF',EVF); evDraw(); }; });
   var ea=$('evall'); if(ea) ea.onclick=function(e){ e.preventDefault(); EVSEL=''; evDraw(); };
 }
+/* 크림·포이즌 동기화 끊김 경고 — 판매자센터 창(북마크)이 꺼지거나 로그인이 풀리면 멈추므로 홈 맨 위에 표시 */
+function syncWarnHtml(){
+  if(!isAdmin()) return '';
+  var c=S.config||{}, now=Date.now(), bad=[];
+  [['krm','크림','https://partner.kream.co.kr/'],['pzn','포이즌','https://seller.poizon.com/']].forEach(function(x){
+    ['겐더샵','셀렉트인'].forEach(function(acc){
+      var v=c[x[0]+'_synced_'+acc], t=v?new Date(v.value).getTime():NaN, h=isNaN(t)?null:Math.floor((now-t)/36e5);
+      if(h===null||h>=24) bad.push({n:x[1]+' '+acc, u:x[2], h:h});
+    });
+  });
+  if(!bad.length) return '';
+  return '<div class="card" style="margin-bottom:16px;border-color:var(--red);background:var(--redbg)"><div style="display:flex;gap:10px;align-items:flex-start"><i class="ti ti-plug-connected-x" style="font-size:22px;color:var(--red);flex:none"></i><div style="min-width:0"><b style="color:var(--red)">크림·포이즌 동기화가 끊겼어요</b>'+
+    '<div class="sm" style="margin-top:4px;line-height:1.7;overflow-wrap:anywhere">'+bad.map(function(b){ return '<a href="'+b.u+'" target="_blank" rel="noopener" style="color:inherit"><b>'+esc(b.n)+'</b></a> '+(b.h===null?'기록 없음':(b.h>=48?Math.floor(b.h/24)+'일':b.h+'시간')+' 전 마지막'); }).join(' · ')+
+    '<br>판매자센터에 로그인한 뒤 OPS 동기화 북마크를 실행하고 창을 켜 두세요. 끊긴 동안 매출판 크림·포이즌 매출이 빠져요.</div></div></div></div>';
+}
 VIEWS.home = {
   html: function(){
     var td=today(), d=new Date(Date.now()+9*36e5), wd='일월화수목금토'.charAt(d.getUTCDay());
@@ -1458,6 +1473,7 @@ VIEWS.todo = {
           '<div style="margin-top:10px"><a class="btn sm pri" href="#register"><i class="ti ti-camera-plus"></i>새 상품 등록</a></div>'+
         '</div>'+
       '</div>'+
+      syncWarnHtml()+
       '<h2 class="hsec">오늘 운영</h2>'+
       '<div class="card" id="hops" style="margin-bottom:16px"><div class="empty">오늘 처리 현황 불러오는 중…</div></div>'+
       '<div class="grid g2">'+
