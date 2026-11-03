@@ -2591,7 +2591,9 @@ function hubMcdBuild_(ym, by) {
       cp.getRange(s2 + 3 + k, 2, 1, 3).setValues([prevs.map(function (m) { return (hist[m].ch || {})[lab] || 0; })]);
     });
     var s4 = A.findIndex(function (v) { return /^4\./.test(v); }) + 1, top10 = hubMcdTop_(R.shops, 10);   // 1-based 제목행
-    cp.getRange(s4 + 2, 1, 10, 4).setValues(hubMcdCol_(top10, 10).map(function (r) { return [r[0]].concat(prevs.map(function (m) { return r[0] ? ((hist[m].shops || {})[r[0]] || 0) : ''; })); }));
+    var c4 = hubMcdCount_(cp, s4 + 2, 1, function (v) { return v === '' || v === null; }), w4b = hubMcdResize_(cp, s4 + 2, c4, top10.length);
+    cp.getRange(s4 + 2, 1, w4b, 4).setValues(hubMcdCol_(top10, w4b).map(function (r) { return [r[0]].concat(prevs.map(function (m) { return r[0] ? ((hist[m].shops || {})[r[0]] || 0) : ''; })); }));
+    A = colA();
     var s5 = A.findIndex(function (v) { return /^5\./.test(v); }) + 1, cur5 = hubMcdTop_(R.sellers, 100), rest = {};
     prevs.forEach(function (m) { Object.keys(hist[m].sellers || {}).forEach(function (k) { if (cur5.indexOf(k) < 0) rest[k] = (rest[k] || 0) + hist[m].sellers[k]; }); });
     var sel = cur5.concat(hubMcdTop_(rest, 100)), c5 = hubMcdCount_(cp, s5 + 2, 1, function (v) { return String(v) === '공동구매 합계'; }), w5 = hubMcdResize_(cp, s5 + 2, c5, sel.length);
