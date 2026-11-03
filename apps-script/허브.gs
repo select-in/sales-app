@@ -920,6 +920,7 @@ function hubSales_(me) {
     if (!d) { if (r.some(function (x) { return x !== '' && x != null; })) skipped++; return; }
     var corp = String(col(r, '법인')).trim();
     if (corp === '제외') return;
+    if (String(col(r, '채널')).trim() === '사방넷' && hubSbnSkip_(col(r, '쇼핑몰ID'))) return;   // 스토어팜 기준 (중복 수집 계정)
     var grp = String(col(r, '채널그룹')).trim() || '기타';
     var pf = String(col(r, '플랫폼(자동)') || col(r, '쇼핑몰') || col(r, '채널')).trim() || grp;
     if (d === today) todayGroups[grp] = 1;
@@ -981,7 +982,7 @@ function hubSalesSbnToday_(ss, today, tz) {
     all.forEach(function (x) {
       if (/CANCEL/i.test(String(x.ORDER_STATUS))) return;
       if (x.ORG_SB_ORD_NO && String(x.ORG_SB_ORD_NO) !== '0') return;
-      var id = String(x.SHOP_LOGIN_ID || '').trim(), c = corp[id] || '확인필요'; if (c === '제외') return;
+      var id = String(x.SHOP_LOGIN_ID || '').trim(), c = corp[id] || '확인필요'; if (c === '제외' || hubSbnSkip_(id)) return;
       var k = c + '|' + String(x.SHOP_NM || '').trim(), o = g[k] || (g[k] = [today, c, '사방넷', String(x.SHOP_NM || '').trim(), 0, 0, 0, 0, 0, 1]);
       o[4]++; o[5] += Number(x.ORDER_TOT_AMT) || 0;
     });
@@ -1751,6 +1752,7 @@ function hubMonthCloseBuild_(ym, opt) {
   v.slice(h + 1).forEach(function (r) {
     var d = hubSalesYmd_(col(r, '날짜'), tz); if (!d) return;
     var corp = String(col(r, '법인')).trim(); if (corp === '제외') return;
+    if (String(col(r, '채널')).trim() === '사방넷' && hubSbnSkip_(col(r, '쇼핑몰ID'))) return;   // 스토어팜 기준 (중복 수집 계정)
     var grp = String(col(r, '채널그룹')).trim() || '기타';
     var pf = String(col(r, '플랫폼(자동)') || col(r, '쇼핑몰') || col(r, '채널')).trim() || grp;
     var lk = grp === '리셀' ? (/포이즌/i.test(pf + col(r, '채널')) ? '포이즌' : '크림') : grp;
@@ -2228,7 +2230,7 @@ function hubSbnRegDaily_(days, force) {
         (dt.results || []).forEach(function (x) {
           if (/CANCEL/i.test(String(x.ORDER_STATUS))) return;
           if (x.ORG_SB_ORD_NO && String(x.ORG_SB_ORD_NO) !== '0') return;
-          var c = corp[String(x.SHOP_LOGIN_ID || '').trim()] || '기타'; if (c === '제외') return;
+          var c = corp[String(x.SHOP_LOGIN_ID || '').trim()] || '기타'; if (c === '제외' || hubSbnSkip_(x.SHOP_LOGIN_ID)) return;
           if (c !== '겐더샵' && c !== '셀렉트인') c = '기타';
           o[c]++; o.amt[c] += Number(x.ORDER_TOT_AMT) || 0;
         });
