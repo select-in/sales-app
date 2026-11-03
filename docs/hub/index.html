@@ -509,6 +509,12 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 .tbl td:first-child:not(.c):not(.r),.tbl th:first-child:not(.c):not(.r){text-align:left}
 .tbl td .c2{align-items:center}.tbl td:first-child:not(.c) .c2{align-items:flex-start}
 .tbl td .sbar span{left:50%;transform:translateX(-50%)}
+
+.otbl tr.grph td{background:var(--soft);border-top:2px solid var(--line)}
+.otbl tr.grph td:first-child b{font-size:14px}
+.otbl tr:not(.grph) td:first-child{padding-left:26px}
+.mgh{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:10px 12px;margin:12px 0 2px;background:var(--soft);border-radius:8px;cursor:pointer}
+.mgh:first-child{margin-top:4px}.mgh span{font-size:12px;color:var(--sub)}
 </style>
 </head>
 <body>
@@ -1512,11 +1518,15 @@ function todoOwnerBar(OS){
   var chips='<div class="seg segwrap" id="town"><button data-town="전체" class="'+(TODO.own==='전체'?'on':'')+'">'+(TODO.corp==='전체'?'전체':TODO.corp+' 전체')+'</button>'+OS.L.map(function(m){ return '<button data-town="'+esc(m.o)+'" class="'+(TODO.own===m.o?'on':'')+'">'+esc(nm(m.o))+tag(m.o)+(m.o===me?' · 나':'')+'<small class="num">'+won(m.any)+'</small></button>'; }).join('')+'</div>';
   var tbl='';
   if (TODO.own==='전체'){
-    var C=OS.C;
-    tbl='<div class="card otbl" style="margin-top:12px"><h2>'+(TODO.corp==='전체'?'':esc(TODO.corp)+' ')+'담당자별 확인할 것 <small>'+(TODO.corp==='전체'?'두 법인 합계':esc(TODO.corp)+' 상품만')+' · 누르면 그 담당자만 보기</small></h2>'+
-      '<div class="dtable tblwrap"><table class="tbl"><thead><tr><th>담당자</th><th class="r">담당 상품</th><th class="r">확인 필요</th>'+C.map(function(c){ return '<th class="r">'+esc(c[1])+'</th>'; }).join('')+'</tr></thead><tbody>'+
-      OS.L.map(function(m){ return '<tr class="click" data-town="'+esc(m.o)+'"><td><b>'+esc(nm(m.o))+'</b><span class="sm">'+tag(m.o)+'</span>'+(m.o===me?' <span class="pill">나</span>':'')+'</td><td class="r num">'+won(m.n)+'</td><td class="r num"><b>'+won(m.any)+'</b></td>'+C.map(function(c){ var v=m.c[c[0]]||0; return '<td class="r num'+(v?'':' sm')+'">'+(v?won(v):'—')+'</td>'; }).join('')+'</tr>'; }).join('')+'</tbody></table></div>'+
-      '<div class="mcards">'+OS.L.map(function(m){ var top=C.filter(function(c){ return m.c[c[0]]; }).map(function(c){ return esc(c[1])+' '+won(m.c[c[0]]); }); return '<div class="mc" data-town="'+esc(m.o)+'"><div class="m"><div class="t">'+esc(nm(m.o))+tag(m.o)+(m.o===me?' · 나':'')+'</div><div class="s">'+(top.length?top.join(' · '):'확인할 것 없음')+'</div></div><div class="e num"><b>'+won(m.any)+'</b><div class="s">확인 필요</div></div></div>'; }).join('')+'</div></div>';
+    var C=OS.C, groups=TODO.corp==='전체'?['겐더샵','셀렉트인'].map(function(c){ return {corp:c, L:todoOwnerStats(c).L}; }):[{corp:TODO.corp, L:OS.L}];
+    var ld=function(c,o){ return o===TEAM[c].lead?' (대표)':(o==='이지나'?' (등록)':''); };
+    var trs=function(g){ return OS && g.L.map(function(m){ return '<tr class="click" data-town="'+esc(m.o)+'"'+(TODO.corp==='전체'?' data-tc="'+g.corp+'"':'')+'><td><b>'+esc(nm(m.o))+'</b><span class="sm">'+ld(g.corp,m.o)+'</span>'+(m.o===me?' <span class="pill">나</span>':'')+'</td><td class="num">'+won(m.n)+'</td><td class="num"><b>'+won(m.any)+'</b></td>'+C.map(function(c){ var v=m.c[c[0]]||0; return '<td class="num'+(v?'':' sm')+'">'+(v?won(v):'—')+'</td>'; }).join('')+'</tr>'; }).join(''); };
+    var sum=function(g){ var t={n:0,any:0,c:{}}; g.L.forEach(function(m){ t.n+=m.n; t.any+=m.any; C.forEach(function(c){ t.c[c[0]]=(t.c[c[0]]||0)+(m.c[c[0]]||0); }); }); return t; };
+    tbl='<div class="card otbl" style="margin-top:12px"><h2>담당자별 확인할 것 <small>'+(TODO.corp==='전체'?'법인별로 묶음':esc(TODO.corp)+' 상품만')+' · 누르면 그 담당자만 보기</small></h2>'+
+      '<div class="dtable tblwrap"><table class="tbl"><thead><tr><th>담당자</th><th>담당 상품</th><th>확인 필요</th>'+C.map(function(c){ return '<th>'+esc(c[1])+'</th>'; }).join('')+'</tr></thead><tbody>'+
+      groups.map(function(g){ var t=sum(g); return '<tr class="grph click" data-tcorp2="'+g.corp+'"><td><b>'+esc(g.corp)+'</b> <span class="sm">대표 '+esc(TEAM[g.corp].lead)+'</span></td><td class="num"><b>'+won(t.n)+'</b></td><td class="num"><b>'+won(t.any)+'</b></td>'+C.map(function(c){ var v=t.c[c[0]]||0; return '<td class="num">'+(v?'<b>'+won(v)+'</b>':'—')+'</td>'; }).join('')+'</tr>'+trs(g); }).join('')+
+      '</tbody></table></div>'+
+      '<div class="mcards">'+groups.map(function(g){ var t=sum(g); return '<div class="mgh" data-tcorp2="'+g.corp+'"><b>'+esc(g.corp)+'</b><span>대표 '+esc(TEAM[g.corp].lead)+' · 확인 필요 '+won(t.any)+'</span></div>'+g.L.map(function(m){ var top=C.filter(function(c){ return m.c[c[0]]; }).map(function(c){ return esc(c[1])+' '+won(m.c[c[0]]); }); return '<div class="mc" data-town="'+esc(m.o)+'"'+(TODO.corp==='전체'?' data-tc="'+g.corp+'"':'')+'><div class="m"><div class="t">'+esc(nm(m.o))+ld(g.corp,m.o)+(m.o===me?' · 나':'')+'</div><div class="s">'+(top.length?top.join(' · '):'확인할 것 없음')+'</div></div><div class="e num"><b>'+won(m.any)+'</b><div class="s">확인 필요</div></div></div>'; }).join(''); }).join('')+'</div></div>';
   }
   return '<div class="card tbar" style="padding:12px 16px"><div class="trow"><b>법인</b>'+corps+'</div><div class="trow"><b>담당자</b>'+chips+'</div></div>'+tbl;
 }
@@ -1577,7 +1587,8 @@ VIEWS.todo = {
   },
   bind: function(){
     opsTodayLoad(); homeRegLoad();
-    document.querySelectorAll('[data-town]').forEach(function(b){ b.onclick=function(e){ e.preventDefault(); TODO.own=b.dataset.town; lsSet('hubTodoSel',TODO); route(); }; });
+    document.querySelectorAll('[data-town]').forEach(function(b){ b.onclick=function(e){ e.preventDefault(); if(b.dataset.tc) TODO.corp=b.dataset.tc; TODO.own=b.dataset.town; lsSet('hubTodoSel',TODO); route(); }; });
+    document.querySelectorAll('[data-tcorp2]').forEach(function(b){ b.onclick=function(e){ e.preventDefault(); TODO.corp=b.dataset.tcorp2; TODO.own='전체'; lsSet('hubTodoSel',TODO); route(); }; });
     document.querySelectorAll('[data-tcorp]').forEach(function(b){ b.onclick=function(e){ e.preventDefault(); var me=ownCanon(S.me&&S.me.name); TODO.corp=b.dataset.tcorp; TODO.own=(TODO.corp!=='전체'&&TEAM[TODO.corp].mem.indexOf(me)>=0)?me:'전체'; lsSet('hubTodoSel',TODO); route(); }; });
     $('schk').onclick = function(){
       this.disabled = true;
