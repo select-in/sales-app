@@ -73,6 +73,7 @@ function sbCorpMap_(ss) {
 function sbKeep_(x, corp) {
   if (/CANCEL/i.test(String(x.ORDER_STATUS))) return false;
   if (x.ORG_SB_ORD_NO && String(x.ORG_SB_ORD_NO) !== '0') return false;
+  if (typeof hubSbnSkip_ === 'function' && hubSbnSkip_(x.SHOP_LOGIN_ID)) return false;   // 스토어팜 기준 계정(중복 수집) 제외
   return corp[String(x.SHOP_LOGIN_ID || '').trim()] !== '제외';
 }
 

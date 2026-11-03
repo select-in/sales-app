@@ -104,6 +104,8 @@ function doPost(e) {
         return hubOut_(hubMcdHistSet_(req.rows, me));
       case 'mc_hist_ops': if (!admin) return hubOut_({ error: '관리자만 실행할 수 있습니다' });   // 지난 달 비교 이력을 OPS 기준으로 다시 계산
         return hubOut_({ ok: true, rows: (req.yms || []).map(function (m) { return hubMcdHistFromOps_(hubMcYm_(m), me && me.name); }) });
+      case 'sbn_skip_fix': if (!admin) return hubOut_({ error: '관리자만 실행할 수 있습니다' });   // 스토어팜 중복 계정 사방넷 매출 0 처리
+        return hubOut_(hubLocked_(hubSbnSkipFix_));
       case 'sbn_resync': if (!admin) return hubOut_({ error: '관리자만 실행할 수 있습니다' });   // 매출판 그 달 사방넷 행을 지금 사방넷 API 값으로 맞춤
         return hubOut_(hubLocked_(function () { return hubSbnResync_(hubMcYm_(req.ym)); }));
       case 'mc_dash': if (!admin) return hubOut_({ error: '관리자만 만들 수 있습니다' });   // 월마감 대시보드(내부 회의용) 만들기 → 구글시트 링크
@@ -1002,7 +1004,7 @@ function hubSbnSalesRange_(from, to) {
   all.forEach(function (x) {
     if (/CANCEL/i.test(String(x.ORDER_STATUS))) return;
     if (x.ORG_SB_ORD_NO && String(x.ORG_SB_ORD_NO) !== '0') return;
-    var id = String(x.SHOP_LOGIN_ID || '').trim(), c = corp[id] || '확인필요'; if (c === '제외') return;
+    var id = String(x.SHOP_LOGIN_ID || '').trim(), c = corp[id] || '확인필요'; if (c === '제외' || hubSbnSkip_(id)) return;
     var d = String(x.ORDER_DT || '').replace(/^(\d{4})(\d{2})(\d{2}).*/, '$1-$2-$3').slice(0, 10);
     var k = d + '|' + c + '|' + String(x.SHOP_NM || '').trim(), o = g[k] || (g[k] = [d, c, String(x.SHOP_NM || '').trim(), 0, 0]);
     o[3]++; o[4] += Number(x.ORDER_TOT_AMT) || 0;
@@ -1920,6 +1922,7 @@ function hubSbnResync_(ym) {
     if (x.ORG_SB_ORD_NO && String(x.ORG_SB_ORD_NO) !== '0') return;
     var d = String(x.ORDER_DT || '').replace(/^(\d{4})(\d{2})(\d{2}).*/, '$1-$2-$3').slice(0, 10); if (d < from || d > to) return;
     var shop = String(x.SHOP_NM || '').trim(), id = String(x.SHOP_LOGIN_ID || '').trim(), k = d + '|' + shop + '|' + id;
+    if (hubSbnSkip_(id)) return;
     var g = G[k] || (G[k] = { d: d, shop: shop, id: id, cnt: 0, amt: 0, cost: 0 });
     g.cnt++; g.amt += N(x.ORDER_TOT_AMT); g.cost += N(x.COST_PRICE) || hubCostForceOf_(fc, x);
   });
@@ -1941,6 +1944,18 @@ function hubSbnResync_(ym) {
     sh.getRange(at, 20, add.length, 1).setValues(add.map(function () { return ['사방넷 API(주문일), 월마감 재동기화']; }));
   }
   return { ym: ym, api: all.length, updated: upd, zeroed: zero, added: add.length };
+}
+/** 이미 매출판에 들어간 스토어팜 중복 계정(HUB_SBN_SKIP) 사방넷 행을 0으로 (행은 남기고 비고에 사유) */
+function hubSbnSkipFix_() {
+  var sh = SpreadsheetApp.openById(HUB_SALES_ID).getSheetByName('일별입력'), last = sh.getLastRow(), v = sh.getRange(3, 1, Math.max(1, last - 2), 20).getValues(), n = 0, amt = 0;
+  v.forEach(function (r, i) {
+    if (String(r[1]).trim() !== '사방넷' || !hubSbnSkip_(r[3])) return;
+    if (!hubNum_(r[6]) && !hubNum_(r[7])) return;
+    amt += hubNum_(r[7]); n++;
+    sh.getRange(i + 3, 7, 1, 3).setValues([[0, 0, 0]]);
+    sh.getRange(i + 3, 20).setValue((String(r[19] || '') + ' · 스토어팜 중복 제외(원래 ' + hubNum_(r[6]) + '건 ' + won_(hubNum_(r[7])) + '원)').replace(/^ · /, ''));
+  });
+  return { ok: true, rows: n, amt: amt };
 }
 /** 메일 보내기 — kind: '확정'|'가마감'|'시험' */
 function hubMonthCloseSend_(ym, me, test) {
@@ -2351,6 +2366,9 @@ function hubMcRawPut_(req) {
  *          셀렉트인 스마트스토어 정상 주문 = 네이버 커머스API(상품·일자별, '월마감NV'에 저장)
  *  - 비교: OPS DB '월마감이력'(월별 고정값)에서 직전 3개월 + 이번달(수식)
  *  - 월마감 메일에 기존 마감 엑셀과 함께 첨부 (실패해도 기존 메일은 나감) */
+/** 스토어팜(네이버 API)으로 직접 집계하는 계정 — 사방넷에 같은 주문이 수집돼도 매출에서 뺌 (중복 방지, 스토어팜 기준) */
+var HUB_SBN_SKIP = ['ncp_1p0lvc_01'];
+function hubSbnSkip_(id) { return HUB_SBN_SKIP.indexOf(String(id || '').replace(/^'/, '').trim()) >= 0; }
 var HUB_MCD = { tpl: 'mc_dash_tpl', folder: 'mc_dash_folder', hist: '월마감이력', sel: 'ncp_1p0lvc_01', pink: '#e6b8b7',
   head: ['월', '겐더샵', '셀렉트인', '합계', '주문건수', '교환', '반품', '취소', '순매출', '반품차감', '채널', '쇼핑몰', '셀러', '기록'] };
 
@@ -2419,6 +2437,7 @@ function hubMcdLines_(ym) {
   var push = function (d, shop, id, name, opt, cost, qty, amt, stx) {
     var c = corp[id] || '확인필요'; if (c === '제외') return;
     var st = hubMcdSt_(stx);
+    if (hubSbnSkip_(id) && st === '정상구매') return;   // 스토어팜 기준 (같은 주문이 네이버 API로 들어옴)
     var sel = c === '셀렉트인' ? hubMcdGongu_(name) : null;
     out.push({ d: d, shop: shop, corp: c, name: name, opt: opt, cost: cost, qty: qty, amt: amt, st: st, kind: c === '셀렉트인' ? (sel ? '공동구매' : '일반주문') : '-', seller: sel || '' });
   };
