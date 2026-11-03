@@ -98,8 +98,9 @@ function doPost(e) {
       case 'ext_price_list': return hubOut_(hubExtPriceList_());
       case 'sbn_order_fields': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 사방넷 주문 API 응답 항목 이름 확인용 (읽기 전용, 개인정보 항목은 값 제외)
         return hubOut_(hubSbnOrderFields_(req.items));
-      case 'krm_req': return hubOut_(hubLocked_(function () { hubConfigSet_('krm_req', String(Date.now()), me); return { ok: true }; }));   // 휴대폰에서 [지금 동기화] → PC 크림 창이 받아서 실행
-      case 'krm_poll': var kc = hubConfig_(); return hubOut_({ req: kc.krm_req ? Number(kc.krm_req.value) || 0 : 0, by: kc.krm_req ? kc.krm_req.by : '' });
+      case 'krm_req': return hubOut_(hubLocked_(function () { var t = String(Date.now()); hubConfigSet_('krm_req', t, me); try { CacheService.getScriptCache().put('hub_krm_req', JSON.stringify({ req: Number(t), by: me.name }), 21600); } catch (e) {} return { ok: true }; }));   // 휴대폰에서 [지금 동기화] → PC 크림 창이 받아서 실행
+      case 'krm_poll': try { var kq = CacheService.getScriptCache().get('hub_krm_req'); if (kq) return hubOut_(JSON.parse(kq)); } catch (e) {}   // 30초마다 오는 확인 → 캐시로 바로 응답
+        var kc = hubConfig_(); return hubOut_({ req: kc.krm_req ? Number(kc.krm_req.value) || 0 : 0, by: kc.krm_req ? kc.krm_req.by : '' });
       case 'sbn_get': if (!admin) return hubOut_({ error: '관리자만 조회할 수 있습니다' });   // 읽기 전용 (GET)
         if (!/^\/v3\/sb\/[A-Za-z0-9\/_\-]+(\?[A-Za-z0-9_\-=&%.,:]*)?$/.test(String(req.path || ''))) return hubOut_({ error: 'path_not_allowed' });
         return hubOut_({ ok: true, body: hubSbnCall_('GET', req.path, null, req.mode === 'SANDBOX' ? 'SANDBOX' : 'PRODUCTION') });
@@ -167,11 +168,19 @@ function hubResetAdminPin() {
 }
 
 /* ===================== 시트 ===================== */
+/* 한 번의 요청 안에서 시트 열기·탭 찾기를 되풀이하지 않도록 기억 (요청이 끝나면 사라짐) */
+var HUB_MEMO_ = {};
 function hubBook_() {
+  if (HUB_MEMO_.book) return HUB_MEMO_.book;
   var id = PropertiesService.getScriptProperties().getProperty('HUB_DB_ID');
-  return id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
+  return (HUB_MEMO_.book = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet());
 }
 function hubSheet_(name) {
+  var M = HUB_MEMO_.sh || (HUB_MEMO_.sh = {});
+  if (M[name]) return M[name];
+  return (M[name] = hubSheetOpen_(name));
+}
+function hubSheetOpen_(name) {
   var ss = hubBook_(), sh = ss.getSheetByName(name);
   if (!sh) {
     sh = ss.insertSheet(name);
@@ -227,9 +236,19 @@ function hubLogin_(name, pin) {
   var body = exp + '.' + Utilities.base64EncodeWebSafe(name, Utilities.Charset.UTF_8).replace(/=+$/, '');
   return { token: body + '.' + hubSign_(body, String(u.v[2])), name: name, role: String(u.v[1]) };
 }
+/* 로그인 확인 결과를 5분 기억 → 매 요청마다 직원 탭을 읽지 않음. 직원 정보가 바뀌면 세대값을 바꿔 즉시 무효 */
+function hubUGen_() { try { return CacheService.getScriptCache().get('hub_ugen') || '0'; } catch (e) { return '0'; } }
+function hubUGenBump_() { try { CacheService.getScriptCache().put('hub_ugen', String(Date.now()), 21600); } catch (e) {} }
 function hubVerify_(token) {
   var t = String(token || '').split('.');
   if (t.length !== 3 || Number(t[0]) < Date.now()) return null;
+  var ck = null, cache = null;
+  try { cache = CacheService.getScriptCache(); ck = 'hubv_' + hubUGen_() + '_' + hubHash_(String(token)).slice(0, 32); var hit = cache.get(ck); if (hit) return JSON.parse(hit); } catch (e) { cache = null; }
+  var me = hubVerifySheet_(t);
+  if (me && cache) try { cache.put(ck, JSON.stringify(me), 300); } catch (e) {}
+  return me;
+}
+function hubVerifySheet_(t) {
   var pad = t[1] + '==='.slice((t[1].length + 3) % 4);
   var name = Utilities.newBlob(Utilities.base64DecodeWebSafe(pad)).getDataAsString('UTF-8');
   var u = hubUserRow_(name);
@@ -250,7 +269,7 @@ function hubUserRename_(req, me) {
   var u = hubUserRow_(me.name);
   if (!u || hubHash_(me.name + '|' + pin) !== String(u.v[2])) return { error: '현재 PIN이 맞지 않습니다' };
   if (hubUserRow_(to)) return { error: '이미 있는 이름이에요' };
-  hubSheet_('직원').getRange(u.row, 1, 1, 3).setValues([[to, u.v[1], hubHash_(to + '|' + pin)]]);
+  hubSheet_('직원').getRange(u.row, 1, 1, 3).setValues([[to, u.v[1], hubHash_(to + '|' + pin)]]); hubUGenBump_();
   [['재고이력', 9], ['원가이력', 7], ['설정', 4], ['상품', 16]].forEach(function (t) {
     var sh = hubSheet_(t[0]), n = sh.getLastRow() - 1;
     if (n < 1) return;
@@ -275,6 +294,7 @@ function hubUserSave_(req, me) {
   var sh = hubSheet_('직원');
   if (u) sh.getRange(u.row, 1, 1, 5).setValues([row]);
   else sh.appendRow(row);
+  hubUGenBump_();
   return { ok: true, users: hubUsers_() };
 }
 
@@ -383,6 +403,30 @@ function hubWriteAll_(list) {
     if (sh.getMaxRows() < rows.length + 1) sh.insertRowsAfter(sh.getMaxRows(), rows.length + 1 - sh.getMaxRows());
     sh.getRange(2, 1, rows.length, w).setNumberFormats(rows.map(function () { return fm; })).setValues(rows);
   }
+}
+/* 상품 탭에서 바뀐 줄만 쓰기 — p._r(시트 줄 번호)·p._ch(바뀜) 표시된 목록. 새 상품(_r 없음)은 끝에 추가.
+ * 흩어진 줄이 너무 많으면 통째로 다시 씀 */
+function hubProductsRows_() {
+  var out = []; hubRows_('상품').vals.forEach(function (v, i) { var p = hubProductObj_(v); if (p.id) { p._r = i + 2; out.push(p); } });
+  return out;
+}
+function hubWriteChanged_(list) {
+  var sh = hubSheet_('상품'), fm = hubFormats_(), w = fm.length;
+  var ch = list.filter(function (p) { return p._r && p._ch; }).sort(function (a, b) { return a._r - b._r; });
+  var add = list.filter(function (p) { return !p._r; }), blocks = [], i = 0;
+  while (i < ch.length) { var j = i; while (j + 1 < ch.length && ch[j + 1]._r === ch[j]._r + 1) j++; blocks.push(ch.slice(i, j + 1)); i = j + 1; }
+  if (blocks.length > 40) { hubWriteAll_(list); return; }
+  blocks.forEach(function (b) { sh.getRange(b[0]._r, 1, b.length, w).setValues(b.map(hubRow_)); });
+  if (add.length) {
+    var start = sh.getLastRow() + 1, need = start + add.length - 1;
+    if (sh.getMaxRows() < need) sh.insertRowsAfter(sh.getMaxRows(), need - sh.getMaxRows());
+    sh.getRange(start, 1, add.length, w).setNumberFormats(add.map(function () { return fm; })).setValues(add.map(hubRow_));
+  }
+}
+/* 바뀐 상품을 화면이 바로 끼워 넣을 수 있게 boot(compact)와 같은 모양으로 */
+function hubPRows_(L) {
+  var iReg = HUB_P_FIELDS.indexOf('reg'), iRs = HUB_P_FIELDS.indexOf('regStatus');
+  return L.map(function (p) { var v = hubRow_(p); if (!v[iRs]) v[iReg] = ''; return v; });
 }
 function hubWriteLogs_(logs) {
   ['재고이력', '원가이력'].forEach(function (tab) {
@@ -650,7 +694,7 @@ function hubPznList_() {
 function hubSbnStockSync_(req, me) {
   var rows = req.rows || []; if (!rows.length) return { error: '재고 행이 없습니다' };
   var m = {}; rows.forEach(function (r) { if (r && r[0]) m[hubStr_(r[0], 30) + '-' + hubStr_(r[1], 20)] = Math.round(hubNum_(r[2])); });
-  var list = hubProducts_(), now = hubNow_(), logs = [], changed = 0, seen = 0, skipped = 0, recent = Date.now() - 10 * 60 * 1000, ch = [];
+  var list = hubProductsRows_(), now = hubNow_(), logs = [], changed = 0, seen = 0, skipped = 0, recent = Date.now() - 10 * 60 * 1000, ch = [];
   list.forEach(function (p) {
     if (!p.sbnPrd) return;
     var k = p.sbnPrd + '-' + p.sbnSku; if (!(k in m)) return;
@@ -661,9 +705,9 @@ function hubSbnStockSync_(req, me) {
     if (p.updatedBy !== '사방넷' && t && t > recent) { skipped++; return; }
     logs.push(['재고이력', [now, p.id, p.sku, p.name, '사방넷동기화', q - p.stock, q, '사방넷 현재고로 맞춤(자동)', me.name]]);
     if (ch.length < 30) ch.push(k + ' ' + p.stock + '→' + q);
-    p.stock = q; p.updatedAt = now; p.updatedBy = '사방넷'; changed++;
+    p.stock = q; p.updatedAt = now; p.updatedBy = '사방넷'; p._ch = 1; changed++;
   });
-  if (changed) { hubWriteAll_(list); hubWriteLogs_(logs); }
+  if (changed) { hubWriteChanged_(list); hubWriteLogs_(logs); }
   if (req.final) hubConfigSet_('sbn_stock_at', now + ' · 단품 ' + (req.total || rows.length) + '개 확인' + (changed ? ' · 변경 ' + changed : ''), me);
   return { ok: true, seen: seen, changed: changed, skipped: skipped, sample: ch };
 }
@@ -678,13 +722,13 @@ function hubSbnStockSync_(req, me) {
 function hubSbnSkuSync_(req, me) {
   var rows = req.rows || []; if (!rows.length) return { error: '사방넷 단품 행이 없습니다' };
   var m = {}; rows.forEach(function (r) { if (r && r[0]) m[hubStr_(r[0], 30) + '-' + hubStr_(r[1], 20)] = r; });
-  var list = hubProducts_(), now = hubNow_(), logs = [], recent = Date.now() - 10 * 60 * 1000, seen = {}, corpOf = {};
+  var list = hubProductsRows_(), now = hubNow_(), logs = [], recent = Date.now() - 10 * 60 * 1000, seen = {}, corpOf = {};
   var C = { stock: 0, cost: 0, price: 0, name: 0, bar: 0, mng: 0, vst: 0, status: 0, added: 0, missing: 0, skipped: 0 }, ex = [];
   list.forEach(function (p) { if (p.sbnPrd && !corpOf[p.sbnPrd]) corpOf[p.sbnPrd] = p.corp; });
   list.forEach(function (p) {
     if (!p.sbnPrd) return;
     var k = p.sbnPrd + '-' + p.sbnSku, r = m[k];
-    if (!r) { if (req.complete && p.sbnStatus !== '사방넷없음') { p.sbnStatus = '사방넷없음'; C.missing++; p.updatedAt = now; p.updatedBy = '사방넷'; } return; }
+    if (!r) { if (req.complete && p.sbnStatus !== '사방넷없음') { p.sbnStatus = '사방넷없음'; C.missing++; p.updatedAt = now; p.updatedBy = '사방넷'; p._ch = 1; } return; }
     seen[k] = 1;
     var ch = false, mng = r[9] === 'N' ? 'N' : 'Y', st = Math.round(hubNum_(r[7])), cost = hubNum_(r[5]), price = hubNum_(r[6]), vst = Math.round(hubNum_(r[8]));
     var nm = hubStr_(r[2], 150), op = hubStr_(r[3], 80), bar = hubStr_(r[4], 60), sts = hubStr_(r[10], 20);
@@ -703,7 +747,7 @@ function hubSbnSkuSync_(req, me) {
     if (sts && p.sbnStatus !== sts) { p.sbnStatus = sts; C.status++; ch = true; }
     var link = r[11] === 'L' && r[12] ? hubStr_(r[12], 20) + '-' + hubStr_(r[13], 10) : '';
     if (String(p.link || '') !== link || String(p.setDiv || '') !== hubStr_(r[11], 4)) { p.link = link; p.setDiv = hubStr_(r[11], 4); ch = true; }
-    if (ch) { p.updatedAt = now; p.updatedBy = '사방넷'; }
+    if (ch) { p.updatedAt = now; p.updatedBy = '사방넷'; p._ch = 1; }
   });
   Object.keys(m).forEach(function (k) {
     if (seen[k]) return;
@@ -717,9 +761,12 @@ function hubSbnSkuSync_(req, me) {
     if (n.stock) logs.push(['재고이력', [now, n.id, n.sku, n.name, '기초재고', n.stock, n.stock, '사방넷에서 새로 가져옴', me.name]]);
   });
   var changed = C.stock + C.cost + C.price + C.name + C.bar + C.mng + C.vst + C.status + C.added + C.missing;
-  if (changed || logs.length) { hubWriteAll_(list); hubWriteLogs_(logs); }
+  var touched = list.filter(function (p) { return p._ch || !p._r; });
+  if (touched.length || logs.length) { hubWriteChanged_(list); hubWriteLogs_(logs); }
   hubConfigSet_('sbn_stock_at', now + ' · 사방넷 단품 ' + rows.length + '개 확인' + (changed ? ' · 바뀜 ' + changed : ''), me);
-  return { ok: true, seen: rows.length, changed: changed, c: C, sample: ex };
+  var res = { ok: true, seen: rows.length, changed: changed, c: C, sample: ex };
+  if (touched.length && touched.length <= 3000) { res.pcols = HUB_P_FIELDS; res.upd = hubPRows_(touched); }   // 화면은 바뀐 상품만 끼워 넣음 (전체 다시 받기 X)
+  return res;
 }
 
 /* ===================== 쇼핑몰별 상품 등록 현황 (sbn.js) =====================
@@ -1137,7 +1184,12 @@ function hubStockMove_(req, me) {
   return { ok: true, product: hit.p, sbn: sbn, move: { at: now, id: hit.p.id, sku: hit.p.sku, name: hit.p.name, type: type, qty: delta, after: after, memo: hubStr_(req.memo, 200), by: me.name } };
 }
 function hubHistory_(id, limit) {
-  var vals = hubRows_('재고이력').vals, out = [];
+  var vals, out = [];
+  if (id) vals = hubRows_('재고이력').vals;
+  else {   // 최근 것만 필요 → 끝부분만 읽음 (이력 탭이 커져도 첫 화면이 느려지지 않게)
+    var sh = hubSheet_('재고이력'), last = sh.getLastRow(), n = Math.min(Math.max(0, last - 1), limit + 50);
+    vals = n ? sh.getRange(last - n + 1, 1, n, HUB_TABS['재고이력'].length).getValues() : [];
+  }
   for (var i = vals.length - 1; i >= 0 && out.length < limit; i--) {
     var v = vals[i]; if (id && String(v[1]) !== String(id)) continue;
     out.push({ at: v[0] instanceof Date ? Utilities.formatDate(v[0], 'Asia/Seoul', 'yyyy-MM-dd HH:mm') : String(v[0]), id: String(v[1]), sku: String(v[2]), name: String(v[3]), type: String(v[4]), qty: hubNum_(v[5]), after: hubNum_(v[6]), memo: String(v[7]), by: String(v[8]) });
@@ -1609,12 +1661,14 @@ function hubSbnTest() {
 
 /* ===================== 설정 ===================== */
 function hubConfig_() {
+  if (HUB_MEMO_.cfg) return HUB_MEMO_.cfg;
   var o = {};
   hubRows_('설정').vals.forEach(function (v) { if (v[0]) o[String(v[0])] = { value: String(v[1]), at: String(v[2]), by: String(v[3]) }; });
-  return o;
+  return (HUB_MEMO_.cfg = o);
 }
 function hubConfigSet_(key, value, me) {
   key = hubStr_(key, 60); if (!key) throw new Error('키가 없습니다');
+  HUB_MEMO_.cfg = null;
   var r = hubRows_('설정'), row = [key, hubStr_(value, 2000), hubNow_(), me.name];
   for (var i = 0; i < r.vals.length; i++) if (String(r.vals[i][0]) === key) { r.sh.getRange(i + 2, 1, 1, 4).setValues([row]); return; }
   r.sh.appendRow(row);

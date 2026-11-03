@@ -2284,7 +2284,7 @@ function krHow(){
     '<li>크림 판매자센터(partner.kream.co.kr)에 로그인한 화면에서 그 북마크 클릭</li>'+
     '<li>오른쪽 아래 「OPS 크림 동기화」 창에서 계정 확인 → [지금 동기화]</li>'+
     '<li>그 크림 창을 켜두면 <b>10분마다 자동</b> + 휴대폰에서 [지금 동기화]를 누르면 바로 가져와요</li></ol>'+
-    '<div style="margin:18px 0;text-align:center;display:flex;gap:10px;justify-content:center;flex-wrap:wrap"><a class="btn pri" href="'+esc(KR_BM)+'" onclick="toast(\'클릭 말고 북마크바로 끌어다 놓아 주세요\');return false;" style="cursor:grab"><i class="ti ti-refresh"></i>OPS 크림 동기화</a><a class="btn pri" href="'+esc(KR_BM.replace('kream.js','poizon.js'))+'" onclick="toast(\'클릭 말고 북마크바로 끌어다 놓아 주세요\');return false;" style="cursor:grab"><i class="ti ti-refresh"></i>OPS 포이즌 동기화</a><a class="btn pri" href="'+esc(KR_BM.replace('kream.js','sbn.js'))+'" onclick="toast(\'클릭 말고 북마크바로 끌어다 놓아 주세요\');return false;" style="cursor:grab"><i class="ti ti-refresh"></i>OPS 사방넷 동기화</a></div><p class="sm" style="text-align:center;margin:-8px 0 12px">포이즌은 seller.poizon.com, 사방넷은 sbadmin 관리자 화면에 로그인한 상태에서 각 북마크를 눌러요 · 사방넷 창을 켜두면 10분마다 현재고가 앱에 맞춰져요</p>'+
+    '<div style="margin:18px 0;text-align:center;display:flex;gap:10px;justify-content:center;flex-wrap:wrap"><a class="btn pri" href="'+esc(KR_BM)+'" onclick="toast(\'클릭 말고 북마크바로 끌어다 놓아 주세요\');return false;" style="cursor:grab"><i class="ti ti-refresh"></i>OPS 크림 동기화</a><a class="btn pri" href="'+esc(KR_BM.replace('kream.js','poizon.js'))+'" onclick="toast(\'클릭 말고 북마크바로 끌어다 놓아 주세요\');return false;" style="cursor:grab"><i class="ti ti-refresh"></i>OPS 포이즌 동기화</a><a class="btn pri" href="'+esc(KR_BM.replace('kream.js','sbn.js'))+'" onclick="toast(\'클릭 말고 북마크바로 끌어다 놓아 주세요\');return false;" style="cursor:grab"><i class="ti ti-refresh"></i>OPS 사방넷 동기화</a></div><p class="sm" style="text-align:center;margin:-8px 0 12px">포이즌은 seller.poizon.com, 사방넷은 sbadmin 관리자 화면에 로그인한 상태에서 각 북마크를 눌러요 · 사방넷 창을 켜두면 5분마다 현재고가 앱에 맞춰져요</p>'+
     '<div class="preview">로그인 정보는 저장하지 않아요. 크림 화면에 로그인된 세션으로 <b>조회만</b> 해요.</div>',
     '<button class="btn" onclick="closeDrawer()">닫기</button>');
 }
@@ -3247,6 +3247,17 @@ function userForm(u){
   };
 }
 
+/* 사방넷 동기화 결과에서 바뀐 상품만 화면 데이터에 끼워 넣음 (전체 다시 받기 없이 바로 반영). 서버가 바뀐 목록을 안 주면 false → 전체 새로고침 */
+function sbnMerge(j){
+  if (!j || !j.upd || !j.pcols) return false;
+  var U = expandProducts({pcols:j.pcols, prows:j.upd}), at = {};
+  S.products.forEach(function(p,i){ at[p.id]=i; });
+  U.forEach(function(p){ if (at[p.id]!=null) S.products[at[p.id]]=p; else { at[p.id]=S.products.length; S.products.push(p); } });
+  persist();
+  var a=document.activeElement, typing=a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.closest && a.closest('#view');
+  if (!typing && !document.getElementById('ov')) route();   // 입력 중이거나 창이 열려 있으면 화면은 그대로 (다음 이동 때 반영)
+  return true;
+}
 /* ===================== 사방넷 → 앱 데이터 수신 ===================== */
 var SBN_ORIGIN = 'https://sbadmin11.sabangnet.co.kr', SBN_IN = null;
 window.addEventListener('message', function(e){
@@ -3258,7 +3269,7 @@ window.addEventListener('message', function(e){
     api(act, d.type==='sbs_rows'?{rows:d.rows, final:true, total:d.rows.length}:d.type==='sbk_rows'?{rows:d.rows, complete:!!d.complete}:{accts:d.accts}).then(function(j){
       if (d.type==='sbc_rows'){ src.postMessage({type:'sbx_saved', batch:d.batch, res:j}, SBN_ORIGIN); SBR=null; if(/^#reg/.test(location.hash||'')) route(); return; }
       src.postMessage({type:'sbx_saved', batch:d.batch, res:j}, SBN_ORIGIN);
-      if (d.type==='sbs_rows'||d.type==='sbk_rows'){ if (j.changed){ toast('사방넷 맞춤 · '+j.changed+'곳 변경'); boot(); } }
+      if (d.type==='sbs_rows'||d.type==='sbk_rows'){ if (j.changed){ toast('사방넷 맞춤 · '+j.changed+'곳 변경'); if (!sbnMerge(j)) boot(); } }
       else { SBR=null; if(/^#reg/.test(location.hash||'')) route(); toast('쇼핑몰 등록 현황 '+j.accts+'개 계정 저장'); }
     }).catch(function(x){ src.postMessage({type:'sbx_error', batch:d.batch, message:(x&&x.message)||'저장 실패'}, SBN_ORIGIN); });
     return;

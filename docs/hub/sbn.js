@@ -2,12 +2,13 @@
  * sbadmin*.sabangnet.co.kr 에 로그인한 화면에서 실행 → 사방넷 화면이 쓰는 조회 기능으로 읽어서 OPS 앱으로 보냄 (조회 전용)
  *  1) 단품 전체: 사방넷단품대량수정 목록(현재고·가상재고·재고관리 여부·원가·판매가·바코드·이름·상태) → 앱을 사방넷 값으로 맞춤
  *  2) 쇼핑몰 등록 현황: 쇼핑몰상품수정 목록 → 계정(쇼핑몰+로그인ID)별 등록 상품코드 (비밀번호 같은 값은 읽지도 보내지도 않음)
- * - 창을 켜두면 10분마다 재고, 1시간마다 등록 현황을 다시 가져옴 */
+ * - 창을 켜두면 5분마다 재고·주문수집 상태, 1시간마다 등록 현황을 다시 가져옴
+ * - 빠르게: 단품 페이지·주문수집 상태를 한꺼번에 읽고, 저장도 동시에 보냄 */
 (function () {
   if (!/sbadmin\d*\.sabangnet\.co\.kr$/.test(location.hostname)) { alert('사방넷 관리자(sbadmin) 화면에서 실행해 주세요'); return; }
   if (window.__opsSbn) { window.__opsSbn.show(); return; }
   var HUB = 'https://select-in.github.io/sales-app/hub/', HUB_ORIGIN = 'https://select-in.github.io';
-  var EVERY = 10 * 60 * 1000, REG_EVERY = 60 * 60 * 1000, hubWin = null, timer = null, busy = false;
+  var EVERY = 5 * 60 * 1000, REG_EVERY = 60 * 60 * 1000, hubWin = null, timer = null, busy = false;
   var LS = function (k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
   var pad = function (n) { return ('0' + n).slice(-2); };
   var ymd = function (d) { return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()); };
@@ -16,7 +17,7 @@
   var box = document.createElement('div');
   box.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647;background:#fff;border:1px solid #d9e2dc;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.15);padding:14px 16px;width:300px;font:13px/1.5 -apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;color:#1b2a22';
   box.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><b style="font-size:14px">OPS 사방넷 동기화</b><span id="osx" style="cursor:pointer;color:#888;font-size:16px">×</span></div>' +
-    '<label style="display:flex;gap:6px;align-items:center;margin-bottom:4px"><input type="checkbox" id="osauto" checked> 창 켜두면 10분마다 재고 자동</label>' +
+    '<label style="display:flex;gap:6px;align-items:center;margin-bottom:4px"><input type="checkbox" id="osauto" checked> 창 켜두면 5분마다 재고 자동</label>' +
     '<label style="display:flex;gap:6px;align-items:center;margin-bottom:8px"><input type="checkbox" id="osreg"> 쇼핑몰 등록 현황도 지금 가져오기</label>' +
     '<div id="osm" style="background:#f4f7f5;border-radius:8px;padding:8px;min-height:36px;white-space:pre-line">준비됐어요</div>' +
     '<button id="osgo" style="margin-top:8px;width:100%;padding:8px;border:0;border-radius:8px;background:#1f7a52;color:#fff;font-weight:600;cursor:pointer">지금 동기화</button>';
@@ -41,18 +42,20 @@
   }
   /* 사방넷단품대량수정 목록 = 상품 화면의 현재고(가용)와 같은 값. 전체 단품을 읽음 */
   function readSku() {
-    var out = [], seen = {}, page = 1, size = 2000, total = 0;
-    var step = function () {
-      return post('/prod-api/customer/product/sku-bulk-modify-list', skuBody(page, size)).then(function (d) {
-        var L = d.skuBulkModifyDetailForList || []; total = d.total || total;
-        L.forEach(function (o) { var k = o.prdNo + '-' + o.skuNo; if (seen[k]) return; seen[k] = 1;
-          out.push([o.prdNo, o.skuNo, o.prdNm, o.optDtlNm, o.barcd, o.splyCprc, o.sepr, o.crtinvQt, o.vrtlStocQt, o.stocUseYn, o.skuSplyStsNm, o.setDivCd, o.conPrdNo, o.conSkuNo]); });
-        msg('사방넷 단품 읽는 중… ' + out.length + ' / ' + total);
-        if (L.length && out.length < total && page < 30) { page++; return step(); }
-        return { rows: out, complete: total > 0 && out.length >= total };
-      });
+    var out = [], seen = {}, size = 2000, total = 0;
+    var take = function (d) {
+      (d.skuBulkModifyDetailForList || []).forEach(function (o) { var k = o.prdNo + '-' + o.skuNo; if (seen[k]) return; seen[k] = 1;
+        out.push([o.prdNo, o.skuNo, o.prdNm, o.optDtlNm, o.barcd, o.splyCprc, o.sepr, o.crtinvQt, o.vrtlStocQt, o.stocUseYn, o.skuSplyStsNm, o.setDivCd, o.conPrdNo, o.conSkuNo]); });
+      msg('사방넷 단품 읽는 중… ' + out.length + ' / ' + total);
     };
-    return step();
+    var get1 = function (pg) { return post('/prod-api/customer/product/sku-bulk-modify-list', skuBody(pg, size)); };
+    return get1(1).then(function (d) {   // 1쪽에서 전체 개수 확인 → 나머지 쪽은 동시에 3개씩
+      total = d.total || 0; take(d);
+      var pages = Math.min(30, Math.ceil(total / size)), rest = [];
+      for (var p = 2; p <= pages; p++) rest.push(p);
+      var next = function () { if (!rest.length) return Promise.resolve(); return Promise.all(rest.splice(0, 3).map(get1)).then(function (A) { A.forEach(take); return next(); }); };
+      return next();
+    }).then(function () { return { rows: out, complete: total > 0 && out.length >= total }; });
   }
   /* 쇼핑몰 계정별 주문·클레임 마지막 수집 + 스케줄러 설정 (읽기만) */
   function get(path) {
@@ -131,20 +134,23 @@
     if (ev && (!hubWin || hubWin.closed)) hubWin = window.open(HUB + '#products', 'opsHub');   // 버튼 클릭 순간에 열어야 팝업이 안 막혀요
     if (busy) return; busy = true; $('osgo').disabled = true;
     var t0 = Date.now(), out = [], wantReg = $('osreg').checked || Date.now() - Number(LS('opsSbnRegAt') || 0) > REG_EVERY;
+    var col = readCollect().then(function (A) { return { A: A }; }, function (e) { return { e: e }; });   // 주문수집 상태는 단품과 동시에 읽음
     readSku().then(function (res) {
       msg('사방넷 단품 ' + res.rows.length + '개 → OPS 저장 중…');
-      return send('sbk_rows', res);
-    }).then(function (r) {
-      var c = r.c || {};
+      var colSave = col.then(function (x) { if (x.e) throw x.e; return send('sbc_rows', { accts: x.A }); })
+        .then(function (r3) { return '주문수집 상태 ' + r3.accts + '개 계정'; }, function (e) { return '주문수집 상태는 못 읽음: ' + (e && e.message || e); });
+      return Promise.all([send('sbk_rows', res), colSave]);
+    }).then(function (x) {
+      var r = x[0], c = r.c || {};
       out.push('사방넷 단품 ' + r.seen + '개 확인 · 바뀐 곳 ' + r.changed + '개' + (r.changed ? '\n(재고 ' + c.stock + ' · 원가 ' + c.cost + ' · 판매가 ' + c.price + ' · 이름/옵션 ' + c.name + ' · 바코드 ' + c.bar + ' · 재고관리 ' + c.mng + ' · 상태 ' + c.status + ' · 새 단품 ' + c.added + (c.missing ? ' · 사방넷없음 ' + c.missing : '') + ')' : '') + (c.skipped ? '\n앱에서 방금 입출고한 ' + c.skipped + '개는 다음에' : ''));
       if (r.sample && r.sample.length) out.push(r.sample.slice(0, 5).join('\n'));
-      return readCollect().then(function (A) { return send('sbc_rows', { accts: A }); }).then(function (r3) { out.push('주문수집 상태 ' + r3.accts + '개 계정'); }, function (e) { out.push('주문수집 상태는 못 읽음: ' + (e && e.message || e)); });
+      out.push(x[1]);
     }).then(function () {
       if (!wantReg) return;
       return readReg().then(function (accts) { msg('등록 현황 ' + accts.length + '개 계정 → OPS 저장 중…'); return send('sbr_rows', { accts: accts }); })
         .then(function (r2) { LS('opsSbnRegAt', String(Date.now())); $('osreg').checked = false; out.push('쇼핑몰 등록 현황 ' + r2.accts + '개 계정'); });
     }).then(function () {
-      msg('완료 ' + hm() + ' (' + Math.round((Date.now() - t0) / 1000) + '초)\n' + out.join('\n') + ($('osauto').checked ? '\n다음 자동 동기화 10분 뒤' : ''));
+      msg('완료 ' + hm() + ' (' + Math.round((Date.now() - t0) / 1000) + '초)\n' + out.join('\n') + ($('osauto').checked ? '\n다음 자동 동기화 5분 뒤' : ''));
     }).catch(function (e) { msg('멈췄어요 ' + hm() + '\n' + (e && e.message || e)); })
       .then(function () { busy = false; $('osgo').disabled = false; plan(); });
   }
