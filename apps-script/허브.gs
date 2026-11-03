@@ -1772,8 +1772,14 @@ function hubMonthCloseBuild_(ym, opt) {
   HUB_MC_GROUPS.forEach(function (g) {
     var L = last[g] || '';
     if (g === '도소매') { push(L ? 'ok' : 'warn', '도소매 반영', L ? '마지막 입력 ' + L : '도소매 입력 기록이 없어요 (세금계산서 발행 건 확인)'); return; }
-    if (L >= to) push('ok', g + ' 반영', '말일(' + to.slice(5) + ')까지 반영됨 · 마지막 ' + L);
-    else push('bad', g + ' 반영', '마지막 ' + (L || '없음') + ' — 말일(' + to.slice(5) + ')까지 아직 안 들어왔어요' + (g === '크림' || g === '포이즌' ? ' (매주 월요일 반영)' : ''));
+    if (L >= to) { push('ok', g + ' 반영', '말일(' + to.slice(5) + ')까지 반영됨 · 마지막 ' + L); return; }
+    if (g === '크림' || g === '포이즌') {   // 판매자센터 동기화가 두 계정 모두 말일 다음 날 이후에 돌았으면 남은 건 아직 확정 전인 주문
+      var cfg = hubConfig_(), key = g === '크림' ? 'krm_synced_' : 'pzn_synced_', after = Utilities.formatDate(new Date(new Date(to + 'T00:00:00+09:00').getTime() + 864e5), tz, 'yyyy-MM-dd');
+      var sy = ['겐더샵', '셀렉트인'].map(function (a) { var v = cfg[key + a], t = v ? new Date(v.value) : null; return t && !isNaN(t) ? Utilities.formatDate(t, tz, 'yyyy-MM-dd') : ''; });
+      if (sy.every(function (d) { return d && d >= after; })) { push('ok', g + ' 반영', '판매자센터 동기화 ' + sy.map(function (d) { return d.slice(5); }).join('·') + ' · 마지막 확정 ' + (L || '없음') + ' (이후 주문은 아직 확정 전)'); return; }
+      push('bad', g + ' 반영', '마지막 ' + (L || '없음') + ' — 판매자센터 동기화가 말일 이후에 안 돌았어요 (겐더샵 ' + (sy[0] || '없음') + ' · 셀렉트인 ' + (sy[1] || '없음') + ')'); return;
+    }
+    push('bad', g + ' 반영', '마지막 ' + (L || '없음') + ' — 말일(' + to.slice(5) + ')까지 아직 안 들어왔어요');
   });
   var noSbn = days.filter(function (o) { return !o.sbn && o.d <= today; }).map(function (o) { return o.d.slice(8) * 1 + '일'; });
   if (noSbn.length) push('bad', '사방넷 빈 날짜', noSbn.join(', ') + ' 사방넷 매출이 0원 — 주문 수집 누락 확인');
