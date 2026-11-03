@@ -98,6 +98,12 @@ function doPost(e) {
         return hubOut_((function () { hubNvSync(); return { ok: true, status: hubNvStatus_() }; })());
       case 'month_close': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 월 마감 미리보기 (읽기 전용)
         return hubOut_(hubMonthClosePreview_(req.ym));
+      case 'mc_tpl_put': if (!admin) return hubOut_({ error: '관리자만 저장할 수 있습니다' });   // 월마감 대시보드 템플릿(xlsx→구글시트)
+        return hubOut_(hubMcdTplPut_(req));
+      case 'mc_hist_put': if (!admin) return hubOut_({ error: '관리자만 저장할 수 있습니다' });   // 월마감 대시보드 비교용 월별 이력
+        return hubOut_(hubMcdHistSet_(req.rows, me));
+      case 'mc_dash': if (!admin) return hubOut_({ error: '관리자만 만들 수 있습니다' });   // 월마감 대시보드(내부 회의용) 만들기 → 구글시트 링크
+        return hubOut_((function () { var x = hubMcdBuild_(hubMcYm_(req.ym), me && me.name); return { ok: true, url: x.url, sum: x.sum }; })());
       case 'month_close_send': if (!admin) return hubOut_({ error: '관리자만 보낼 수 있습니다' });
         return hubOut_(hubMonthCloseSend_(req.ym, me, !!req.test));
       case 'ops_today': return hubOut_(hubOpsToday_(req.force));
@@ -1896,10 +1902,13 @@ function hubMcHtml_(rep, note) {
 function hubMonthCloseSend_(ym, me, test) {
   ym = hubMcYm_(ym);
   var rep = hubMonthCloseBuild_(ym, { rows: true }), set = hubMcSetting_();
-  var x = hubMcXlsx_(rep);
+  var x = hubMcXlsx_(rep), att = [x.blob], dnote = '';
+  try { var dash = hubMcdBuild_(ym, me && me.name); att.push(dash.blob); dnote = '첨부 2개: ① 마감 자료(법인·채널·플랫폼·일별·상세·점검) ② 내부 회의용 매출 대시보드(담당자 양식 · ' + hubMcdMl_(ym) + ' 포함 최근 4개월 비교)'; }
+  catch (e) { dnote = '내부 회의용 대시보드는 만들지 못했어요 — ' + String(e.message || e).slice(0, 150); }
   var subj = (test ? '[시험] ' : '') + '[OPS 월마감] ' + ym.slice(0, 4) + '년 ' + (+ym.slice(5)) + '월 매출 마감 — ' + rep.status + ' · ' + won_(Math.round(rep.tot.amt / 1e4)) + '만원';
   var note = test ? '시험 발송이에요 (받는 사람: ' + set.to + ' 만).' : (rep.status === '가마감' ? '말일 이후 ' + HUB_MC_LAST_DAY + '일이 지나도 일부 채널이 반영되지 않아 가마감으로 보내요.' : '');
-  var mail = { to: set.to, subject: subj, htmlBody: hubMcHtml_(rep, note), attachments: [x.blob], name: '셀렉트인 OPS' };
+  note = [note, dnote].filter(String).join('<br>');
+  var mail = { to: set.to, subject: subj, htmlBody: hubMcHtml_(rep, note), attachments: att, name: '셀렉트인 OPS' };
   if (!test && set.cc) mail.cc = set.cc;
   MailApp.sendEmail(mail);
   if (!test) hubConfigSet_('mc_sent_' + ym, rep.status + ' · ' + won_(rep.tot.amt) + ' · ' + (me && me.name || '자동'), me || { name: '자동' });
@@ -2287,4 +2296,320 @@ function hubMcRawPut_(req) {
   var rows = (req.rows || []).map(function (r) { var o = [ym].concat(r.slice(0, head.length - 1)); while (o.length < head.length) o.push(''); return o.map(function (x) { return typeof x === 'string' && /^\d{9,}$/.test(x) ? "'" + x : x; }); });
   if (rows.length) sh.getRange(sh.getLastRow() + 1, 1, rows.length, head.length).setValues(rows);
   return { ok: true, added: rows.length, total: sh.getLastRow() - 1, sheetId: ss.getId() };
+}
+
+
+/* ===================== 월마감 대시보드 (내부 회의용 · 담당자 양식 xlsx) =====================
+ * 담당자 월 대시보드(통합·법인별·날짜별·쇼핑몰별·TOP상품·월별·교환반품·N개월 비교·RAW) 양식을 그대로 쓰는 엑셀.
+ *  - 템플릿: 구글시트(10월분으로 만든 양식)를 복사해서 RAW·목록만 바꿔 채움 → 수식·차트·서식은 템플릿 그대로
+ *  - 원본: 사방넷 주문 줄 = OPS DB '월마감RAW'(사방넷 화면에서 넣은 달) 없으면 사방넷 API(주문일)
+ *          셀렉트인 스마트스토어 정상 주문 = 네이버 커머스API(상품·일자별, '월마감NV'에 저장)
+ *  - 비교: OPS DB '월마감이력'(월별 고정값)에서 직전 3개월 + 이번달(수식)
+ *  - 월마감 메일에 기존 마감 엑셀과 함께 첨부 (실패해도 기존 메일은 나감) */
+var HUB_MCD = { tpl: 'mc_dash_tpl', folder: 'mc_dash_folder', hist: '월마감이력', sel: 'ncp_1p0lvc_01', pink: '#e6b8b7',
+  head: ['월', '겐더샵', '셀렉트인', '합계', '주문건수', '교환', '반품', '취소', '순매출', '반품차감', '채널', '쇼핑몰', '셀러', '기록'] };
+
+function hubMcdFolder_() {
+  var c = hubConfig_(), id = c[HUB_MCD.folder] && c[HUB_MCD.folder].value;
+  if (id) { try { return DriveApp.getFolderById(id); } catch (e) {} }
+  var f = DriveApp.createFolder('셀렉트인 OPS 월마감 대시보드');
+  hubConfigSet_(HUB_MCD.folder, f.getId(), { name: '자동' });
+  return f;
+}
+/** 템플릿 등록: xlsx(base64) → 구글시트로 변환해 저장 */
+function hubMcdTplPut_(req) {
+  var bytes = Utilities.base64Decode(String(req.b64 || ''));
+  if (bytes.length < 1000) throw new Error('파일이 비었어요');
+  var meta = { name: String(req.name || '셀렉트인 OPS 월마감 대시보드 템플릿'), mimeType: 'application/vnd.google-apps.spreadsheet' };
+  var bd = 'mcd' + Date.now();
+  var body = Utilities.newBlob('--' + bd + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) + '\r\n--' + bd +
+    '\r\nContent-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n').getBytes().concat(bytes).concat(Utilities.newBlob('\r\n--' + bd + '--').getBytes());
+  var r = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', { method: 'post', contentType: 'multipart/related; boundary=' + bd,
+    payload: body, headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+  if (r.getResponseCode() !== 200) throw new Error('구글시트 변환 실패 ' + r.getResponseCode() + ' ' + r.getContentText().slice(0, 200));
+  var id = JSON.parse(r.getContentText()).id;
+  try { DriveApp.getFileById(id).moveTo(hubMcdFolder_()); } catch (e) {}
+  hubConfigSet_(HUB_MCD.tpl, id, { name: '자동' });
+  return { ok: true, id: id, url: 'https://docs.google.com/spreadsheets/d/' + id };
+}
+
+/* ---- 월별 이력 ---- */
+function hubMcdHistSheet_() {
+  var ss = hubBook_(), sh = ss.getSheetByName(HUB_MCD.hist);
+  if (!sh) { sh = ss.insertSheet(HUB_MCD.hist); sh.getRange(1, 1, 1, HUB_MCD.head.length).setValues([HUB_MCD.head]).setFontWeight('bold'); sh.setFrozenRows(1); }
+  return sh;
+}
+function hubMcdYmOf_(v) { return v instanceof Date ? Utilities.formatDate(v, 'Asia/Seoul', 'yyyy-MM') : String(v || '').replace(/^'/, '').trim().slice(0, 7); }
+function hubMcdHist_() {
+  var sh = hubMcdHistSheet_(), n = sh.getLastRow() - 1, H = {};
+  if (n < 1) return H;
+  sh.getRange(2, 1, n, HUB_MCD.head.length).getValues().forEach(function (r) {
+    var ym = hubMcdYmOf_(r[0]); if (!/^\d{4}-\d{2}$/.test(ym)) return;
+    var j = function (x) { try { return JSON.parse(x || '{}'); } catch (e) { return {}; } };
+    H[ym] = { g: +r[1] || 0, s: +r[2] || 0, tot: +r[3] || 0, cnt: +r[4] || 0, ex: +r[5] || 0, rt: +r[6] || 0, cc: +r[7] || 0, net: +r[8] || 0, ded: +r[9] || 0, ch: j(r[10]), shops: j(r[11]), sellers: j(r[12]) };
+  });
+  return H;
+}
+function hubMcdHistPut_(ym, h, by) {
+  var sh = hubMcdHistSheet_(), n = sh.getLastRow() - 1, at = -1;
+  if (n > 0) sh.getRange(2, 1, n, 1).getValues().forEach(function (r, i) { if (hubMcdYmOf_(r[0]) === ym) at = i + 2; });
+  var row = ["'" + ym, h.g, h.s, h.tot, h.cnt, h.ex, h.rt, h.cc, h.net, h.ded, JSON.stringify(h.ch || {}), JSON.stringify(h.shops || {}), JSON.stringify(h.sellers || {}), hubNow_() + ' ' + (by || '자동')];
+  sh.getRange(at > 0 ? at : sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+}
+
+/* ---- 주문 줄 ---- */
+function hubMcdGongu_(name) {
+  var n = String(name || '').trim(), seps = [/\s+[xX×]\s+/, /×/, /(?<=[가-힣a-zA-Z0-9_.])[xX](?=[가-힣])/];
+  for (var i = 0; i < seps.length; i++) {
+    var m = seps[i].exec(n);
+    if (m && m.index > 0 && m.index <= 20) { var inf = n.slice(0, m.index).replace(/^\[[^\]]*\]\s*/, '').trim(); if (inf) return inf; }
+  }
+  return /공동구매|공구/.test(n) ? '(미확인)' : null;
+}
+function hubMcdSt_(s) { s = String(s || ''); return /취소|CANCEL/i.test(s) ? '취소' : /반품|RETURN/i.test(s) ? '반품' : /교환|EXCHANGE/i.test(s) ? '교환' : '정상구매'; }
+
+function hubMcdLines_(ym) {
+  var tz = 'Asia/Seoul', from = ym + '-01', to = hubMcEnd_(ym), corp = {}, out = [], src = {}, N = hubNum_;
+  SpreadsheetApp.openById(HUB_SALES_ID).getSheetByName('설정').getRange('A57:B120').getValues().forEach(function (r) { var id = String(r[0]).trim(); if (id) corp[id] = String(r[1]).trim(); });
+  if (!corp[HUB_MCD.sel]) corp[HUB_MCD.sel] = '셀렉트인';
+  var push = function (d, shop, id, name, opt, cost, qty, amt, stx) {
+    var c = corp[id] || '확인필요'; if (c === '제외') return;
+    var st = hubMcdSt_(stx);
+    if (id === HUB_MCD.sel && st === '정상구매') return;   // 셀렉트인하우스 정상 매출은 네이버에서
+    var sel = c === '셀렉트인' ? hubMcdGongu_(name) : null;
+    out.push({ d: d, shop: shop, corp: c, name: name, opt: opt, cost: cost, qty: qty, amt: amt, st: st, kind: c === '셀렉트인' ? (sel ? '공동구매' : '일반주문') : '-', seller: sel || '' });
+  };
+  // 1) 사방넷: OPS DB 월마감RAW(화면에서 넣은 주문 줄) → 없으면 API
+  var raw = hubBook_().getSheetByName('월마감RAW'), got = 0;
+  if (raw && raw.getLastRow() > 1) {
+    raw.getRange(2, 1, raw.getLastRow() - 1, 15).getValues().forEach(function (r) {
+      if (hubMcdYmOf_(r[0]) !== ym || !String(r[12]).startsWith('주문')) return;
+      got++; var d = hubSalesYmd_(r[2], tz) || String(r[2]).replace(/^(\d{4})(\d{2})(\d{2}).*/, '$1-$2-$3');
+      push(d, String(r[3]).trim(), String(r[4]).replace(/^'/, '').trim(), String(r[5] || r[6]).trim(), String(r[7] || ''), N(r[8]), N(r[9]) || 1, N(r[10]), r[11]);
+    });
+  }
+  src.sbn = got ? '사방넷 주문서확인처리(OPS 월마감RAW) ' + got + '줄' : '';
+  if (!got) {
+    var fc = hubCostForceMap_(), all = [], page = 1;
+    while (page <= 60) {
+      var res = hubSbnCall_('POST', '/v3/sb/order', { dateSearchCondition: 2, startDate: from.replace(/-/g, ''), endDate: to.replace(/-/g, ''), updateOrderStsYn: 'N', page: page, perPage: 1000,
+        responseItems: ['SB_ORD_NO', 'ORDER_STATUS', 'ORDER_DT', 'SHOP_NM', 'SHOP_LOGIN_ID', 'ORDER_TOT_AMT', 'COST_PRICE', 'ORD_CNT', 'ORG_SB_ORD_NO', 'CM_PRD_NM', 'SHOP_PRD_CD'] });
+      var dt = (res && res.data) || {}; all = all.concat(dt.results || []); if (!dt.hasNext) break; page++;
+    }
+    all.forEach(function (x) {
+      if (x.ORG_SB_ORD_NO && String(x.ORG_SB_ORD_NO) !== '0') return;
+      var s = String(x.ORDER_DT || ''), d = s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8);
+      if (d < from || d > to) return;
+      var nm = String(x.CM_PRD_NM || '').trim() || '(사방넷 미매칭 상품) ' + String(x.SHOP_PRD_CD || '');
+      push(d, String(x.SHOP_NM || '').trim(), String(x.SHOP_LOGIN_ID || '').trim(), nm, '', (N(x.COST_PRICE) || hubCostForceOf_(fc, x) / Math.max(1, N(x.ORD_CNT) || 1)), N(x.ORD_CNT) || 1, N(x.ORDER_TOT_AMT), x.ORDER_STATUS);
+    });
+    src.sbn = '사방넷 API(주문일) ' + all.length + '줄';
+  }
+  // 2) 셀렉트인 스마트스토어 정상 주문: OPS DB 월마감NV → 없으면 네이버 조회 후 저장
+  var nvSh = hubBook_().getSheetByName('월마감NV'), nv = [];
+  if (nvSh && nvSh.getLastRow() > 1) nvSh.getRange(2, 1, nvSh.getLastRow() - 1, 8).getValues().forEach(function (r) { if (hubMcdYmOf_(r[0]) === ym) nv.push(r.slice(1)); });
+  if (!nv.length) {
+    var q = hubNvItems_(from, to).rows, bad = q.filter(function (r) { return /^\(오류\)/.test(r[2]); });
+    if (bad.length) throw new Error('스마트스토어 조회 오류 ' + bad.length + '일 — ' + bad[0][0] + ' ' + bad[0][2]);
+    hubMcRawPut_({ tab: '월마감NV', ym: ym, rows: q, reset: true }); nv = q;
+  }
+  nv.forEach(function (r) {
+    var d = hubSalesYmd_(r[0], tz) || String(r[0]).slice(0, 10), cnt = Math.max(1, Math.round(N(r[3]))), qty = N(r[4]), amt = N(r[5]), name = String(r[2]).trim(), sel = hubMcdGongu_(name);
+    for (var i = 0; i < cnt; i++) {
+      var last = i === cnt - 1, a = last ? amt - Math.round(amt / cnt) * (cnt - 1) : Math.round(amt / cnt), qq = last ? qty - (qty / cnt) * (cnt - 1) : qty / cnt;
+      out.push({ d: d, shop: '스마트스토어', corp: '셀렉트인', name: name, opt: '', cost: 0, qty: Math.round(qq * 100) / 100, amt: a, st: '정상구매', kind: sel ? '공동구매' : '일반주문', seller: sel || '' });
+    }
+  });
+  src.nv = '네이버 커머스API ' + nv.length + '줄';
+  out.sort(function (a, b) { return a.d < b.d ? -1 : a.d > b.d ? 1 : a.shop < b.shop ? -1 : a.shop > b.shop ? 1 : a.corp < b.corp ? -1 : a.corp > b.corp ? 1 : 0; });
+  return { lines: out, src: src };
+}
+
+function hubMcdAgg_(L) {
+  var nc = L.filter(function (o) { return o.st !== '취소'; }), G = function (o) { return o.corp === '겐더샵'; }, S = function (o) { return o.corp === '셀렉트인'; };
+  var by = function (src, key, pred, cnt) { var c = {}; src.forEach(function (o) { if (pred && !pred(o)) return; var k = key(o); c[k] = (c[k] || 0) + (cnt ? 1 : o.amt); }); return c; };
+  var sum = function (src, pred) { return src.reduce(function (t, o) { return t + (!pred || pred(o) ? o.amt : 0); }, 0); };
+  var nm = function (o) { return o.name; }, cl = function (st, p) { return by(L, nm, function (o) { return o.st === st && (!p || p(o)); }, true); };
+  var R = {
+    shops: by(nc, function (o) { return o.shop; }), gshops: by(nc, function (o) { return o.shop; }, G), sshops: by(nc, function (o) { return o.shop; }, S),
+    gprod: by(nc, nm, G), sprod: by(nc, nm, S), sellers: by(nc, function (o) { return o.seller; }, function (o) { return S(o) && o.kind === '공동구매' && o.seller; }),
+    tot: sum(nc), g: sum(nc, G), s: sum(nc, S), cnt: nc.length,
+    ex: L.filter(function (o) { return o.st === '교환'; }).length, rt: L.filter(function (o) { return o.st === '반품'; }).length, cc: L.filter(function (o) { return o.st === '취소'; }).length,
+    ded: sum(L, function (o) { return o.st === '반품'; }),
+    ch: { '겐더샵': sum(nc, G), '셀렉트인 일반주문': sum(nc, function (o) { return S(o) && o.kind === '일반주문'; }), '셀렉트인 공동구매': sum(nc, function (o) { return S(o) && o.kind === '공동구매'; }) },
+    gret: cl('반품', G), sret: cl('반품', S), gex: cl('교환', G), sex: cl('교환', S), ret: cl('반품'), exc: cl('교환'), sellprod: {}
+  };
+  R.net = R.tot - R.ded;
+  var sp = {}; nc.forEach(function (o) { if (S(o) && o.kind === '공동구매' && o.seller) { sp[o.seller] = sp[o.seller] || {}; sp[o.seller][o.name] = (sp[o.seller][o.name] || 0) + o.amt; } });
+  Object.keys(sp).forEach(function (k) { R.sellprod[k] = hubMcdTop_(sp[k], 3); });
+  return R;
+}
+function hubMcdTop_(c, n) {
+  return Object.keys(c).filter(function (k) { return c[k]; }).sort(function (a, b) { return c[b] - c[a] || (a < b ? -1 : a > b ? 1 : 0); }).slice(0, n);
+}
+
+/* ---- 템플릿 채우기 ---- */
+function hubMcdResize_(sh, start, cur, want) {   // 목록 줄 수 맞춤 (목록 안쪽에 넣고/빼서 수식·차트 범위가 따라오게)
+  want = Math.max(1, want); var lc = sh.getMaxColumns(), proto = cur >= 2 ? start + 1 : start;
+  if (want > cur) { sh.insertRowsBefore(start + cur - 1, want - cur); if (proto >= start + cur - 1) proto += want - cur; sh.getRange(proto, 1, 1, lc).copyTo(sh.getRange(start + cur - 1, 1, want - cur, lc)); }
+  else if (want < cur) sh.deleteRows(start + want, cur - want);
+  return want;
+}
+function hubMcdCount_(sh, start, col, stop) {   // start부터 stop(값→true) 전까지 줄 수
+  var v = sh.getRange(start, col, Math.max(1, sh.getMaxRows() - start + 1), 1).getValues(), n = 0;
+  for (; n < v.length; n++) if (stop(v[n][0])) break;
+  return n;
+}
+function hubMcdFind_(sh, col, test, from) {
+  var v = sh.getRange(1, col, sh.getMaxRows(), 1).getValues();
+  for (var i = (from || 1) - 1; i < v.length; i++) if (test(v[i][0])) return i + 1;
+  return 0;
+}
+function hubMcdCol_(list, n) { var a = []; for (var i = 0; i < n; i++) a.push([i < list.length ? list[i] : '']); return a; }
+function hubMcdMl_(ym) { return (+ym.slice(5)) + '월'; }
+
+function hubMcdBuild_(ym, by) {
+  var tz = 'Asia/Seoul', cfg = hubConfig_(), tpl = cfg[HUB_MCD.tpl] && cfg[HUB_MCD.tpl].value;
+  if (!tpl) throw new Error('대시보드 템플릿이 등록되지 않았어요');
+  var D = hubMcdLines_(ym), L = D.lines, R = hubMcdAgg_(L), hist = hubMcdHist_();
+  var prevs = Object.keys(hist).filter(function (k) { return k < ym; }).sort().slice(-3);
+  if (prevs.length < 3) throw new Error('비교용 이전 3개월 이력이 부족해요 (' + prevs.join(',') + ')');
+  var months = prevs.concat([ym]), ML = months.map(hubMcdMl_);
+  var p = ym.split('-'), nd = new Date(Date.UTC(+p[0], +p[1], 0)).getUTCDate(), period = ym + '-01 ~ ' + ym + '-' + ('0' + nd).slice(-2);
+  var name = ym.replace('-', '') + '_겐더샵_셀렉트인_매출대시보드';
+  var file = DriveApp.getFileById(tpl).makeCopy(name, hubMcdFolder_()), ss = SpreadsheetApp.openById(file.getId());
+  ss.setSpreadsheetTimeZone(tz);
+  var day = function (s) { return Utilities.parseDate(s, tz, 'yyyy-MM-dd'); };
+  var days = []; for (var k = 1; k <= nd; k++) days.push(day(ym + '-' + ('0' + k).slice(-2)));
+  var sh = function (n) { var s = ss.getSheetByName(n); if (!s) throw new Error('템플릿에 ' + n + ' 시트가 없어요'); return s; };
+
+  // 템플릿이 가진 달 (비교 라벨 치환용)
+  var mon = sh('월별매출'), oldM = mon.getRange(5, 1, 4, 1).getValues().map(function (r) { return hubMcdYmOf_(r[0]); });
+  var lmap = {}; oldM.forEach(function (m, i) { lmap[hubMcdMl_(m)] = ML[i]; });
+
+  // 1) RAW
+  var raw = sh('RAW데이터'), cur = hubMcdCount_(raw, 2, 1, function (v) { return v === '' || v === null; });
+  var n = hubMcdResize_(raw, 2, cur, L.length);
+  if (L.length) {
+    raw.getRange(2, 1, L.length, 13).setValues(L.map(function (o, i) { var dt = day(o.d); return [i + 1, dt, dt, o.shop, o.corp, o.name, o.opt, o.cost || 0, o.qty, o.amt, o.st === '교환' ? 'Y' : '', o.st === '반품' ? 'Y' : '', o.st === '취소' ? 'Y' : '']; }));
+    raw.getRange(2, 14, L.length, 1).setFormulaR1C1('=IF(R[0]C[-1]="Y","취소",IF(R[0]C[-2]="Y","반품",IF(R[0]C[-3]="Y","교환","정상구매")))');
+    raw.getRange(2, 15, L.length, 2).setValues(L.map(function (o) { return [o.kind, o.seller]; }));
+  }
+  raw.getRange(n + 3, 1).setValue('※ 데이터 출처: (1) ' + D.src.sbn + ' — 주문일 기준, 원주문 행만 사용(반품회수·교환발송 등 재생성 행 제외) · 겐더샵 전체 채널 + 셀렉트인 스마트스토어 외 채널 + 셀렉트인 스마트스토어의 취소·반품·교환 건 ' +
+    '(2) ' + D.src.nv + ' — 셀렉트인 스마트스토어 결제완료 주문(상품·일자별, 건수만큼 행 분할) (3) 주문구분: 셀렉트인 상품명이 "셀러명 X 제품명" 형식이면 공동구매(셀러명=X 앞부분), 그 외 일반주문 · 생성 ' + hubNow_() + ' OPS 월마감');
+
+  // 2) 기간 문구
+  ss.getSheets().forEach(function (s) { s.createTextFinder('\\d{4}-\\d{2}-01 ~ \\d{4}-\\d{2}-\\d{2}').useRegularExpression(true).replaceAllWith(period); });
+
+  // 3) 통합
+  var t = sh('통합대시보드');
+  t.getRange('C29:C33').setValues(hubMcdCol_(hubMcdTop_(R.shops, 5), 5));
+  t.getRange('I29:I33').setValues(hubMcdCol_(hubMcdTop_(R.gprod, 5), 5));
+  t.getRange('M29:M33').setValues(hubMcdCol_(hubMcdTop_(R.sprod, 5), 5));
+
+  // 4) 법인 대시보드
+  [['겐더샵대시보드', 'g'], ['셀렉트인대시보드', 's']].forEach(function (x) {
+    var s = sh(x[0]), key = x[1];
+    s.getRange(15, 2, 31, 1).setValues(hubMcdCol_(days, 31));
+    if (nd < 31) s.getRange(15 + nd, 2, 31 - nd, 2).clearContent();
+    else s.getRange(44, 3).copyTo(s.getRange(45, 3));
+    s.getRange('C49:C53').setValues(hubMcdCol_(hubMcdTop_(R[key + 'shops'], 5), 5));
+    s.getRange('I49:I58').setValues(hubMcdCol_(hubMcdTop_(R[key + 'prod'], 10), 10));
+    var isNum = function (v) { return typeof v !== 'number'; };
+    // 반품 TOP
+    var rl = hubMcdTop_(R[key + 'ret'], 10), c0 = hubMcdCount_(s, 75, 2, isNum), w = hubMcdResize_(s, 75, c0, rl.length);
+    s.getRange(75, 2, w, 2).setValues(rl.length ? rl.map(function (nm, i) { return [i + 1, nm]; }) : [['', '(해당 없음)']]);
+    s.getRange(75, 5, w, 1).clearContent();
+    s.getRange(75, 3, w, 2).setBackgrounds((rl.length ? rl : ['']).map(function (nm) { var b = (R[key + 'ret'][nm] || 0) >= 5 ? HUB_MCD.pink : '#ffffff'; return [b, b]; }));
+    // 교환 TOP
+    var er = hubMcdFind_(s, 2, function (v) { return /교환 TOP 10/.test(String(v)); }) + 2, el = hubMcdTop_(R[key + 'ex'], 10);
+    if (er > 2) {
+      var c1 = hubMcdCount_(s, er, 2, isNum), w1 = hubMcdResize_(s, er, Math.max(1, c1), el.length);
+      s.getRange(er, 2, w1, 2).setValues(el.length ? el.map(function (nm, i) { return [i + 1, nm]; }) : [['', '(해당 없음)']]);
+      s.getRange(er, 5, w1, 1).clearContent();
+    }
+    // 공동구매 셀러
+    if (key === 's') {
+      var hr = hubMcdFind_(s, 3, function (v) { return String(v) === '셀러명'; });
+      if (hr) {
+        var sl = hubMcdTop_(R.sellers, 60), c2 = hubMcdCount_(s, hr + 1, 3, function (v) { return String(v) === '합계'; }), w2 = hubMcdResize_(s, hr + 1, c2, sl.length);
+        s.getRange(hr + 1, 2, w2, 2).setValues(sl.length ? sl.map(function (nm, i) { return [i + 1, nm]; }) : [['', '(없음)']]);
+        s.getRange(hr + 1, 9, w2, 1).setValues(sl.length ? sl.map(function (nm) { return [(R.sellprod[nm] || []).join(' / ')]; }) : [['']]);
+      }
+    }
+  });
+
+  // 5) 날짜별
+  var dd = sh('날짜별매출'), c3 = hubMcdCount_(dd, 5, 1, function (v) { return String(v) === '합계'; });
+  hubMcdResize_(dd, 5, c3, nd); dd.getRange(5, 1, nd, 1).setValues(days.map(function (d) { return [d]; }));
+  dd.getRange(5, 10, 1, 2).setValues([[0, 0]]);
+
+  // 6) 쇼핑몰별
+  var sm = sh('쇼핑몰별매출'), shl = hubMcdTop_(R.shops, 200), c4 = hubMcdCount_(sm, 5, 2, function (v) { return String(v) === '합계'; }), w4 = hubMcdResize_(sm, 5, c4, shl.length);
+  sm.getRange(5, 1, w4, 2).setValues(shl.map(function (nm, i) { return [i + 1, nm]; }));
+  sm.getRange(5, 8).setFormula('=G5');
+
+  // 7) TOP상품
+  var tp = sh('TOP상품');
+  tp.getRange('B5:B24').setValues(hubMcdCol_(hubMcdTop_(R.gprod, 20), 20));
+  tp.getRange('H5:H24').setValues(hubMcdCol_(hubMcdTop_(R.sprod, 20), 20));
+
+  // 8) 월별매출 (이전 3개월 고정값 + 이번달 수식)
+  prevs.forEach(function (m, i) {
+    var h = hist[m], r = 5 + i;
+    mon.getRange(r, 1, 1, 3).setValues([["'" + m, h.g, h.s]]);
+    mon.getRange(r, 5, 1, 4).setValues([[h.cnt, h.ex, h.rt, h.cc]]);
+    mon.getRange(r, 12, 1, 3).setValues([[h.net, h.ded, 'Source: ' + m.replace('-', '') + '_겐더샵_셀렉트인_매출대시보드.xlsx']]);
+  });
+  mon.getRange(8, 1).setValue("'" + ym);
+  mon.getRange(2, 1).setValue('매출(취소제외) 기준 · ' + prevs.join('·') + '은 각 월 대시보드(OPS 월마감 이력) 인용 · ' + ym + '은 본 파일 RAW데이터 기준');
+
+  // 9) 교환반품현황
+  var xr = sh('교환반품현황');
+  xr.getRange('B10:B19').setValues(hubMcdCol_(hubMcdTop_(R.exc, 10), 10));
+  xr.getRange('F10:F19').setValues(hubMcdCol_(hubMcdTop_(R.ret, 10), 10));
+  xr.getRange(24, 1, 4, 1).setValues(months.map(function (m) { return ["'" + m]; }));
+  var xn = hubMcdFind_(xr, 1, function (v) { return /^※ 정상완료율/.test(String(v)); });
+  if (xn) xr.getRange(xn, 1).setValue('※ 정상완료율 = 1-(교환율+반품율+취소율) · ' + prevs.join('·') + ' 수치는 각 월 대시보드 인용, ' + ym + '은 본 파일 RAW데이터 기준');
+
+  // 10) 비교분석
+  var cp = ss.getSheets().filter(function (s) { return /_비교분석$/.test(s.getName()); })[0];
+  if (cp) {
+    cp.setName(ML.join('vs') + '_비교분석');
+    var rg = cp.getDataRange(), vals = rg.getValues(), fs = rg.getFormulas();
+    for (var i = 0; i < vals.length; i++) for (var j = 0; j < vals[i].length; j++) {
+      if (fs[i][j] || typeof vals[i][j] !== 'string' || !/\d월/.test(vals[i][j]) || /^※/.test(vals[i][j]) || i < 2) continue;
+      var nv2 = vals[i][j].replace(/(\d{1,2})월/g, function (m0) { return lmap[m0] || m0; });
+      if (nv2 !== vals[i][j]) cp.getRange(i + 1, j + 1).setValue(nv2);
+    }
+    cp.getRange(1, 1).setValue(ym.slice(0, 4) + '년 ' + ML.join(' · ') + ' 매출 비교 분석 대조표');
+    cp.getRange(2, 1).setValue(ML.slice(0, 3).join('·') + ' 수치는 각 월 마감(OPS 월마감 이력) 인용 · ' + ML[3] + ' 수치는 본 파일 월별매출/RAW데이터 시트 기준 · 매출은 취소제외(반품 포함) 기준');
+    var colA = function () { return cp.getRange(1, 1, cp.getMaxRows(), 1).getValues().map(function (r) { return String(r[0]); }); };
+    var A = colA(), s2 = A.indexOf('2. 채널별 매출 비교 (셀렉트인 일반주문·공동구매 분리)');
+    if (s2 < 0) s2 = A.findIndex(function (v) { return /^2\./.test(v); });
+    ['겐더샵', '셀렉트인 일반주문', '셀렉트인 공동구매'].forEach(function (lab, k) {
+      cp.getRange(s2 + 3 + k, 2, 1, 3).setValues([prevs.map(function (m) { return (hist[m].ch || {})[lab] || 0; })]);
+    });
+    var s4 = A.findIndex(function (v) { return /^4\./.test(v); }) + 1, top10 = hubMcdTop_(R.shops, 10);   // 1-based 제목행
+    cp.getRange(s4 + 2, 1, 10, 4).setValues(hubMcdCol_(top10, 10).map(function (r) { return [r[0]].concat(prevs.map(function (m) { return r[0] ? ((hist[m].shops || {})[r[0]] || 0) : ''; })); }));
+    var s5 = A.findIndex(function (v) { return /^5\./.test(v); }) + 1, cur5 = hubMcdTop_(R.sellers, 100), rest = {};
+    prevs.forEach(function (m) { Object.keys(hist[m].sellers || {}).forEach(function (k) { if (cur5.indexOf(k) < 0) rest[k] = (rest[k] || 0) + hist[m].sellers[k]; }); });
+    var sel = cur5.concat(hubMcdTop_(rest, 100)), c5 = hubMcdCount_(cp, s5 + 2, 1, function (v) { return String(v) === '공동구매 합계'; }), w5 = hubMcdResize_(cp, s5 + 2, c5, sel.length);
+    cp.getRange(s5 + 2, 1, w5, 4).setValues(sel.map(function (nm) { return [nm].concat(prevs.map(function (m) { return (hist[m].sellers || {})[nm] || 0; })); }));
+    var An = hubMcdFind_(cp, 1, function (v) { return /^※/.test(String(v)); }, s5 + 2);
+    if (An) cp.getRange(An, 1).setValue('※ ' + ML.slice(0, 3).join('·') + ' 채널·쇼핑몰·셀러별 값은 각 월 마감 데이터에서 해당 월 주문만 집계(취소 제외)한 고정값 · ' + ML[3] +
+      '은 OPS 월마감 데이터(사방넷 + 네이버 커머스API) 기준 · 공동구매/일반주문 구분 규칙(상품명 "셀러명 X 제품명") 동일 적용 · 증감률 "-"는 비교월 매출이 0인 경우');
+  }
+  SpreadsheetApp.flush();
+
+  // 이력 저장 (다음 달 비교용)
+  hubMcdHistPut_(ym, { g: R.g, s: R.s, tot: R.tot, cnt: R.cnt, ex: R.ex, rt: R.rt, cc: R.cc, net: R.net, ded: R.ded, ch: R.ch, shops: R.shops, sellers: R.sellers }, by);
+  var resp = UrlFetchApp.fetch('https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export?format=xlsx', { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+  if (resp.getResponseCode() !== 200) throw new Error('대시보드 엑셀 내보내기 실패 ' + resp.getResponseCode());
+  return { blob: resp.getBlob().setName(name + '.xlsx'), url: ss.getUrl(), id: ss.getId(), sum: { tot: R.tot, g: R.g, s: R.s, cnt: R.cnt, ex: R.ex, rt: R.rt, cc: R.cc, net: R.net, lines: L.length, src: D.src } };
+}
+/** 이력 직접 넣기 (지난 달 담당자 파일 값) */
+function hubMcdHistSet_(rows, me) {
+  (rows || []).forEach(function (h) { if (/^\d{4}-\d{2}$/.test(String(h.ym))) hubMcdHistPut_(h.ym, h, me && me.name); });
+  return { ok: true, hist: Object.keys(hubMcdHist_()) };
 }
