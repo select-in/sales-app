@@ -503,6 +503,12 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 
 .tbar .trow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.tbar .trow+.trow{margin-top:8px}.tbar .trow>b{font-size:13px;min-width:40px;color:var(--sub)}
 @media (max-width:900px){.tbar .trow>b{width:100%}.otbl h2 small{display:block;margin:4px 0 0}}
+
+/* 표 기본 정렬: 가운데 (첫 칸 이름만 왼쪽) */
+.tbl th,.tbl td,.tbl th.r,.tbl td.r,.tbl .r{text-align:center}
+.tbl td:first-child:not(.c):not(.r),.tbl th:first-child:not(.c):not(.r){text-align:left}
+.tbl td .c2{align-items:center}.tbl td:first-child:not(.c) .c2{align-items:flex-start}
+.tbl td .sbar span{left:50%;transform:translateX(-50%)}
 </style>
 </head>
 <body>
