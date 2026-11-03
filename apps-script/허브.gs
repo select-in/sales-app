@@ -104,6 +104,8 @@ function doPost(e) {
         return hubOut_(hubMcdHistSet_(req.rows, me));
       case 'mc_hist_ops': if (!admin) return hubOut_({ error: '관리자만 실행할 수 있습니다' });   // 지난 달 비교 이력을 OPS 기준으로 다시 계산
         return hubOut_({ ok: true, rows: (req.yms || []).map(function (m) { return hubMcdHistFromOps_(hubMcYm_(m), me && me.name); }) });
+      case 'sbn_resync': if (!admin) return hubOut_({ error: '관리자만 실행할 수 있습니다' });   // 매출판 그 달 사방넷 행을 지금 사방넷 API 값으로 맞춤
+        return hubOut_(hubLocked_(function () { return hubSbnResync_(hubMcYm_(req.ym)); }));
       case 'mc_dash': if (!admin) return hubOut_({ error: '관리자만 만들 수 있습니다' });   // 월마감 대시보드(내부 회의용) 만들기 → 구글시트 링크
         return hubOut_((function () { var x = hubMcdBuild_(hubMcYm_(req.ym), me && me.name); return { ok: true, url: x.url, sum: x.sum }; })());
       case 'month_close_send': if (!admin) return hubOut_({ error: '관리자만 보낼 수 있습니다' });
@@ -1900,9 +1902,50 @@ function hubMcHtml_(rep, note) {
     '플랫폼별·일별·상세 행은 첨부 엑셀에 있어요. OPS 매출: <a href="https://select-in.github.io/sales-app/hub/#close" style="color:#0b7a55">select-in.github.io/sales-app/hub</a></div></div>';
 }
 
+/** 마감 전 사방넷 다시 맞추기 — 매출판 '일별입력'의 그 달 사방넷 행(일×쇼핑몰×ID) 건수·매출을 지금 사방넷 API(주문일) 값으로 갱신.
+ *  매일 자동 입력은 다음 날 한 번만 쓰고 끝나서, 그 뒤의 취소·늦은 수집이 빠짐 → 월마감 때 한 번 맞춤.
+ *  매입원가(원가강제 반영분 포함)·비고는 건드리지 않음. 없는 조합은 아래에 새 줄로 추가. */
+function hubSbnResync_(ym) {
+  var tz = 'Asia/Seoul', from = ym + '-01', to = hubMcEnd_(ym), ss = SpreadsheetApp.openById(HUB_SALES_ID), sh = ss.getSheetByName('일별입력');
+  var all = [], page = 1, N = hubNum_;
+  while (page <= 60) {
+    var r = hubSbnCall_('POST', '/v3/sb/order', { dateSearchCondition: 2, startDate: from.replace(/-/g, ''), endDate: to.replace(/-/g, ''), updateOrderStsYn: 'N', page: page, perPage: 1000,
+      responseItems: ['SB_ORD_NO', 'ORDER_STATUS', 'ORDER_DT', 'SHOP_NM', 'SHOP_LOGIN_ID', 'ORDER_TOT_AMT', 'COST_PRICE', 'ORD_CNT', 'ORG_SB_ORD_NO', 'CM_PRD_NM', 'SHOP_PRD_CD'] });
+    var dt = (r && r.data) || {}; all = all.concat(dt.results || []); if (!dt.hasNext) break; page++;
+  }
+  if (!all.length) throw new Error('사방넷 API에서 ' + ym + ' 주문을 못 받았어요');
+  var fc = hubCostForceMap_(), G = {};
+  all.forEach(function (x) {
+    if (/CANCEL/i.test(String(x.ORDER_STATUS))) return;
+    if (x.ORG_SB_ORD_NO && String(x.ORG_SB_ORD_NO) !== '0') return;
+    var d = String(x.ORDER_DT || '').replace(/^(\d{4})(\d{2})(\d{2}).*/, '$1-$2-$3').slice(0, 10); if (d < from || d > to) return;
+    var shop = String(x.SHOP_NM || '').trim(), id = String(x.SHOP_LOGIN_ID || '').trim(), k = d + '|' + shop + '|' + id;
+    var g = G[k] || (G[k] = { d: d, shop: shop, id: id, cnt: 0, amt: 0, cost: 0 });
+    g.cnt++; g.amt += N(x.ORDER_TOT_AMT); g.cost += N(x.COST_PRICE) || hubCostForceOf_(fc, x);
+  });
+  var last = sh.getLastRow(), v = sh.getRange(3, 1, Math.max(1, last - 2), 8).getValues(), seen = {}, upd = 0, zero = 0, lastVal = 0;
+  v.forEach(function (row, i) {
+    if (row[0] !== '') lastVal = i;
+    if (String(row[1]).trim() !== '사방넷') return;
+    var d = hubSalesYmd_(row[0], tz); if (d < from || d > to) return;
+    var k = d + '|' + String(row[2]).trim() + '|' + String(row[3]).replace(/^'/, '').trim(), g = G[k], cnt = g ? g.cnt : 0, amt = g ? g.amt : 0;
+    if (seen[k]) { cnt = 0; amt = 0; }   // 같은 조합이 두 줄이면 첫 줄에만
+    seen[k] = 1;
+    if (N(row[6]) !== cnt || N(row[7]) !== amt) { sh.getRange(i + 3, 7, 1, 2).setValues([[cnt, amt]]); upd++; if (!cnt) zero++; }
+  });
+  var add = Object.keys(G).filter(function (k) { return !seen[k]; }).sort().map(function (k) { return G[k]; });
+  if (add.length) {
+    var at = lastVal + 4;
+    sh.getRange(at, 1, add.length, 4).setValues(add.map(function (g) { return [g.d, '사방넷', g.shop, /^\d+$/.test(g.id) ? "'" + g.id : g.id]; }));
+    sh.getRange(at, 7, add.length, 3).setValues(add.map(function (g) { return [g.cnt, g.amt, Math.round(g.cost)]; }));
+    sh.getRange(at, 20, add.length, 1).setValues(add.map(function () { return ['사방넷 API(주문일), 월마감 재동기화']; }));
+  }
+  return { ym: ym, api: all.length, updated: upd, zeroed: zero, added: add.length };
+}
 /** 메일 보내기 — kind: '확정'|'가마감'|'시험' */
 function hubMonthCloseSend_(ym, me, test) {
   ym = hubMcYm_(ym);
+  var rs = null; try { rs = hubSbnResync_(ym); } catch (e) { rs = { error: String(e.message || e) }; }
   var rep = hubMonthCloseBuild_(ym, { rows: true }), set = hubMcSetting_();
   var x = hubMcXlsx_(rep), att = [x.blob], dnote = '';
   try { var dash = hubMcdBuild_(ym, me && me.name); att.push(dash.blob); dnote = '첨부 2개: ① 마감 자료(법인·채널·플랫폼·일별·상세·점검) ② 내부 회의용 매출 대시보드(담당자 양식 · ' + hubMcdMl_(ym) + ' 포함 최근 4개월 비교)'; }
