@@ -43,7 +43,7 @@ var SBS = {
   BACK_DAYS: 7,
   NOTE: '사방넷 API(주문일), 취소·재생성행 제외',
   COND: { ORDER: 2, REG: 1, SEND: 7 },     // 사방넷 API dateSearchCondition: 2 주문일 · 1 수집일 · 7 출고(발송)일
-  ITEMS: ['SB_ORD_NO', 'ORDER_STATUS', 'ORDER_DT', 'SHOP_NM', 'SHOP_LOGIN_ID', 'ORDER_TOT_AMT', 'COST_PRICE', 'ORD_CNT', 'ORG_SB_ORD_NO']
+  ITEMS: ['SB_ORD_NO', 'ORDER_STATUS', 'ORDER_DT', 'SHOP_NM', 'SHOP_LOGIN_ID', 'ORDER_TOT_AMT', 'COST_PRICE', 'ORD_CNT', 'ORG_SB_ORD_NO', 'CM_PRD_NM']
 };
 
 function sbFetch_(cond, d1, d2) {
@@ -78,12 +78,12 @@ function sbKeep_(x, corp) {
 
 /** 쇼핑몰+ID별 [쇼핑몰, ID, 건수, 매출, 원가, 수량] */
 function sbGroup_(rows, corp) {
-  var g = {}, order = [];
+  var g = {}, order = [], fc = (typeof hubCostForceMap_ === 'function') ? hubCostForceMap_() : {};
   rows.forEach(function (x) {
     if (!sbKeep_(x, corp)) return;
     var nm = String(x.SHOP_NM || '').trim(), id = String(x.SHOP_LOGIN_ID || '').trim(), k = nm + '|' + id;
     if (!g[k]) { g[k] = [nm, id, 0, 0, 0, 0]; order.push(k); }
-    g[k][2]++; g[k][3] += Number(x.ORDER_TOT_AMT) || 0; g[k][4] += Number(x.COST_PRICE) || 0; g[k][5] += Number(x.ORD_CNT) || 1;
+    g[k][2]++; g[k][3] += Number(x.ORDER_TOT_AMT) || 0; g[k][4] += (Number(x.COST_PRICE) || 0) || ((typeof hubCostForceOf_ === 'function') ? hubCostForceOf_(fc, x) : 0);   // 원가 0 + 원가강제 목록 상품명이면 강제 원가×수량 g[k][5] += Number(x.ORD_CNT) || 1;
   });
   return order.map(function (k) { return g[k]; });
 }

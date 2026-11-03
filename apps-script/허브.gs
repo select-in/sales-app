@@ -76,6 +76,10 @@ function doPost(e) {
       case 'sbn_sales_check': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 사방넷 API(주문일) 기준 일별·법인·쇼핑몰 집계 — 매출판 대조용 (읽기 전용)
         return hubOut_(hubSbnSalesRange_(req.from, req.to));
       case 'sales': return hubOut_(hubSales_(me));
+      case 'cost_force_set': if (!admin) return hubOut_({ error: '관리자만 바꿀 수 있습니다' });
+        return hubOut_(hubLocked_(function () { return hubCostForceSet_(req, me); }));
+      case 'cost_force_apply': if (!admin) return hubOut_({ error: '관리자만 실행할 수 있습니다' });   // dry=true: 쓰기 없이 미리보기
+        return hubOut_(req.dry ? hubCostForceApply_(req.from, req.to, true) : hubLocked_(function () { return hubCostForceApply_(req.from, req.to, false); }));
       case 'events': return hubOut_(hubEvents_(req.force));   // 홈 행사 일정 캘린더 (공동구매 일정 시트 「일정」 탭, 읽기 전용)
       case 'sbn_reg_daily': return hubOut_(hubSbnRegDaily_(req.days, req.force));   // 사방넷 수집일 기준 법인별 건수 (조회 전용)
       case 'archive_list': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });
@@ -2161,4 +2165,81 @@ function hubSbnRegDaily_(days, force) {
     out.push(o);
   }
   return { rows: out, at: Utilities.formatDate(new Date(), tz, 'HH:mm') };
+}
+
+
+/* ===================== 원가 강제 (사방넷 상품 미매칭 주문) =====================
+ * 쇼핑몰 주문이 사방넷 상품과 연결되지 않아 원가 0으로 들어오는 상품 → OPS DB '원가강제' 탭의 상품명별 개당 원가로 강제.
+ *  - 매일 사방넷 매출(sbSalesDaily)이 원가 0 + 상품명(CM_PRD_NM) 일치면 개당 원가×수량을 넣음
+ *  - hubCostForceApply_: 지난 주문(기간)을 다시 읽어 매출판 '일별입력' 사방넷 행의 매입원가에 더함. 한 번 넣은 주문번호는 기록해서 두 번 더하지 않음 */
+var HUB_CF_HEAD = ['상품명', '개당 원가', '수정일', '수정자', '메모'];
+function hubCfNorm_(s) { return String(s || '').replace(/\s+/g, ' ').trim(); }
+function hubCfSheet_() {
+  var ss = hubBook_(), sh = ss.getSheetByName('원가강제');
+  if (!sh) { sh = ss.insertSheet('원가강제'); sh.getRange(1, 1, 1, HUB_CF_HEAD.length).setValues([HUB_CF_HEAD]).setFontWeight('bold').setBackground('#e8f5ef'); sh.setFrozenRows(1); }
+  return sh;
+}
+function hubCostForceMap_() {
+  var c = CacheService.getScriptCache(), hit = c.get('cf_map'); if (hit) { try { return JSON.parse(hit); } catch (e) {} }
+  var sh = hubCfSheet_(), n = sh.getLastRow() - 1, m = {};
+  if (n > 0) sh.getRange(2, 1, n, 2).getValues().forEach(function (r) { var k = hubCfNorm_(r[0]), v = Number(r[1]); if (k && v > 0) m[k] = v; });
+  try { c.put('cf_map', JSON.stringify(m), 600); } catch (e) {}
+  return m;
+}
+function hubCostForceOf_(m, x) {
+  var u = m[hubCfNorm_(x.CM_PRD_NM)]; if (!u) return 0;
+  return Math.round(u * (Number(x.ORD_CNT) || 1));
+}
+function hubCostForceSet_(req, me) {
+  var sh = hubCfSheet_(), n = sh.getLastRow() - 1, cur = n > 0 ? sh.getRange(2, 1, n, 5).getValues() : [], idx = {};
+  cur.forEach(function (r, i) { idx[hubCfNorm_(r[0])] = i; });
+  (req.items || []).forEach(function (it) {
+    var k = hubCfNorm_(it[0]), v = Number(it[1]); if (!k || !(v > 0)) return;
+    var row = [k, v, hubNow_(), me.name, hubStr_(it[2] || '', 200)];
+    if (k in idx) cur[idx[k]] = row; else { idx[k] = cur.length; cur.push(row); }
+  });
+  if (cur.length) sh.getRange(2, 1, cur.length, 5).setValues(cur);
+  CacheService.getScriptCache().remove('cf_map');
+  return { ok: true, n: cur.length };
+}
+/** 지난 주문 다시 계산. dry=true면 쓰지 않고 맞는 주문만 보여 줌. 한 번에 한 달(from~to)씩 */
+function hubCostForceApply_(from, to, dry) {
+  var a = String(from || '').replace(/-/g, ''), b = String(to || '').replace(/-/g, '');
+  if (!/^\d{8}$/.test(a) || !/^\d{8}$/.test(b)) throw new Error('날짜 형식');
+  var m = hubCostForceMap_(), ss = SpreadsheetApp.openById(HUB_SALES_ID), corp = {};
+  ss.getSheetByName('설정').getRange('A57:B120').getValues().forEach(function (r) { var id = String(r[0]).trim(); if (id) corp[id] = String(r[1]).trim(); });
+  var props = PropertiesService.getScriptProperties(), done = {}; try { done = JSON.parse(props.getProperty('CF_DONE_' + a.slice(0, 6)) || '{}'); } catch (e) {}
+  var all = [], page = 1;
+  while (page <= 60) {
+    var r = hubSbnCall_('POST', '/v3/sb/order', { dateSearchCondition: 2, startDate: a, endDate: b, updateOrderStsYn: 'N', page: page, perPage: 1000,
+      responseItems: ['SB_ORD_NO', 'ORDER_STATUS', 'ORDER_DT', 'SHOP_NM', 'SHOP_LOGIN_ID', 'ORD_CNT', 'COST_PRICE', 'ORDER_TOT_AMT', 'ORG_SB_ORD_NO', 'CM_PRD_NM'] });
+    var dt = (r && r.data) || {}; all = all.concat(dt.results || []); if (!dt.hasNext) break; page++;
+  }
+  var add = {}, byName = {}, zeroNames = {}, hit = 0, skipped = 0;
+  all.forEach(function (x) {
+    if (/CANCEL/i.test(String(x.ORDER_STATUS))) return;
+    if (x.ORG_SB_ORD_NO && String(x.ORG_SB_ORD_NO) !== '0') return;
+    var id = String(x.SHOP_LOGIN_ID || '').trim(); if (corp[id] === '제외') return;
+    if (Number(x.COST_PRICE) > 0) return;
+    var nm = hubCfNorm_(x.CM_PRD_NM), c = hubCostForceOf_(m, x);
+    if (!c) { zeroNames[nm] = (zeroNames[nm] || 0) + 1; return; }
+    var no = String(x.SB_ORD_NO); if (done[no]) { skipped++; return; }
+    var d = String(x.ORDER_DT || '').replace(/^(\d{4})(\d{2})(\d{2}).*/, '$1-$2-$3'), k = d + '|' + String(x.SHOP_NM || '').trim() + '|' + id;
+    var o = add[k] || (add[k] = { cost: 0, nos: [] }); o.cost += c; o.nos.push(no);
+    byName[nm] = byName[nm] || [0, 0]; byName[nm][0]++; byName[nm][1] += c; hit++;
+  });
+  var res = { orders: all.length, hit: hit, skipped: skipped, total: Object.keys(add).reduce(function (t, k) { return t + add[k].cost; }, 0), byName: byName,
+    stillZero: Object.keys(zeroNames).sort(function (p, q) { return zeroNames[q] - zeroNames[p]; }).slice(0, 30).map(function (k) { return [k, zeroNames[k]]; }), rows: 0, miss: [] };
+  if (dry) return res;
+  var sh = ss.getSheetByName('일별입력'), last = sh.getLastRow(), v = sh.getRange(3, 1, last - 2, 9).getValues(), tz = 'Asia/Seoul', touched = {};
+  for (var i = 0; i < v.length; i++) {
+    if (String(v[i][1]).trim() !== '사방넷') continue;
+    var d = hubSalesYmd_(v[i][0], tz), id = String(v[i][3]).replace(/^'/, '').trim(), k = d + '|' + String(v[i][2]).trim() + '|' + id;
+    if (!add[k] || touched[k]) continue;
+    sh.getRange(i + 3, 9).setValue((Number(v[i][8]) || 0) + Math.round(add[k].cost));
+    add[k].nos.forEach(function (no) { done[no] = 1; }); touched[k] = 1; res.rows++;
+  }
+  Object.keys(add).forEach(function (k) { if (!touched[k]) res.miss.push([k, Math.round(add[k].cost)]); });
+  props.setProperty('CF_DONE_' + a.slice(0, 6), JSON.stringify(done));
+  return res;
 }
