@@ -43,7 +43,7 @@ var SBS = {
   BACK_DAYS: 7,
   NOTE: '사방넷 API(주문일), 취소·재생성행 제외',
   COND: { ORDER: 2, REG: 1, SEND: 7 },     // 사방넷 API dateSearchCondition: 2 주문일 · 1 수집일 · 7 출고(발송)일
-  ITEMS: ['SB_ORD_NO', 'ORDER_STATUS', 'ORDER_DT', 'SHOP_NM', 'SHOP_LOGIN_ID', 'ORDER_TOT_AMT', 'COST_PRICE', 'ORD_CNT', 'ORG_SB_ORD_NO', 'CM_PRD_NM']
+  ITEMS: ['SB_ORD_NO', 'ORDER_STATUS', 'ORDER_DT', 'SHOP_NM', 'SHOP_LOGIN_ID', 'ORDER_TOT_AMT', 'COST_PRICE', 'ORD_CNT', 'ORG_SB_ORD_NO', 'CM_PRD_NM', 'SHOP_PRD_CD']
 };
 
 function sbFetch_(cond, d1, d2) {
