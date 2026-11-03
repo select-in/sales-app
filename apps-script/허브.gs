@@ -1945,7 +1945,7 @@ function hubSbnResync_(ym) {
 /** 메일 보내기 — kind: '확정'|'가마감'|'시험' */
 function hubMonthCloseSend_(ym, me, test) {
   ym = hubMcYm_(ym);
-  var rs = null; try { rs = hubSbnResync_(ym); } catch (e) { rs = { error: String(e.message || e) }; }
+  var rs = null; if (String((hubConfig_().mc_resync || {}).value || '') === 'Y') { try { rs = hubSbnResync_(ym); } catch (e) { rs = { error: String(e.message || e) }; } }   // 대장 승인 후 설정 mc_resync=Y 로 켬
   var rep = hubMonthCloseBuild_(ym, { rows: true }), set = hubMcSetting_();
   var x = hubMcXlsx_(rep), att = [x.blob], dnote = '';
   try { var dash = hubMcdBuild_(ym, me && me.name); att.push(dash.blob); dnote = '첨부 2개: ① 마감 자료(법인·채널·플랫폼·일별·상세·점검) ② 내부 회의용 매출 대시보드(담당자 양식 · ' + hubMcdMl_(ym) + ' 포함 최근 4개월 비교)'; }
