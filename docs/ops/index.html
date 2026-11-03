@@ -193,6 +193,16 @@ label.fld input,label.fld textarea{font-size:13.5px;color:var(--ink)}
 .grid-info{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
 .grid-info label.ai input,.grid-info label.ai textarea{background:var(--hl)}
 .tag{font-size:10.5px;font-weight:700;letter-spacing:.04em;color:var(--warn);margin-left:4px}
+/* 거래 조건 칸: 제목 줄 높이 고정 + 입력칸이 행 높이를 꽉 채워 행·열 정렬 */
+.grid-info{align-items:stretch}
+.grid-info>label.fld{min-width:0}
+.grid-info>label.fld>textarea{flex:1 1 auto;min-height:66px}
+.fld-hd{display:flex;align-items:center;gap:6px;height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fld-hd .tag{margin-left:0;padding:0 6px;border-radius:99px;background:var(--warn-soft);line-height:16px}
+.thumb{position:relative;outline-offset:2px}
+.thumb.over{border-color:var(--accent);background:var(--accent-soft)}
+.thumb .x{position:absolute;top:1px;right:1px;width:16px;height:16px;border:0;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:10px;line-height:16px;padding:0;cursor:pointer;display:none}
+.thumb:hover .x,.thumb:focus .x{display:block}
 details>summary{cursor:pointer;font-weight:700;font-size:14px;list-style:none;display:flex;align-items:center;gap:6px}
 details>summary::before{content:"▸";color:var(--muted);transition:transform .15s}
 details[open]>summary::before{transform:rotate(90deg)}
@@ -433,14 +443,29 @@ details.more>summary{font-size:13px;font-weight:600;color:var(--muted)}
         <div class="row">
           <button class="btn primary" id="btnExport">엑셀 받기</button>
           <button class="btn primary" id="btnPdf">PDF로 저장</button>
-          <button class="btn" id="btnPropLog" title="파일을 받지 않고 제안 이력(팀 저장소 · 구글 시트)에만 기록">제안 이력에 기록</button>
+          <button class="btn" id="btnPropLog" title="파일을 받지 않고 제안 이력(팀 저장소 · 구글 시트)에 기록 — 드라이브 등록도 물어봅니다">제안 이력에 기록</button>
+          <a class="btn" href="https://drive.google.com/drive/folders/14ukZyLkPnxPflzetEzuoSgv7ubaWsUJ_" target="_blank" rel="noopener" style="text-decoration:none" title="최종 제안서가 올라가는 구글 드라이브 폴더 (00.셀렉트인제안서)">드라이브 폴더 ↗</a>
         </div>
       </div>
       <label class="row" style="gap:6px;font-size:13px;color:var(--muted)"><input type="checkbox" id="chkInternal"> 엑셀에 내부 원가분석 시트 함께 넣기 (외부 전달용이면 끄세요)</label>
+      <div class="row" style="gap:10px;font-size:13px"><label class="row" style="gap:6px;color:var(--muted)"><input type="checkbox" id="notionOn"> 노션 「SNS 공동구매 제품 자료」에 상품별 자동 기록</label><select id="notionAuthor" aria-label="노션 작성자"><option value="">작성자 선택</option></select><a href="https://app.notion.com/p/91995ae8a79140d181e71e180c7e0e70?v=2ea96b9a57864e178bf2d5424298a7f7" target="_blank" rel="noopener">노션 열기 ↗</a><button class="btn" id="btnNotionAll" type="button" title="제안 이력에 저장된 지난 제안서를 노션에 올립니다. 같은 제목 행이 있으면 새로 만들지 않고 갱신">지난 제안서 노션에 올리기</button></div>
+      <div class="status warn" id="notionDel" hidden><span id="notionDelTxt"></span> <button class="btn" id="notionDelYes" type="button">휴지통으로 보내기</button> <button class="btn ghost" id="notionDelNo" type="button">그대로 두기</button></div>
       <div class="status" id="exportStatus" hidden></div>
       <div class="pv-wrap"><div id="pv" class="pv"></div></div>
     </div>
   </section>
+
+  <div id="driveModal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="driveTitle">
+    <div class="modal-box" style="width:min(480px,100%)">
+      <h2 id="driveTitle" style="margin:0;font-size:18px">최종 드라이브에 업데이트 하시겠습니까?</h2>
+      <p class="sub" id="driveInfo" style="margin:0;word-break:break-all"></p>
+      <div class="row" style="justify-content:flex-end;gap:8px">
+        <button class="btn" id="driveNo">NO</button>
+        <button class="btn primary" id="driveYes">YES · 드라이브에 올리기</button>
+      </div>
+      <p class="sub" id="driveAlt" hidden style="margin:0;font-size:12.5px">새 탭이 안 열리면 <a id="driveAltLink" target="_blank" rel="noopener">드라이브 등록 페이지</a>를 열어 방금 받은 엑셀을 끌어다 놓으세요.</p>
+    </div>
+  </div>
 
   <div id="pickModal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="pickTitle">
     <div class="modal-box">
@@ -686,6 +711,7 @@ details.more>summary{font-size:13px;font-weight:600;color:var(--muted)}
       </div>
       <label class="fld" style="margin-top:10px">자사 사입 브랜드 — 이 브랜드 공구는 브랜드 정산서·업체 대조 없이 사입 원가로 정산 (쉼표로 구분, 같은 브랜드의 다른 표기는 / 로)<div class="row" style="gap:8px;flex-wrap:nowrap"><input id="setOwn" style="flex:1" placeholder="예: 잔스포츠/JANSPORT, 칼하트/CARHARTT"><button class="btn primary" id="btnSaveOwn" type="button">저장</button></div></label><div class="dim" id="ownSt" style="font-size:12px;margin-top:4px">새 브랜드는 맨 뒤에 ", 브랜드명/영문명" 을 붙여 쓰면 됩니다. 입력을 마치면 자동 저장되고, 저장 버튼으로도 저장할 수 있어요.</div>
       <p class="sub">결제창이 셀렉트인이면 카드 결제 수수료만큼 순마진에서 빠집니다. 0으로 두면 수수료를 빼지 않고 계산합니다.</p>
+      <label class="fld" style="margin-top:10px">드라이브 업로드 주소 — 「공동구매 db자동취합」 Apps Script 웹 앱 주소 (https://script.google.com/macros/s/…/exec). 넣어두면 Claude 연결 없이 YES 한 번으로 드라이브 등록 + 통합DB 취합<div class="row" style="gap:8px;flex-wrap:nowrap"><input id="setUpload" style="flex:1" placeholder="https://script.google.com/macros/s/…/exec"><button class="btn primary" id="btnSaveUpload" type="button">저장</button></div></label><div class="dim" id="uploadSt" style="font-size:12px;margin-top:4px"></div>
       <div class="status" id="setStatus" hidden></div>
     </div>
     <div class="panel">
@@ -883,7 +909,8 @@ let products = [];            // 사입 상품 (db)
 let selected = new Set();
 let draft = lsGet('sel_draft', null) || newDraft();
 function newDraft() { return { pid: uid(), brand: '', supplier: '', info: { ...settings.info }, aiKeys: [], rows: [], notes: '' }; }
-const saveDraft = () => lsSet('sel_draft', { ...draft, rows: draft.rows.map(r => ({ ...r, img: null })) });
+/* 이미지(220px JPEG)까지 저장 — 브라우저 저장 공간이 모자라면 이미지만 빼고 저장 */
+const saveDraft = () => { try { localStorage.setItem('sel_draft', JSON.stringify(draft)); } catch { lsSet('sel_draft', { ...draft, rows: draft.rows.map(r => ({ ...r, img: null })) }); } };
 
 /* ---------- 탭 ---------- */
 document.querySelectorAll('nav.tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
@@ -909,8 +936,9 @@ function renderInfo() {
   const g = $('#infoGrid'); g.innerHTML = '';
   INFO_FIELDS.forEach(([k, label]) => {
     const l = document.createElement('label'); l.className = 'fld' + (draft.aiKeys.includes(k) ? ' ai' : '');
-    l.append(label);
-    if (draft.aiKeys.includes(k)) { const t = document.createElement('span'); t.className = 'tag'; t.textContent = 'AI'; l.append(t); }
+    const hd = document.createElement('span'); hd.className = 'fld-hd'; hd.append(label); hd.title = label;
+    if (draft.aiKeys.includes(k)) { const t = document.createElement('span'); t.className = 'tag'; t.textContent = 'AI'; hd.append(t); }
+    l.append(hd);
     const ta = document.createElement('textarea'); ta.rows = String(draft.info[k] ?? '').includes('\n') ? 2 : 1; ta.id = 'info-' + k;
     ta.value = draft.info[k] ?? ''; ta.oninput = () => { draft.info[k] = ta.value; saveDraft(); };
     l.append(ta); g.append(l);
@@ -926,9 +954,20 @@ function renderRows() {
     const tr = document.createElement('tr');
     const upd = () => { paintCalc(tr, r); saveDraft(); renderKpis(); };
     // 이미지
-    const th = document.createElement('div'); th.className = 'thumb'; th.title = '상품 이미지 넣기';
-    if (r.img?.url) { const im = new Image(); im.src = r.img.url; im.alt = ''; th.append(im); } else th.textContent = '+';
+    const th = document.createElement('div'); th.className = 'thumb'; th.tabIndex = 0; th.setAttribute('role', 'button');
+    th.title = '상품 이미지: 클릭해서 파일 선택 · 이미지를 끌어다 놓기 · 이 칸(또는 이 행의 입력칸)을 누른 뒤 Ctrl+V로 붙여넣기';
+    th.setAttribute('aria-label', '상품 이미지 넣기');
+    if (r.img?.url) {
+      const im = new Image(); im.src = r.img.url; im.alt = ''; th.append(im);
+      const x = document.createElement('button'); x.className = 'x'; x.textContent = '✕'; x.title = '이미지 빼기'; x.setAttribute('aria-label', '이미지 빼기');
+      x.onclick = e => { e.stopPropagation(); r.img = null; saveDraft(); renderRows(); }; th.append(x);
+    } else th.textContent = '+';
     th.onclick = () => pickImage(r, () => renderRows());
+    th.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickImage(r, () => renderRows()); } };
+    th.ondragover = e => { e.preventDefault(); e.stopPropagation(); th.classList.add('over'); };
+    th.ondragleave = () => th.classList.remove('over');
+    th.ondrop = async e => { e.preventDefault(); e.stopPropagation(); th.classList.remove('over'); const f = [...(e.dataTransfer?.files || [])].find(x => x.type.startsWith('image/')); if (f) await setRowImage(r, f); };
+    tr._row = r;
     tr.append(td(th));
     tr.append(td(txtInput(r.cat, v => { r.cat = v; saveDraft(); }, '카테고리')));
     const nm = txtInput(r.name, v => { r.name = v; saveDraft(); }, '상품명'); if (r.ai) nm.style.background = 'var(--hl)';
@@ -1004,15 +1043,36 @@ $('#bkPass').onclick = () => { draft.rows.forEach(r => { if (num(r.cost) != null
 /* 이미지 선택 → 220px로 줄여서 저장 */
 function pickImage(r, done) {
   const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*';
-  f.onchange = async () => { const file = f.files[0]; if (!file) return; r.img = await shrinkImage(file, 220); done(); };
+  f.onchange = async () => { const file = f.files[0]; if (!file) return; r.img = await shrinkImage(file, 220); saveDraft(); done(); };
   f.click();
 }
+async function setRowImage(r, blob) {
+  try { r.img = await shrinkImage(blob, 220); saveDraft(); renderRows(); status($('#exStatus'), `'${(r.name || '상품').slice(0, 30)}' 이미지를 넣었어요.`, 'ok'); }
+  catch { status($('#exStatus'), '이미지를 읽지 못했어요. PNG/JPG로 다시 넣어주세요.', 'err'); }
+}
+const clipImage = e => { const d = e.clipboardData; if (!d) return null; const f = [...(d.files || [])].find(x => x.type.startsWith('image/')); if (f) return f; const it = [...(d.items || [])].find(x => x.kind === 'file' && x.type.startsWith('image/')); return it ? it.getAsFile() : null; };
 async function shrinkImage(file, max) {
   const bmp = await createImageBitmap(file);
   const s = Math.min(1, max / Math.max(bmp.width, bmp.height));
   const cv = document.createElement('canvas'); cv.width = Math.round(bmp.width * s); cv.height = Math.round(bmp.height * s);
   const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.drawImage(bmp, 0, 0, cv.width, cv.height);
   const url = cv.toDataURL('image/jpeg', 0.85);
+  return { url, base64: url.split(',')[1], ext: 'jpeg' };
+}
+/* 캡처·PDF 페이지 안의 제품 사진만 잘라내기 — box: [x1,y1,x2,y2] (가로·세로 0~1000 비율) */
+async function cropImage(blob, box, max) {
+  const b = (box || []).map(Number); if (b.length !== 4 || b.some(v => !isFinite(v))) return null;
+  let [x1, y1, x2, y2] = b; if (x2 < x1) [x1, x2] = [x2, x1]; if (y2 < y1) [y1, y2] = [y2, y1];
+  const bmp = await createImageBitmap(blob), W = bmp.width, H = bmp.height;
+  const cl = (v, m) => Math.max(0, Math.min(m, v));
+  const sx = cl(Math.floor(x1 / 1000 * W), W), sy = cl(Math.floor(y1 / 1000 * H), H), ex = cl(Math.ceil(x2 / 1000 * W), W), ey = cl(Math.ceil(y2 / 1000 * H), H);
+  const w = ex - sx, h = ey - sy;
+  if (w < 24 || h < 24) return null;   // 너무 작으면 건너뜀
+  if (w * h > W * H * 0.9) return shrinkImage(blob, max);   // 사실상 이미지 전체 = 제품 사진 한 장
+  const s = Math.min(1, max / Math.max(w, h));
+  const cv = document.createElement('canvas'); cv.width = Math.round(w * s); cv.height = Math.round(h * s);
+  const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.drawImage(bmp, sx, sy, w, h, 0, 0, cv.width, cv.height);
+  const url = cv.toDataURL('image/jpeg', 0.88);
   return { url, base64: url.split(',')[1], ext: 'jpeg' };
 }
 
@@ -1025,7 +1085,13 @@ drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
 drop.ondragleave = () => drop.classList.remove('over');
 drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); addFiles(e.dataTransfer.files); };
 fileIn.onchange = () => { addFiles(fileIn.files); fileIn.value = ''; };
-document.addEventListener('paste', e => { const fs = [...(e.clipboardData?.files || [])]; if (fs.length && !$('#view-make').hidden) addFiles(fs); });
+document.addEventListener('paste', e => {
+  if ($('#view-make').hidden) return;
+  // 상품 행(이미지 칸·입력칸)에 커서가 있으면 → 그 상품의 이미지로
+  const row = document.activeElement?.closest?.('#pBody tr')?._row, img = clipImage(e);
+  if (row && img) { e.preventDefault(); setRowImage(row, img); return; }
+  const fs = [...(e.clipboardData?.files || [])]; if (fs.length) addFiles(fs);
+});
 function addFiles(list) { for (const f of list) files.push(f); renderChips(); }
 function renderChips() {
   const c = $('#fileChips'); c.innerHTML = '';
@@ -1035,16 +1101,46 @@ function renderChips() {
 const libs = {};
 function loadScript(src) { return libs[src] ||= new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('라이브러리를 불러오지 못했습니다: ' + src)); document.head.append(s); }); }
 const CDN = 'https://cdnjs.cloudflare.com/ajax/libs/';
-async function readSheet(file) {
+/* 엑셀에 박힌 상품 사진 꺼내기 (.xlsx) → [{sheet, row(1부터), blob}] */
+async function sheetImages(file) {
+  if (!/\.xlsx$/i.test(file.name)) return [];
+  try {
+    await loadScript(CDN + 'exceljs/4.4.0/exceljs.min.js');
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(await file.arrayBuffer());
+    const out = [];
+    wb.worksheets.forEach(ws => (ws.getImages?.() || []).forEach(im => {
+      const m = wb.getImage(+im.imageId); if (!m) return;
+      const ext = String(m.extension || 'png').toLowerCase().replace('jpg', 'jpeg');
+      const data = m.buffer || (m.base64 ? Uint8Array.from(atob(String(m.base64).replace(/^data:.*?,/, '')), c => c.charCodeAt(0)) : null); if (!data) return;
+      const tl = im.range?.tl || {}, row = Math.floor(tl.nativeRow ?? tl.row ?? 0) + 1, col = Math.floor(tl.nativeCol ?? tl.col ?? 0);
+      out.push({ sheet: ws.name, row, col, blob: new Blob([data], { type: 'image/' + ext }) });
+    }));
+    return out.sort((a, b) => a.sheet.localeCompare(b.sheet) || a.row - b.row || a.col - b.col);
+  } catch { return []; }
+}
+async function readSheet(file, pool) {
   await loadScript(CDN + 'xlsx/0.18.5/xlsx.full.min.js');
   const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-  return wb.SheetNames.map(n => `[시트: ${n}]\n` + XLSX.utils.sheet_to_csv(wb.Sheets[n], { blankrows: false })).join('\n\n');
+  const pics = pool ? await sheetImages(file) : [];
+  if (!pics.length) return wb.SheetNames.map(n => `[시트: ${n}]\n` + XLSX.utils.sheet_to_csv(wb.Sheets[n], { blankrows: false })).join('\n\n');
+  // 사진이 있으면: 사진이 걸린 줄 끝에 [이미지#번호] 표시 → AI가 상품과 사진을 짝지음
+  return wb.SheetNames.map(n => {
+    const sh = wb.Sheets[n]; if (!sh['!ref']) return `[시트: ${n}]`;
+    const r0 = XLSX.utils.decode_range(sh['!ref']).s.r;
+    const A = XLSX.utils.sheet_to_json(sh, { header: 1, raw: false, blankrows: true, defval: '' });
+    const marks = {}; pics.filter(p => p.sheet === n).forEach(p => { pool.push({ k: pool.length + 1, blob: p.blob }); (marks[p.row] ||= []).push(pool.length); });
+    const lines = A.map((r, i) => { const rn = r0 + i + 1, m = marks[rn]; const t = r.map(c => String(c).replace(/[\t\n]+/g, ' ').trim()).join(','); return (t.replace(/,/g, '').trim() || m) ? t + (m ? m.map(k => ` [이미지#${k}]`).join('') : '') : null; }).filter(l => l != null);
+    // 표 범위 밖에 걸린 사진
+    Object.entries(marks).forEach(([rn, ks]) => { if (+rn > r0 + A.length) lines.push(ks.map(k => `[이미지#${k}]`).join(' ') + ` (${rn}행)`); });
+    return `[시트: ${n}]\n` + lines.join('\n');
+  }).join('\n\n');
 }
-async function readDocx(file) {
+async function readDocx(file, pool) {
   await loadScript(CDN + 'mammoth/1.6.0/mammoth.browser.min.js');
   const { value } = await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() });
   const doc = new DOMParser().parseFromString(value, 'text/html');
   const imgs = [...doc.querySelectorAll('img')].map(i => i.src).filter(s => s.startsWith('data:image/'));
+  if (pool) for (const i of doc.querySelectorAll('img')) if (i.src.startsWith('data:image/')) { pool.push({ k: pool.length + 1, url: i.src }); i.replaceWith(doc.createTextNode(` [이미지#${pool.length}] `)); }
   doc.querySelectorAll('img').forEach(i => i.remove());
   doc.querySelectorAll('table').forEach(t => { const txt = [...t.rows].map(r => [...r.cells].map(c => c.textContent.trim().replace(/\s+/g, ' ')).join('\t')).join('\n'); const p = doc.createElement('pre'); p.textContent = '\n[표]\n' + txt + '\n'; t.replaceWith(p); });
   doc.querySelectorAll('p,li,h1,h2,h3,h4,pre').forEach(e => e.append('\n'));
@@ -1069,19 +1165,25 @@ async function readPdf(file, maxPages) {
   return { text, pages, numPages: pdf.numPages };
 }
 const dataUrlToBlob = async u => (await fetch(u)).blob();
-async function collectInputs(list) {
-  let text = '', images = [], skipped = [], slots = sampleImgMax;
+/* withPics: 원본 안의 상품 사진을 [이미지#번호]로 표시하고 pool에 모음 (제안서 읽기용) */
+async function collectInputs(list, withPics) {
+  let text = '', images = [], skipped = [], slots = sampleImgMax; const pool = withPics ? [] : null;
   for (const f of list) {
     const n = f.name.toLowerCase();
-    if (/\.(xlsx|xls|csv)$/.test(n)) text += `\n\n===== 파일: ${f.name} =====\n` + await readSheet(f);
-    else if (/\.docx$/.test(n)) { const d = await readDocx(f); text += `\n\n===== 파일: ${f.name} =====\n` + d.text; for (const u of d.imgs.slice(0, 2)) if (slots > 0) { images.push(await dataUrlToBlob(u)); slots--; } }
-    else if (/\.pdf$/.test(n)) { const d = await readPdf(f, Math.min(slots, 3)); text += `\n\n===== 파일: ${f.name} (${d.numPages}쪽) =====\n` + d.text; images.push(...d.pages); slots -= d.pages.length; }
-    else if (/\.(png|jpe?g|webp|gif)$/.test(n) || f.type.startsWith('image/')) { if (slots > 0) { images.push(f); slots--; text += `\n\n===== 이미지 첨부: ${f.name} =====\n`; } else skipped.push(f.name); }
+    if (/\.(xlsx|xls|csv)$/.test(n)) text += `\n\n===== 파일: ${f.name} =====\n` + await readSheet(f, pool);
+    else if (/\.docx$/.test(n)) { const d = await readDocx(f, pool); text += `\n\n===== 파일: ${f.name} =====\n` + d.text; for (const u of d.imgs.slice(0, 2)) if (slots > 0) { images.push(await dataUrlToBlob(u)); slots--; text += `\n[첨부 이미지 ${images.length}번째 = ${f.name} 안의 사진]\n`; } }
+    else if (/\.pdf$/.test(n)) { const d = await readPdf(f, Math.min(slots, 3)); const a0 = images.length + 1; images.push(...d.pages); slots -= d.pages.length; text += `\n\n===== 파일: ${f.name} (${d.numPages}쪽)${d.pages.length ? ` · 첨부 이미지 ${a0}~${images.length}번째 = 이 파일 1~${d.pages.length}쪽` : ''} =====\n` + d.text; }
+    else if (/\.(png|jpe?g|webp|gif)$/.test(n) || f.type.startsWith('image/')) {
+      const mark = pool ? (pool.push({ k: pool.length + 1, blob: f }), ` [이미지#${pool.length}]`) : '';
+      if (slots > 0) { images.push(f); slots--; text += `\n\n===== 이미지 첨부 ${images.length}번째: ${f.name}${mark} =====\n`; }
+      else if (pool) text += `\n\n===== 이미지 파일(AI에 안 보냄): ${f.name}${mark} =====\n`;
+      else skipped.push(f.name);
+    }
     else skipped.push(f.name);
   }
   const enc = new TextEncoder(); while (enc.encode(text).length > 200000) text = text.slice(0, Math.floor(text.length * 0.85));
   if (!text.trim() && !images.length) throw { code: 'no_input', message: '읽을 수 있는 내용이 없습니다. 지원 형식: 엑셀·워드(.docx)·PDF·이미지' };
-  return { text, images, skipped };
+  return { text, images, skipped, pool: pool || [] };
 }
 const AI_ERR = {
   no_key: 'AI 키가 없습니다. Apps Script → 프로젝트 설정 → 스크립트 속성에 ANTHROPIC_API_KEY를 넣어주세요.', api_error: 'AI 서버 오류가 났습니다. 잠시 후 다시 시도해 주세요.', server_error: '서버 처리 중 문제가 생겼습니다. 다시 시도해 주세요.',
@@ -1390,10 +1492,12 @@ const EXTRACT_PROMPT = `너는 한국 커머스 회사 '셀렉트인'의 MD 보�
 - info: 배송·정책 조건만. 원본에 없으면 null. courier(택배사), baseShip(기본 택배비, 예 "4,000"), freeShip(무료배송 기준, 예 "3봉 이상 무료배송"), remoteExtra(제주/도서산간 추가비), returnFee(단순변심 반품비), exchangeFee(교환비), shipFrom(출고/반품지), dispatch(출고 마감/발송 기간), as(AS/교환·환불 기준), stock(재고 관련), sample(샘플 지원 조건).
 - notes: 셀러가 꼭 알아야 할 조건을 짧은 한국어 문장으로 최대 10개(공구가 준수, 합포장 불가, 발주 마감 시간, 공구 기간, 팔로워·매출 조건, 냉동/상온 분리배송, 드라이아이스 필수 등). 중복 금지.
 - brand: 대표 브랜드/상품군명. supplier: 공급사명(알면).
+- imageNo: 원본 텍스트에 [이미지#번호] 표시가 있으면, 그 상품의 사진 번호(같은 줄 또는 바로 위·아래 줄에 붙은 것, 파일명이 상품명과 맞는 것). 같은 상품의 구성(1봉/3봉)은 같은 번호를 써도 된다. 로고·제안서 캡처·표 화면처럼 상품 사진이 아니면 쓰지 말 것. 없으면 null.
+- photo: 첨부 이미지(캡처·사진·PDF 페이지) 안에 그 상품의 제품 사진(상품 컷·누끼·착용컷)이 보이면 {"img": 첨부 이미지 번호(1부터, 첨부 순서), "box": [x1, y1, x2, y2]}. box는 그 첨부 이미지의 가로·세로를 각각 0~1000으로 본 좌표로, 제품 사진 영역만 딱 맞게(옆의 글자·가격·표 칸은 빼고). 같은 상품의 구성(1봉/3봉)은 같은 사진을 써도 된다. 로고·아이콘·표만 있으면 null. 엑셀·워드에 박힌 사진([이미지#번호])으로 이미 짝지었으면 null.
 - 원본에 없는 값을 지어내지 말 것.
 
 다음 JSON 하나만 출력:
-{"brand":string|null,"supplier":string|null,"vatIncluded":boolean,"info":{"courier":null,"baseShip":null,"freeShip":null,"remoteExtra":null,"returnFee":null,"exchangeFee":null,"shipFrom":null,"dispatch":null,"as":null,"stock":null,"sample":null},"items":[{"category":string,"name":string,"listPrice":number|null,"groupPrice":number|null,"supplyPrice":number|null,"commissionRate":number|null,"shipping":string|null,"note":string|null}],"notes":[string]}
+{"brand":string|null,"supplier":string|null,"vatIncluded":boolean,"info":{"courier":null,"baseShip":null,"freeShip":null,"remoteExtra":null,"returnFee":null,"exchangeFee":null,"shipFrom":null,"dispatch":null,"as":null,"stock":null,"sample":null},"items":[{"category":string,"name":string,"listPrice":number|null,"groupPrice":number|null,"supplyPrice":number|null,"commissionRate":number|null,"shipping":string|null,"note":string|null,"imageNo":number|null,"photo":{"img":number,"box":[number,number,number,number]}|null}],"notes":[string]}
 `;
 async function initSample() {
   try {
@@ -1410,7 +1514,7 @@ $('#btnExtract').onclick = async () => {
   const t0 = Date.now(); let timer;
   try {
     status(st, '파일 읽는 중…');
-    const { text, images, skipped } = await collectInputs(files);
+    const { text, images, skipped, pool } = await collectInputs(files, true);
     const prompt = EXTRACT_PROMPT + '\n\n----- 원본 내용 -----\n' + (text.trim() || '(텍스트 없음. 첨부 이미지를 읽을 것)');
     ctl = new AbortController();
     timer = setInterval(() => status(st, `AI가 제안서를 읽는 중… ${Math.round((Date.now() - t0) / 1000)}초 (${$('#aiMode').value === 'quick' ? '보통 5~15초' : '보통 20~60초'})`), 1000);
@@ -1418,8 +1522,8 @@ $('#btnExtract').onclick = async () => {
     if (images.length) opts.images = images;
     const res = await sampleFn.json(prompt, opts);
     clearInterval(timer);
-    applyExtraction(res, $('#chkAppend').checked);
-    status(st, `${(res.items || []).length}개 상품을 읽어왔습니다 (${Math.round((Date.now() - t0) / 1000)}초). 노란 칸을 확인하세요.` + (skipped.length ? ` 읽지 못한 파일: ${skipped.join(', ')}` : ''), 'ok');
+    const nImg = await applyExtraction(res, $('#chkAppend').checked, pool, images);
+    status(st, `${(res.items || []).length}개 상품을 읽어왔습니다 (${Math.round((Date.now() - t0) / 1000)}초). 노란 칸을 확인하세요.` + (nImg ? ` 원본·캡처 속 제품 사진 ${nImg}개를 상품 이미지로 넣었어요 (잘못 잘렸으면 이미지 칸에 다시 붙여넣기).` : pool.length ? ` 원본 사진 ${pool.length}개는 상품과 짝짓지 못했어요 — 이미지 칸에 직접 붙여넣어 주세요.` : '') + (skipped.length ? ` 읽지 못한 파일: ${skipped.join(', ')}` : ''), 'ok');
     files = []; renderChips();
   } catch (e) {
     clearInterval(timer);
@@ -1432,8 +1536,21 @@ $('#btnExtract').onclick = async () => {
     status(st, msg, e?.code === 'cancelled' ? '' : 'err');
   } finally { btn.disabled = !files.length; $('#btnStop').hidden = true; }
 };
-function applyExtraction(res, append) {
+async function applyExtraction(res, append, pool, sent) {
   if (!append) { draft = newDraft(); }
+  // 원본 사진 → 상품 이미지 (AI가 짝지은 번호, 못 짝지었으면 사진 수 = 상품 수일 때 순서대로)
+  pool = pool || []; const its = res.items || [], byK = new Map(pool.map(p => [p.k, p])), cache = new Map();
+  const picOf = async k => { const p = byK.get(num(k)); if (!p) return null; if (!cache.has(p.k)) cache.set(p.k, shrinkImage(p.blob || await dataUrlToBlob(p.url), 220).catch(() => null)); return cache.get(p.k); };
+  // 첨부 캡처 안의 제품 사진 → 잘라서 상품 이미지로 (같은 영역은 한 번만 자름)
+  sent = sent || []; const crops = new Map();
+  const cropOf = ph => { const n = num(ph?.img), src = n ? sent[n - 1] : null; if (!src || !Array.isArray(ph.box)) return null; const key = n + ':' + ph.box.map(v => Math.round(v)).join(','); if (!crops.has(key)) crops.set(key, cropImage(src, ph.box, 220).catch(() => null)); return crops.get(key); };
+  const cropped = await Promise.all(its.map(it => cropOf(it.photo)));
+  const anyNo = its.some(it => byK.has(num(it.imageNo)));
+  if (!anyNo && !cropped.some(Boolean) && pool.length && pool.length === its.length) its.forEach((it, i) => { it.imageNo = pool[i].k; });
+  // 캡처 한 장을 여러 상품에 통째로 넣지 않음 (그 캡처는 제안서 화면이지 제품 사진이 아님)
+  const useCnt = {}; its.forEach(it => { const k = num(it.imageNo); if (byK.has(k)) useCnt[k] = (useCnt[k] || 0) + 1; });
+  const wholeCapture = k => { const p = byK.get(k); return p && p.blob && sent.includes(p.blob) && useCnt[k] > 1 && new Set(its.map(x => norm(String(x.name || '').replace(/\(.*?\)|\d+\s*(봉|개|팩|세트|입)/g, '')))).size > 1; };
+  const pics = await Promise.all(its.map((it, i) => cropped[i] || (wholeCapture(num(it.imageNo)) ? null : picOf(it.imageNo))));
   const vat = res.vatIncluded === false ? 1.1 : 1;
   const v = x => { const n = num(x); return n == null ? null : Math.round(n * vat); };
   if (res.brand) { draft.brand = res.brand; draft.info.brand = res.brand; }
@@ -1441,27 +1558,26 @@ function applyExtraction(res, append) {
   const ai = new Set(draft.aiKeys); if (res.brand) ai.add('brand');
   for (const k of AI_INFO_KEYS) { const val = res.info?.[k]; if (val != null && String(val).trim()) { draft.info[k] = String(val); ai.add(k); } }
   draft.aiKeys = [...ai];
-  for (const it of res.items || []) {
+  let nImg = 0;
+  its.forEach((it, i) => {
     let gp = v(it.groupPrice), cost = v(it.supplyPrice);
     const cr = num(it.commissionRate);
     if (cost == null && gp != null && cr != null) cost = Math.round(gp * (1 - cr));
     const extra = [it.shipping, it.note].filter(Boolean).join(' · ');
-    draft.rows.push({ cat: it.category || '', name: it.name || '', list: v(it.listPrice), gp, cost, supply: cost, ai: true, memo: extra });
-  }
+    const img = pics[i] || null; if (img) nImg++;
+    draft.rows.push({ cat: it.category || '', name: it.name || '', list: v(it.listPrice), gp, cost, supply: cost, ai: true, memo: extra, img });
+  });
   const notes = (res.notes || []).filter(Boolean);
   if (vat !== 1) notes.unshift('원본 금액이 VAT 별도로 표기되어 VAT 포함 금액(×1.1)으로 환산했습니다.');
   draft.notes = [draft.notes, ...notes].filter(Boolean).join('\n');
   saveDraft(); renderDraft();
   if (draft.aiKeys.length) $('#infoBox').open = true;
+  return nImg;
 }
 
 /* ============ 엑셀 내보내기 ============ */
 let dl = null;
-$('#btnExport').onclick = async () => {
-  const st = $('#exportStatus');
-  if (!draft.rows.length) { status(st, '상품이 한 개 이상 있어야 합니다.', 'err'); return; }
-  try {
-    status(st, '엑셀 만드는 중…');
+async function buildProposalXlsx() {
     await loadScript(CDN + 'exceljs/4.4.0/exceljs.min.js');
     const tpl = Uint8Array.from(atob(TEMPLATE_B64), c => c.charCodeAt(0)).buffer;
     const buf = await fillTemplate(ExcelJS, tpl, {
@@ -1470,42 +1586,358 @@ $('#btnExport').onclick = async () => {
       notes: (draft.notes || '').split('\n')
     });
     const d = new Date(), ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-    const name = `셀렉트인_공구제안서_${(draft.brand || '브랜드').replace(/[\\/:*?"<>|]/g, '').slice(0, 40)}_${ymd}.xlsx`;
+    const name = `셀렉트인_공구제안서_${(draft.brand || '브랜드').replace(/[\\/:*?"<>|]/g, '').slice(0, 40)}_${ymd}${commTag()}.xlsx`;
+    return { name, blob: new Blob([buf], { type: XLSX_MIME }) };
+}
+/* 파일명 끝 셀러 제안 수수료 표기: 모두 같으면 _15%, 상품마다 다르면 _10~15% */
+function commTag() {
+  const cs = [...new Set(draft.rows.map(r => calcRow(r, curPg()).comm).filter(c => c != null && isFinite(c)).map(c => Math.round(c * 1000) / 10))].sort((a, b) => a - b);
+  if (!cs.length) return '';
+  return '_' + (cs.length === 1 ? cs[0] : `${cs[0]}~${cs[cs.length - 1]}`) + '%';
+}
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+$('#btnExport').onclick = async () => {
+  const st = $('#exportStatus');
+  if (!draft.rows.length) { status(st, '상품이 한 개 이상 있어야 합니다.', 'err'); return; }
+  let f = null;
+  try {
+    status(st, '엑셀 만드는 중…');
+    f = await buildProposalXlsx(); const name = f.name;
     if (!dl) throw { code: 'unavailable' };
-    await dl.save({ filename: name, data: new Blob([buf]) });
+    await dl.save({ filename: name, data: f.blob });
     status(st, `저장했습니다: ${name}`, 'ok');
     recordProposal(name).then(m => { if (m) status(st, `저장했습니다: ${name} · ${m}`, 'ok'); });
+    offerDrive(f.name, f.blob, XLSX_MIME);
   } catch (e) {
-    const m = { declined: '저장을 취소했습니다.', unavailable: '이 화면에서는 파일 저장을 쓸 수 없습니다. 웹앱 주소로 열어주세요.', rate_limited: '저장 창이 이미 열려 있습니다.' }[e?.code] || ('엑셀을 만들지 못했습니다: ' + (e?.message || e));
+    const m = { declined: '내 컴퓨터 저장은 취소했습니다.', unavailable: '이 화면에서는 파일 저장을 쓸 수 없습니다. 웹앱 주소로 열어주세요.', rate_limited: '저장 창이 이미 열려 있습니다.' }[e?.code] || ('엑셀을 만들지 못했습니다: ' + (e?.message || e));
     status(st, m, e?.code === 'declined' ? '' : 'err');
+    if (f && e?.code !== 'rate_limited') offerDrive(f.name, f.blob, XLSX_MIME);
   }
 };
 
 /* ---------- 제안 이력: 팀 저장소 proposals + 구글 시트 '제안서 이력' 탭 ---------- */
 const PROP_TAB = '제안서 이력';
-const PROP_HEAD = ['제안일', '브랜드', '공급처', '카테고리', '상품명', '정상 판매가', '크림 최저가', '공구 판매가', '할인율', '공급가 (VAT포함)', '인플 마진', '인플 수수료율', '매입원가 (내부)', 'PG 수수료', '셀렉트인 순마진', '순마진율 (공급가 대비)', '결제창', '담당자', '파일명'];
+const PROP_HEAD = ['제안일', '브랜드', '공급처', '카테고리', '상품명', '정상 판매가', '크림 최저가', '공구 판매가', '할인율', '공급가 (VAT포함)', '인플 마진', '인플 수수료율', '매입원가 (내부)', 'PG 수수료', '셀렉트인 순마진', '순마진율 (공급가 대비)', '결제창', '담당자', '파일명', '드라이브 링크', '노션 링크'];
 function proposalRows(p) {
   return (p.rows || []).map(r => { const c = calcRow(r, p.pg); const pc = v => v == null ? '' : Math.round(v * 1000) / 10 + '%';
-    return [p.date, p.brand, p.supplier || '', r.cat || '', r.name || '', c.list ?? '', c.kream ?? '', c.gp ?? '', pc(c.disc), c.supply ?? '', c.inflMargin ?? '', pc(c.comm), c.cost ?? '', Math.round(c.pgFee) || '', c.ourMargin != null ? Math.round(c.ourMargin) : '', pc(c.ourRate), p.payment || '', p.manager || '', p.file || '']; });
+    return [p.date, p.brand, p.supplier || '', r.cat || '', r.name || '', c.list ?? '', c.kream ?? '', c.gp ?? '', pc(c.disc), c.supply ?? '', c.inflMargin ?? '', pc(c.comm), c.cost ?? '', Math.round(c.pgFee) || '', c.ourMargin != null ? Math.round(c.ourMargin) : '', pc(c.ourRate), p.payment || '', p.manager || '', p.file || '', p.drive || '', r.notion || '']; });
 }
-async function recordProposal(file) {
-  draft.pid ||= uid(); saveDraft();
-  const p = { id: hashId('pr', [draft.pid, draft.brand, todayStr()].join('|')), date: todayStr(), brand: draft.brand || '', supplier: draft.supplier || '', pg: curPg(), payment: draft.info?.payment || '', manager: draft.info?.manager || '', file: file || '',
-    rows: draft.rows.map(r => ({ cat: r.cat || '', name: r.name || '', list: num(r.list), kream: num(r.kream), gp: num(r.gp), supply: num(r.supply), cost: num(r.cost) })), savedAt: Date.now() };
+async function recordProposalCore(file, drive) {
+  draft.pid ||= uid(); draft.rows.forEach(r => { r.nid ||= uid(); }); saveDraft();
+  const p = { id: hashId('pr', [draft.pid, draft.brand, todayStr()].join('|')), pid: draft.pid, date: todayStr(), brand: draft.brand || '', supplier: draft.supplier || '', pg: curPg(), payment: draft.info?.payment || '', manager: draft.info?.manager || '', file: file || '', drive: drive || draft.driveUrl || '',
+    rows: draft.rows.map(r => ({ nid: r.nid, cat: r.cat || '', name: r.name || '', list: num(r.list), kream: num(r.kream), gp: num(r.gp), supply: num(r.supply), cost: num(r.cost) })), savedAt: Date.now() };
+  lastProp = p;
+  const nmsg = await syncNotion(p, { info: { ...(draft.info || {}) }, notes: draft.notes || '', live: true, imgs: Object.fromEntries(draft.rows.filter(r => r.nid && r.img).map(r => [r.nid, r.img])) }).catch(e => '노션 기록 실패 — ' + (e?.message || e?.code || ''));
   let list = [];
   try {
     if (db) { await db.doc('proposals/' + p.id).set(p); const snap = await db.collection('proposals').get(); list = snap.docs.map(d => d.data()); }
     else { const L = lsGet('sel_proposals', {}) || {}; L[p.id] = p; lsSet('sel_proposals', L); list = Object.values(L); }
-  } catch (e) { return '제안 이력 저장 실패 (' + (e.code || e.message || '') + ')'; }
-  list.sort((a, b) => String(b.date).localeCompare(String(a.date)) || (b.savedAt || 0) - (a.savedAt || 0));
+  } catch (e) { return '제안 이력 저장 실패 (' + (e.code || e.message || '') + ')' + (nmsg ? ' · ' + nmsg : ''); }
+  const smsg = await writeProposalSheet(list);
+  return nmsg ? smsg + ' · ' + nmsg : smsg;
+}
+async function writeProposalSheet(list) {
+  list = [...list].sort((a, b) => String(b.date).localeCompare(String(a.date)) || (b.savedAt || 0) - (a.savedAt || 0));
   const values = [PROP_HEAD, ...list.flatMap(proposalRows)];
   if (typeof sheetCfg !== 'undefined' && sheetCfg.id && sheetCfg.on !== false && typeof mcpApi !== 'undefined' && mcpApi) {
-    try { await sheetCall('batch_clear_values', { spreadsheetId: sheetCfg.id, ranges: [`'${PROP_TAB}'!A1:Z5000`] }); await sheetCall('update_values', { spreadsheetId: sheetCfg.id, range: `'${PROP_TAB}'!A1`, values }); return `제안 이력 ${list.length}건을 구글 시트에 기록했습니다`; }
+    try { await sheetCall('batch_clear_values', { spreadsheetId: sheetCfg.id, ranges: [`'${PROP_TAB}'!A1:Z5000`] }); await sheetCall('update_values', { spreadsheetId: sheetCfg.id, range: `'${PROP_TAB}'!A1`, values }); return `제안 이력 ${list.length}건을 구글 시트 '${PROP_TAB}' 탭에 기록 (노션 링크 포함)`; }
     catch (e) { return '제안 이력은 저장했지만 구글 시트 기록 실패 (' + (SHEET_ERR?.[e?.code] || e?.message || e?.code || '') + ')'; }
   }
   return `제안 이력 ${list.length}건 저장 (구글 시트 연결을 확인하세요)`;
 }
-$('#btnPropLog').onclick = async () => { const st = $('#exportStatus'); if (!draft.rows.length) { status(st, '상품이 한 개 이상 있어야 합니다.', 'err'); return; } status(st, '제안 이력에 기록 중…'); status(st, await recordProposal(''), 'ok'); };
+/* ---------- 노션 'SNS 공동구매 제품 자료' DB 자동 기록 (상품 1개 = 노션 1행) ----------
+   · 상품마다 고유번호(nid)로 노션 행을 기억 → 상품명·브랜드·날짜가 바뀌어도 같은 행을 갱신
+   · 기억이 없으면 같은 제목(브랜드_상품명) 행을 노션에서 찾아 갱신, 없을 때만 새로 만듦
+   · 속성은 변환기에서 값이 바뀐 칸만 씀 → 노션에서 사람이 고친 칸은 보호 (진행상태·제안허들 등은 아예 안 건드림)
+   · 본문은 '📋 변환기 제안 정보' 구역만 최신 값으로 교체 (구역 밖에 적은 메모는 그대로) */
+const NOTION_SERVER = 'Notion', NOTION_DS = '52fd05e4-79d7-4918-a8be-883d3f90533b';
+const NOTION_CATS = ['패션잡화(신발)', '리빙잡화', '생활잡화', '식품', '패션잡화(가방)', '생활리빙', '시즌제품', '의류'];
+const NOTION_AUTHORS = ['김승현', '엄지희', '진금영'];
+const NOTION_MARK = '## 📋 변환기 제안 정보';
+const NOTION_ERR = { needs_reauth: 'claude.ai 설정 → 커넥터에서 Notion을 다시 연결해 주세요', server_not_connected: 'claude.ai 설정 → 커넥터에서 Notion을 추가해 주세요', not_in_manifest: '이 페이지에서 Notion 사용을 허용하지 않았습니다 (상단 권한 메뉴)', approval_required: 'Notion 기록 승인이 필요합니다', blocked_by_policy: '조직 정책으로 Notion 기록이 막혀 있습니다' };
+let notionCfg = Object.assign({ on: true, author: '' }, lsGet('sel_notion', {}) || {});
+let lastProp = null, notionQueue = Promise.resolve();
+const wonTxt = v => v == null ? '-' : fmt(v) + '원';
+const pctTxt = v => v == null ? '-' : Math.round(v * 1000) / 10 + '%';
+const nEmpty = v => v == null || v === '' || v === '[]' || (Array.isArray(v) && !v.length);
+const nSame = (a, b) => JSON.stringify(a ?? '') === JSON.stringify(b ?? '');
+function notionCat(c) { c = String(c || '').trim(); if (!c) return null; return NOTION_CATS.find(o => o === c) || NOTION_CATS.find(o => o.includes(c) || c.includes(o.replace(/\(.*\)/, ''))) || null; }
+const notionTitle = (p, r) => [p.brand, String(r.name || '').trim()].filter(Boolean).join('_') || '(이름 없음)';
+function notionProps(p, r, ctx) {
+  const pr = { '제품명': notionTitle(p, r), '브랜드': p.brand || '', '업체명': p.supplier || '' };
+  const cat = notionCat(r.cat); if (cat) pr['카테고리'] = [cat];
+  if (notionCfg.author) pr['작성자'] = [notionCfg.author];
+  const smp = String(ctx.info?.sample || '').trim(); if (smp) pr['샘플'] = smp;
+  return pr;
+}
+function notionSection(p, r, ctx) {
+  const c = calcRow(r, p.pg); const L = [NOTION_MARK, '*제안서 변환기가 자동으로 고치는 구역입니다. 메모는 아래 구분선 밖에 적어주세요.*', '### 공구 가격 (' + p.date + ' 제안)'];
+  L.push('- 정상판매가: ' + wonTxt(c.list));
+  if (c.kream != null) L.push('- 크림 최저가: ' + wonTxt(c.kream));
+  L.push('- 공구 판매가: ' + wonTxt(c.gp) + (c.disc != null ? ' (할인 ' + pctTxt(c.disc) + ')' : ''));
+  L.push('- 공급가 (VAT포함): ' + wonTxt(c.supply));
+  L.push('- 인플 수수료: ' + pctTxt(c.comm) + ' (인플 마진 ' + wonTxt(c.inflMargin) + ')');
+  const cond = INFO_FIELDS.filter(([k]) => !['company', 'brand', 'manager', 'phone', 'channel', 'taxMail'].includes(k)).map(([k, l]) => [l, String(ctx.info?.[k] || '').trim().replace(/\n+/g, ' / ')]).filter(x => x[1]);
+  if (cond.length) { L.push('### 거래 조건'); cond.forEach(([l, v]) => L.push('- ' + l + ': ' + v)); }
+  const notes = String(ctx.notes || '').split('\n').map(s => s.trim()).filter(Boolean);
+  if (notes.length) { L.push('### 참고사항'); notes.forEach(n => L.push('- ' + n)); }
+  if (p.drive) L.push('### 제안서 파일', '- [' + (p.file || '드라이브 파일') + '](' + p.drive + ')');
+  L.push('---');
+  return L.join('\n');
+}
+async function notionMapGet(pid) {
+  try { if (db) { const s = await db.doc('notionMap/' + pid).get(); return s.exists ? (s.data().rows || {}) : {}; } } catch {}
+  return (lsGet('sel_notion_map', {}) || {})[pid] || {};
+}
+async function notionMapSet(pid, rows) {
+  try { if (db) { await db.doc('notionMap/' + pid).set({ rows, updatedAt: Date.now() }); return; } } catch {}
+  const all = lsGet('sel_notion_map', {}) || {}; all[pid] = rows; lsSet('sel_notion_map', all);
+}
+const plOf = res => res?.payload ?? res;
+function notionUrls(res) {
+  const pl = plOf(res);
+  if (pl && Array.isArray(pl.pages)) { const a = pl.pages.map(x => x?.url || x?.id).filter(Boolean); if (a.length) return a; }
+  const s = typeof pl === 'string' ? pl : JSON.stringify(pl || {});
+  const out = []; const re = /https?:\/\/(?:app\.|www\.)?notion\.(?:so|com)\/[^\s"'\\)<>]*?[0-9a-f]{32}/g; let m;
+  while ((m = re.exec(s))) if (!out.includes(m[0])) out.push(m[0]);
+  return out;
+}
+async function notionFindByTitle(m, title) {
+  const res = await m.callTool(NOTION_SERVER, 'notion-query-data-sources', { data: { mode: 'rows', data_source_url: 'collection://' + NOTION_DS, limit: 5,
+    filter: { type: 'group', operator: 'and', filters: [{ type: 'property', property: '제품명', propertyType: 'title', operator: 'string_is', value: { type: 'exact', value: title } }] } } });
+  const pl = plOf(res); const hit = Array.isArray(pl?.results) ? pl.results.find(x => x?.url) : null;
+  return hit ? { url: hit.url, row: hit } : null;
+}
+/* 본문의 변환기 구역만 교체: 페이지를 읽어 구역(표시 제목 ~ 다음 구분선)을 그대로 찾아 바꿈. 없으면 끝에 추가 */
+async function notionPutSection(m, url, section) {
+  let txt = '';
+  try { const f = plOf(await m.callTool(NOTION_SERVER, 'notion-fetch', { id: url })); txt = typeof f === 'string' ? f : String(f?.text || ''); } catch {}
+  const i = txt.indexOf(NOTION_MARK);
+  if (i >= 0) {
+    const j = txt.indexOf('\n---', i); const end = j >= 0 ? j + 4 : -1;
+    if (end > 0) {
+      const old = txt.slice(i, end);
+      if (old === section) return;
+      try { await m.callTool(NOTION_SERVER, 'notion-update-page', { page_id: url, command: 'update_content', content_updates: [{ old_str: old, new_str: section }] }); return; } catch {}
+    }
+  }
+  await m.callTool(NOTION_SERVER, 'notion-update-page', { page_id: url, command: 'insert_content', position: { type: 'end' }, content: section });
+}
+/* 상품 이미지 → 노션: 이 화면은 외부 주소로 파일을 못 올려서, JPEG를 SVG 안에 담아 노션 첨부(텍스트 파일)로 올림 */
+async function notionImage(m, dataUrl) {
+  const im = await new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = dataUrl; });
+  const w = im?.naturalWidth || 220, h = im?.naturalHeight || 220;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><image width="${w}" height="${h}" href="${dataUrl}" xlink:href="${dataUrl}"/></svg>`;
+  const pl = plOf(await m.callTool(NOTION_SERVER, 'notion-create-attachment', { filename: 'product.svg', content: svg }));
+  const src = pl?.markdown_source || (String(pl?.suggested_markdown || '').match(/file-upload:\/\/[^\s"')>]+/) || [])[0];
+  return src ? `![](${src})` : '';
+}
+let notionDelJob = null;
+function showNotionDel(job) {
+  const box = $('#notionDel'); if (!box) return;
+  notionDelJob = job;
+  if (!job || !job.items.length) { box.hidden = true; return; }
+  $('#notionDelTxt').textContent = `제안서에서 빠진 상품 ${job.items.length}개가 노션에 남아 있어요: ${job.items.map(x => x.title).join(', ')} — 노션 휴지통으로 보낼까요? (30일 안에 복구 가능)`;
+  box.hidden = false;
+}
+async function notionDelGo() {
+  const job = notionDelJob; if (!job) return; const btn = $('#notionDelYes'); btn.disabled = true;
+  try {
+    const m = mcpApi || await claude.use('mcp'); if (!m) throw { code: 'unavailable', message: '웹앱 주소로 열어주세요' };
+    const urls = job.items.map(x => x.url);
+    for (let i = 0; i < urls.length; i += 20) await m.callTool(NOTION_SERVER, 'notion-delete-pages', { page_ids: urls.slice(i, i + 20), user_confirmed: true });
+    const map = await notionMapGet(job.pid); job.items.forEach(x => delete map[x.key]); await notionMapSet(job.pid, map);
+    showNotionDel(null); status($('#exportStatus'), `노션에서 ${urls.length}개를 휴지통으로 보냈습니다.`, 'ok');
+  } catch (e) { $('#notionDelTxt').textContent = '노션에서 지우지 못했습니다 — ' + (NOTION_ERR[e?.code] || e?.message || e?.code || ''); }
+  finally { btn.disabled = false; }
+}
+async function syncNotion(p, ctx) {
+  if (!p || notionCfg.on === false) return '';
+  const rows = (p.rows || []).filter(r => String(r.name || '').trim());
+  if (!rows.length) return '';
+  const m = mcpApi || (window.claude ? (mcpApi = await claude.use('mcp')) : null);
+  if (!m) return '노션 기록은 claude.ai에서 열었을 때 됩니다';
+  const pid = p.pid || p.id, map = await notionMapGet(pid);
+  const keyOf = r => r.nid || hashId('r', String(r.name).trim());
+  let made = 0, upd = 0, fail = '';
+  for (const r of rows) {
+    const k = keyOf(r), want = notionProps(p, r, ctx), section = notionSection(p, r, ctx);
+    try {
+      let e = map[k];
+      if (!e || !e.url || e.url === 'created') {
+        const hit = await notionFindByTitle(m, want['제품명']).catch(() => null);
+        if (hit) {   // 노션에 이미 있는 행: 비어 있는 칸만 채우고 제목은 그대로
+          const fill = {}; for (const [kk, v] of Object.entries(want)) if (kk !== '제품명' && nEmpty(hit.row[kk])) fill[kk] = v;
+          if (Object.keys(fill).length) await m.callTool(NOTION_SERVER, 'notion-update-page', { page_id: hit.url, command: 'update_properties', properties: fill });
+          e = map[k] = { url: hit.url, props: { ...want }, matched: true }; upd++;
+        } else {
+          const img = ctx.imgs?.[r.nid]; let imgMd = '';
+          if (img) imgMd = await notionImage(m, img).catch(() => '');
+          const res = await m.callTool(NOTION_SERVER, 'notion-create-pages', { parent: { type: 'data_source_id', data_source_id: NOTION_DS }, allow_async: false, pages: [{ icon: '🛒', properties: want, content: (imgMd ? imgMd + '\n' : '') + section }] });
+          map[k] = { url: notionUrls(res)[0] || 'created', props: { ...want }, sec: section, imgH: imgMd ? hashId('i', img) : '', imgMd }; made++;
+          r.notion = map[k].url === 'created' ? '' : map[k].url; await notionMapSet(pid, map); continue;
+        }
+      } else {
+        const last = e.props || {}, diff = {};
+        for (const [kk, v] of Object.entries(want)) if (!nSame(v, last[kk])) diff[kk] = v;   // 변환기에서 바뀐 칸만
+        if (Object.keys(diff).length) await m.callTool(NOTION_SERVER, 'notion-update-page', { page_id: e.url, command: 'update_properties', properties: diff });
+        e.props = { ...last, ...want }; upd++;
+      }
+      if (e.sec !== section) { await notionPutSection(m, e.url, section); e.sec = section; }
+      const img = ctx.imgs?.[r.nid];
+      if (img && e.imgH !== hashId('i', img)) {
+        const md = await notionImage(m, img).catch(() => '');
+        if (md) {
+          let done = false;
+          if (e.imgMd) try { await m.callTool(NOTION_SERVER, 'notion-update-page', { page_id: e.url, command: 'update_content', content_updates: [{ old_str: e.imgMd, new_str: md }] }); done = true; } catch {}
+          if (!done) await m.callTool(NOTION_SERVER, 'notion-update-page', { page_id: e.url, command: 'insert_content', position: { type: 'start' }, content: md });
+          e.imgMd = md; e.imgH = hashId('i', img);
+        }
+      }
+      r.notion = e.url; await notionMapSet(pid, map);
+    } catch (err) { fail = NOTION_ERR[err?.code] || String(err?.message || err?.code || '').slice(0, 140); if (map[k]?.url) r.notion = map[k].url; if (['needs_reauth', 'server_not_connected', 'not_in_manifest', 'blocked_by_policy', 'not_granted'].includes(err?.code)) break; }
+  }
+  if (ctx.live && !fail) {
+    const live = new Set(rows.map(keyOf));
+    const gone = Object.entries(map).filter(([k, e]) => !live.has(k) && e?.url && e.url !== 'created' && !e.matched).map(([k, e]) => ({ key: k, url: e.url, title: e.props?.['제품명'] || '(이름 없음)' }));
+    showNotionDel(gone.length ? { pid, items: gone } : null);
+  }
+  const ok = [made && `노션 ${made}개 추가`, upd && `${upd}개 갱신`].filter(Boolean).join(' · ');
+  return fail ? (ok ? ok + ' · ' : '') + '노션 기록 실패 — ' + fail : ok;
+}
+function recordProposal(file, drive) {
+  const job = notionQueue.then(() => recordProposalCore(file, drive));
+  notionQueue = job.catch(() => {});
+  return job;
+}
+/* 지난 제안 이력 → 노션 한 번에 올리기 (이미 있는 행은 갱신) */
+let backfillArm = 0;
+async function backfillNotion() {
+  const st = $('#exportStatus'), btn = $('#btnNotionAll');
+  let list = [];
+  try { if (db) { const snap = await db.collection('proposals').get(); list = snap.docs.map(d => d.data()); } else list = Object.values(lsGet('sel_proposals', {}) || {}); } catch (e) { status(st, '제안 이력을 읽지 못했습니다 (' + (e.code || '') + ')', 'err'); return; }
+  list = list.filter(p => (p.rows || []).some(r => String(r.name || '').trim()));
+  if (!list.length) { status(st, '노션에 올릴 지난 제안서가 없습니다.', 'warn'); return; }
+  if (Date.now() - backfillArm > 6000) { backfillArm = Date.now(); btn.textContent = `제안서 ${list.length}건 올리기 — 한 번 더 눌러 확인`; setTimeout(() => { if (btn.textContent.includes('확인')) btn.textContent = '지난 제안서 노션에 올리기'; }, 6000); return; }
+  backfillArm = 0; btn.disabled = true; btn.textContent = '올리는 중…';
+  const job = notionQueue.then(async () => {
+    list.sort((a, b) => String(a.date).localeCompare(String(b.date)) || (a.savedAt || 0) - (b.savedAt || 0));
+    const msgs = [];
+    for (let i = 0; i < list.length; i++) {
+      const p = list[i]; status(st, `노션에 올리는 중… ${i + 1}/${list.length} · ${p.brand || '(브랜드 없음)'}`);
+      const msg = await syncNotion(p, { info: {}, notes: '' }).catch(e => '노션 기록 실패 — ' + (e?.message || e?.code || ''));
+      if (msg) msgs.push(msg);
+      try { if (db) await db.doc('proposals/' + p.id).set(p); else { const L = lsGet('sel_proposals', {}) || {}; L[p.id] = p; lsSet('sel_proposals', L); } } catch {}
+      if (/실패/.test(msg) && /커넥터|허용|정책/.test(msg)) break;
+    }
+    const smsg = await writeProposalSheet(list);
+    const failN = msgs.filter(x => /실패/.test(x)).length;
+    status(st, `지난 제안서 ${list.length}건 노션 반영 완료${failN ? ` (일부 실패 ${failN}건: ${msgs.find(x => /실패/.test(x))})` : ''} · ${smsg}`, failN ? 'warn' : 'ok');
+  });
+  notionQueue = job.catch(() => {});
+  try { await job; } finally { btn.disabled = false; btn.textContent = '지난 제안서 노션에 올리기'; }
+}
+(function initNotionUi() {
+  const on = $('#notionOn'), au = $('#notionAuthor'), all = $('#btnNotionAll'); if (!on || !au) return;
+  on.checked = notionCfg.on !== false;
+  NOTION_AUTHORS.forEach(a => { const o = document.createElement('option'); o.value = a; o.textContent = a; au.append(o); });
+  au.value = notionCfg.author || '';
+  on.onchange = () => { notionCfg.on = on.checked; lsSet('sel_notion', notionCfg); };
+  au.onchange = () => { notionCfg.author = au.value; lsSet('sel_notion', notionCfg); };
+  if (all) all.onclick = () => backfillNotion();
+  const dy = $('#notionDelYes'), dn = $('#notionDelNo'); if (dy) dy.onclick = () => notionDelGo(); if (dn) dn.onclick = () => showNotionDel(null);
+})();
+$('#btnPropLog').onclick = async () => {
+  const st = $('#exportStatus'); if (!draft.rows.length) { status(st, '상품이 한 개 이상 있어야 합니다.', 'err'); return; }
+  status(st, '제안 이력에 기록 중…'); status(st, await recordProposal(''), 'ok');
+  try { const f = await buildProposalXlsx(); offerDrive(f.name, f.blob, XLSX_MIME); } catch {}
+};
+
+/* ---------- 최종 제안서 → 구글 드라이브 '00.셀렉트인제안서' 폴더 (YES/NO 확인 후) ---------- */
+const DRIVE_SERVER = 'Google Drive', DRIVE_FOLDER = '14ukZyLkPnxPflzetEzuoSgv7ubaWsUJ_';
+/* Claude 없이 올리는 길: 「공동구매 db자동취합」 Apps Script 웹 앱 (기본 설정 탭에서 주소 저장) */
+const DEF_UPLOAD_URL = 'https://script.google.com/a/macros/select-in.com/s/AKfycbxd8i3L48V2ljAON-Z7YDVneMs9fSbogx0thgnwSRS4qHvdoy_6FugRcK1Y7dPwTi0/exec';
+const uploadUrl = () => String(settings.uploadUrl || lsGet('sel_upload_url', '') || DEF_UPLOAD_URL || '').trim();
+let driveJob = null, driveBusy = false;
+function offerDrive(name, blob, mime) {
+  const web = !!uploadUrl() && /\.xlsx$/i.test(name);
+  if (!web && !window.claude) return;
+  driveJob = { name, blob, mime, web, b64: null };
+  if (web) blobB64(blob).then(b => { if (driveJob && driveJob.blob === blob) driveJob.b64 = b; });   // 클릭 순간 바로 보내도록 미리 변환 (새 탭 차단 방지)
+  $('#driveInfo').textContent = `'${name}' 파일을 공유 드라이브 '00.셀렉트인제안서' 폴더에 최종본으로 등록합니다.` + (web ? ' (새 탭에서 등록 결과가 열립니다)' : '');
+  $('#driveAlt').hidden = true; $('#driveAltLink').href = uploadUrl() || '#';
+  $('#driveYes').disabled = false; $('#driveYes').textContent = 'YES · 드라이브에 올리기';
+  $('#driveModal').hidden = false; setTimeout(() => $('#driveYes').focus(), 30);
+}
+/* 웹 앱으로 보내기: 등록 페이지를 새 탭으로 열고, 페이지가 준비됐다고 알리면 파일을 메시지로 넘김 */
+let pendingUpload = null;
+function postToWebApp(job) {
+  pendingUpload = { name: job.name, brand: draft.brand || '', b64: job.b64, at: Date.now() };
+  const w = window.open(uploadUrl(), '_blank');
+  if (!w) throw new Error('새 탭이 막혔습니다');
+}
+window.addEventListener('message', e => {
+  const d = e.data || {}; if (d.type !== 'selectin-upload-ready' || !pendingUpload || !e.source) return;
+  let host = ''; try { host = new URL(e.origin).hostname; } catch {}
+  if (!/(^|\.)googleusercontent\.com$/.test(host) && host !== 'script.google.com') return;
+  if (Date.now() - pendingUpload.at > 5 * 60 * 1000) { pendingUpload = null; return; }
+  e.source.postMessage({ type: 'selectin-upload-file', name: pendingUpload.name, brand: pendingUpload.brand, b64: pendingUpload.b64 }, e.origin);
+  pendingUpload = null;
+});
+const closeDrive = () => { if (driveBusy) return; $('#driveModal').hidden = true; driveJob = null; };
+$('#driveNo').onclick = () => { closeDrive(); };
+$('#driveModal').addEventListener('click', e => { if (e.target.id === 'driveModal') closeDrive(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#driveModal').hidden) closeDrive(); });
+const blobB64 = b => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(b); });
+const DRIVE_ERR = {
+  needs_reauth: 'claude.ai 설정 → 커넥터에서 Google Drive를 다시 연결해 주세요.',
+  server_not_connected: 'claude.ai 설정 → 커넥터에서 Google Drive를 추가해 주세요.',
+  selection_required: 'Google Drive 커넥터가 여러 개라 선택이 필요합니다. 화면에 뜬 선택 창에서 골라주세요.',
+  not_in_manifest: '이 페이지에서 Google Drive 사용을 허용하지 않았습니다. 상단 권한 메뉴에서 허용한 뒤 다시 눌러주세요.',
+  approval_required: '드라이브 업로드 승인이 필요합니다. claude.ai에서 열고 승인 창에서 허용해 주세요.',
+  blocked_by_policy: '조직 정책으로 드라이브 업로드가 막혀 있습니다.',
+  tool_error: '드라이브에 올리지 못했습니다 (폴더 편집 권한을 확인해 주세요): ',
+  server_unavailable: '드라이브 응답이 없었습니다. 올라갔을 수도 있으니 폴더를 먼저 확인한 뒤 필요하면 다시 받아서 올려주세요.',
+  upstream_error: '드라이브 응답이 불확실합니다. 올라갔을 수도 있으니 폴더를 먼저 확인해 주세요.'
+};
+$('#driveYes').onclick = async () => {
+  const job = driveJob, st = $('#exportStatus'); if (!job || driveBusy) return;
+  if (job.web) {
+    if (!job.b64) { $('#driveYes').textContent = '준비 중… 다시 눌러주세요'; job.b64 = await blobB64(job.blob); $('#driveYes').textContent = 'YES · 드라이브에 올리기'; return; }
+    try { postToWebApp(job); } catch (e) { $('#driveInfo').textContent = '보내지 못했습니다: ' + (e?.message || e); $('#driveAlt').hidden = false; return; }
+    driveJob = null; $('#driveModal').hidden = true;
+    const folder = `https://drive.google.com/drive/folders/${DRIVE_FOLDER}`;
+    st.hidden = false; st.className = 'status ok'; st.textContent = `드라이브 등록 페이지를 열었습니다: ${job.name} — 새 탭에서 ✓ 표시가 뜨면 완료입니다 (통합DB에도 바로 취합). 새 탭에 '올리는 중'이 안 뜨면 받은 엑셀을 그 페이지에 끌어다 놓으세요 · `;
+    const a = document.createElement('a'); a.href = uploadUrl(); a.target = '_blank'; a.rel = 'noopener'; a.textContent = '등록 페이지 ↗'; st.append(a, ' · ');
+    const b = document.createElement('a'); b.href = folder; b.target = '_blank'; b.rel = 'noopener'; b.textContent = '폴더 열기 ↗'; st.append(b);
+    recordProposal(job.name, folder).catch(() => {});
+    return;
+  }
+  driveBusy = true; $('#driveYes').disabled = true; $('#driveYes').textContent = '올리는 중…';
+  try {
+    const m = (typeof mcpApi !== 'undefined' && mcpApi) || await claude.use('mcp');
+    if (!m) throw { code: 'capability_disabled' };
+    const lt = await m.listTools().catch(() => null);
+    const base = { title: job.name, parentId: DRIVE_FOLDER, contentMimeType: job.mime, disableConversionToGoogleType: true };
+    const small = job.blob.size <= 700 * 1024;
+    let res;
+    // 작은 파일은 본문에 바로 담아 보냄 (파일 첨부 방식이 막힌 환경 대비), 큰 파일만 파일 첨부 방식
+    if (small) res = await m.callTool(DRIVE_SERVER, 'create_file', { ...base, base64Content: await blobB64(job.blob) });
+    else if (lt?.fileArgs) res = await m.callTool(DRIVE_SERVER, 'create_file', { ...base, base64Content: { $file: { data: job.blob, name: job.name, type: job.mime } } });
+    else throw { code: 'too_big' };
+    const p = res?.payload || {}, url = p.viewUrl || p.webViewLink || p.alternateLink || (p.id ? `https://drive.google.com/file/d/${p.id}/view` : '');
+    driveBusy = false; closeDrive();
+    st.hidden = false; st.className = 'status ok'; st.textContent = `드라이브 '00.셀렉트인제안서'에 등록했습니다: ${job.name} `;
+    const a = document.createElement('a'); a.href = url || `https://drive.google.com/drive/folders/${DRIVE_FOLDER}`; a.target = '_blank'; a.rel = 'noopener'; a.textContent = url ? '파일 열기 ↗' : '폴더 열기 ↗'; st.append(a);
+    if (url) { draft.driveUrl = url; saveDraft(); recordProposal(job.name, url).catch(() => {}); }
+  } catch (e) {
+    driveBusy = false; $('#driveYes').disabled = false; $('#driveYes').textContent = 'YES · 다시 시도';
+    const msg = e?.code === 'too_big' ? '파일이 커서 이 화면에서는 드라이브로 보낼 수 없습니다. 받은 파일을 드라이브 폴더에 직접 올려주세요.'
+      : e?.code === 'capability_disabled' || e?.code === 'not_granted' ? '드라이브 업로드는 웹앱에서 열었을 때만 됩니다.'
+      : (DRIVE_ERR[e?.code] || '드라이브에 올리지 못했습니다: ') + (e?.code === 'tool_error' || !DRIVE_ERR[e?.code] ? (e?.message || e?.code || '').slice(0, 160) : '') + ` [${e?.code || '?'}${e?.message ? ' · ' + String(e.message).slice(0, 200) : ''} · ${Math.round(job.blob.size / 1024)}KB]`;
+    $('#driveInfo').textContent = msg;
+  }
+};
 
 /* ============ 사입 상품 (공유 저장소) ============ */
 let db = null;
@@ -1965,7 +2397,7 @@ $('#view-make').addEventListener('change', schedulePreview);
 $('#btnPdf').onclick = async () => {
   const st = $('#exportStatus'), btn = $('#btnPdf');
   if (!draft.rows.length) { status(st, '상품이 한 개 이상 있어야 합니다.', 'err'); return; }
-  btn.disabled = true;
+  btn.disabled = true; let pdfFile = null;
   try {
     status(st, 'PDF 만드는 중…'); renderPreview();
     await loadScript(CDN + 'html2canvas/1.4.1/html2canvas.min.js'); await loadScript(CDN + 'jspdf/2.5.1/jspdf.umd.min.js');
@@ -1985,13 +2417,16 @@ $('#btnPdf').onclick = async () => {
       pdf.addImage(part.toDataURL('image/jpeg', 0.92), 'JPEG', m, m, iw, part.height / pxPerMm);
     }
     const d = new Date(), ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-    const name = `셀렉트인_공구제안서_${(draft.brand || '브랜드').replace(/[\\/:*?"<>|]/g, '').slice(0, 40)}_${ymd}.pdf`;
+    const name = `셀렉트인_공구제안서_${(draft.brand || '브랜드').replace(/[\\/:*?"<>|]/g, '').slice(0, 40)}_${ymd}${commTag()}.pdf`;
     if (!dl) throw { code: 'unavailable' };
-    await dl.save({ filename: name, data: pdf.output('blob') });
+    pdfFile = { name, blob: pdf.output('blob') };
+    await dl.save({ filename: name, data: pdfFile.blob });
     status(st, `저장했습니다: ${name}`, 'ok');
     recordProposal(name).then(msg => { if (msg) status(st, `저장했습니다: ${name} · ${msg}`, 'ok'); });
+    offerDrive(pdfFile.name, pdfFile.blob, 'application/pdf');
   } catch (e) {
-    status(st, e?.code === 'declined' ? '저장을 취소했습니다.' : e?.code === 'unavailable' ? '이 화면에서는 파일 저장을 쓸 수 없습니다.' : 'PDF를 만들지 못했습니다: ' + (e?.message || e?.code || ''), e?.code === 'declined' ? '' : 'err');
+    if (pdfFile && e?.code === 'declined') offerDrive(pdfFile.name, pdfFile.blob, 'application/pdf');
+    status(st, e?.code === 'declined' ? '내 컴퓨터 저장은 취소했습니다.' : e?.code === 'unavailable' ? '이 화면에서는 파일 저장을 쓸 수 없습니다.' : 'PDF를 만들지 못했습니다: ' + (e?.message || e?.code || ''), e?.code === 'declined' ? '' : 'err');
   } finally { btn.disabled = false; }
 };
 
@@ -2080,10 +2515,11 @@ addEventListener('scroll', () => placeCombo(), true); addEventListener('resize',
 /* ============ 설정 ============ */
 function renderSettings() {
   const g = $('#setGrid'); g.innerHTML = '';
-  INFO_FIELDS.forEach(([k, label]) => { if (k === 'brand') return; const l = document.createElement('label'); l.className = 'fld'; l.append(label); const ta = document.createElement('textarea'); ta.id = 'set-' + k; ta.rows = String(settings.info[k] || '').includes('\n') ? 2 : 1; ta.value = settings.info[k] ?? ''; l.append(ta); g.append(l); });
+  INFO_FIELDS.forEach(([k, label]) => { if (k === 'brand') return; const l = document.createElement('label'); l.className = 'fld'; const hd = document.createElement('span'); hd.className = 'fld-hd'; hd.append(label); l.append(hd); const ta = document.createElement('textarea'); ta.id = 'set-' + k; ta.rows = String(settings.info[k] || '').includes('\n') ? 2 : 1; ta.value = settings.info[k] ?? ''; l.append(ta); g.append(l); });
   $('#setPg').value = +(settings.pg * 100).toFixed(2); $('#setComm').value = +(settings.comm * 100).toFixed(2); $('#setMargin').value = +(settings.margin * 100).toFixed(2);
   $('#bkComm').value = +(settings.comm * 100).toFixed(2);
   $('#setOwn').value = settings.ownBrands ?? OWN_DEFAULT;
+  $('#setUpload').value = uploadUrl();
 }
 async function saveOwnBrands() {
   const v = $('#setOwn').value.split(',').map(x => x.split('/').map(t => t.trim()).filter(Boolean).join('/')).filter(Boolean).join(', ');
@@ -2095,6 +2531,13 @@ async function saveOwnBrands() {
   if (typeof renderSettle === 'function' && !$('#view-settle').hidden) renderSettle();
 }
 $('#btnSaveOwn').onclick = saveOwnBrands;
+$('#btnSaveUpload').onclick = async () => {
+  const v = $('#setUpload').value.trim(), st = $('#uploadSt');
+  if (v && !/^https:\/\/script\.google\.com\/(a\/[^/]+\/)?macros\/s\/[\w-]+\/exec/.test(v)) { st.textContent = 'Apps Script 웹 앱 주소(…/exec)를 넣어주세요.'; return; }
+  settings.uploadUrl = v; lsSet('sel_upload_url', v);
+  try { if (db) await db.doc('config/main').set({ ...settings, updatedAt: Date.now() }); else lsSet('sel_settings', settings); st.textContent = v ? `저장됨 · 이제 드라이브 등록은 Claude 연결 없이 됩니다${db ? ' (팀원 화면에도 반영)' : ''}` : '비웠습니다 · 드라이브 등록은 claude.ai 커넥터로 합니다'; }
+  catch (e) { st.textContent = '저장하지 못했습니다 (' + (e.code || e.message || '') + ')'; }
+};
 $('#setOwn').addEventListener('change', saveOwnBrands);
 $('#setOwn').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveOwnBrands(); } });
 $('#btnSaveSet').onclick = async () => {
@@ -2161,7 +2604,7 @@ function settleDef() {
   return {
     meta: { title: '', brand: '', seller: '', start: '', end: '' }, excl: '취소, 미결제취소', retSt: '반품', shipIds: [], shipFile: '', pw: '1111', multi: null,
     raw: [], opts: [], stats: null, groups: {}, defBr: 30, defSr: 15, ship: null,
-    brandInfo: { company: '', ceo: '', bizNo: '', mail: '', account: '', terms: '세금계산서 발행일로부터 7일 이내', shipBase: 3000, freeOver: 50000, remoteFee: 3000, returnFee: 6000, exchangeFee: 6000 },
+    brandInfo: { company: '', ceo: '', bizNo: '', mail: '', account: '', terms: '세금계산서 발행일로부터 7일 이내', shipBase: 3000, freeOver: 50000, remoteFee: 3000, returnFee: 6000, exchangeFee: 6000, mergeBy: '주문번호', boxMax: null, noMerge: '' },
     seller: { type: '셀러 개인', proof: '현금영수증', contact: '', account: '', payFee: 0, terms: '증빙 발행일로부터 7일 이내' },
     me: { ...SELECTIN_DEF }, platformFee: null,
     bExtras: [], sExtras: [], events: [], notesB: '', notesS: '', claim: null
@@ -2176,7 +2619,7 @@ function migrateS() {   // 예전 '증정' 추가항목 → 이벤트로 이동,
   S.link ??= '셀렉트인 링크';
   if (!S.pfMig) { if (num(S.platformFee) === 0) S.platformFee = null; S.pfMig = 1; }   // 예전 기본값 0 → 기본 설정 PG % 사용
   S.events ||= []; S.retSt ??= '반품'; S.sellerSt ??= SELLER_ST_DEF; if (!S.exMig) { if (String(S.sellerSt).replace(/\s/g, '') === '구매확정,배송완료') S.sellerSt = SELLER_ST_DEF; S.exMig = 1; }   // 교환은 고객이 상품을 받은 판매 → 셀러 정산 포함 S.shipIds ||= []; S.remoteIds ||= [];
-  for (const [k, v] of Object.entries({ shipBase: 3000, freeOver: 50000, remoteFee: 3000, returnFee: 6000, exchangeFee: 6000 })) if (S.brandInfo && !(k in S.brandInfo)) S.brandInfo[k] = v;
+  for (const [k, v] of Object.entries({ shipBase: 3000, freeOver: 50000, remoteFee: 3000, returnFee: 6000, exchangeFee: 6000, mergeBy: '주문번호', boxMax: null, noMerge: '' })) if (S.brandInfo && !(k in S.brandInfo)) S.brandInfo[k] = v;
   if (/반품/.test(S.excl || '')) S.excl = String(S.excl).split(',').map(x => x.trim()).filter(x => x && x !== '반품').join(', ');
   const old = (S.bExtras || []).filter(e => e.kind === '증정');
   if (old.length) { S.events.push(...old.map(e => ({ name: e.name, qty: e.qty, unit: e.unit, payer: e.sign === '차감' ? '브랜드' : '셀렉트인' }))); S.bExtras = S.bExtras.filter(e => e.kind !== '증정'); }
@@ -2364,35 +2807,92 @@ function paidDiffs() {
 }
 
 /* ---------- 배송비 자동 계산 (브랜드 배송 정책) ---------- */
-function computeShipping() {
+/* 배송 묶음 계산 — 합포장 기준(주문번호 / 같은 날·같은 받는 사람·같은 주소), 1박스 최대 수량, 합포장 불가 상품 */
+const noMergeList = () => String(S.brandInfo.noMerge || '').split(/[,\n]/).map(x => norm(x)).filter(x => x.length >= 2);
+function shipPlan() {
   if (!S.raw?.length) return null;
   const B = S.brandInfo, ex = exclSet(), rt = retSet(), shipSet = new Set(S.shipIds || []), remote = new Set(S.remoteIds || []);
   const useShip = S.stats?.basis === '출고', byOrder = !!S.shipByOrder;
   const inc = S.raw.filter(r => useShip ? (byOrder ? shipSet.has(r.orderNo) : shipSet.has(r.id)) : !ex.has(r.status));
-  const orders = new Map(); let missing = false;
+  const byAddr = (B.mergeBy || '주문번호') !== '주문번호', boxMax = num(B.boxMax) > 0 ? num(B.boxMax) : null, nm = noMergeList();
+  const base = num(B.shipBase), free = num(B.freeOver), rf = num(B.remoteFee);
+  const addrKey = r => norm(r.addr || '') || norm(r.zip || '');
+  const ships = new Map(); let missing = false; const paidShip = new Map();   // 주문번호별 고객 결제 배송비 (주문 엑셀 '배송비 합계')
+  for (const r of inc) { const ok = r.orderNo || r.id; if (r.ship != null) paidShip.set(ok, Math.max(paidShip.get(ok) || 0, num(r.ship) || 0)); }
+  // 같은 주문번호는 무조건 한 박스 묶음 — 주소·받는 분은 주문 안의 어느 줄에든 있으면 그 값을 씀 (줄마다 주소가 비어 있어도 갈라지지 않게)
+  const ordInfo = new Map();
+  for (const r of inc) { const ok = r.orderNo || r.id, o = ordInfo.get(ok) || { ak: '', who: '', date: '' }; o.ak ||= addrKey(r); o.who ||= norm(r.recv || r.buyer || ''); o.date ||= r.date || ''; ordInfo.set(ok, o); }
   for (const r of inc) {
-    const k = r.orderNo || r.id; const g = S.groups[groupKey(r.opt, r.prod)]; const gp = num(g?.gp); if (gp == null) missing = true;
-    const o = orders.get(k) || { amt: 0, remote: false }; o.amt += (gp || 0) * r.qty;
-    if (remote.has(r.id) || remote.has(r.orderNo) || isRemote(r.addr || '') || isRemote(r.zip || '')) o.remote = true;
-    orders.set(k, o);
+    const o = ordInfo.get(r.orderNo || r.id), ak = o.ak, who = o.who;
+    const k = byAddr && ak && who ? `${o.date}|${who}|${ak}` : (r.orderNo || r.id);
+    const gk = groupKey(r.opt, r.prod), g = S.groups[gk], gp = num(g?.gp); if (gp == null) missing = true;
+    let s = ships.get(k); if (!s) { s = { k, date: r.date || '', recv: r.recv || r.buyer || '', addr: r.addr || r.zip || '', orders: new Set(), lines: [], amt: 0, remote: false }; ships.set(k, s); }
+    if (!s.addr && (r.addr || r.zip)) s.addr = r.addr || r.zip; if (!s.recv && (r.recv || r.buyer)) s.recv = r.recv || r.buyer;
+    s.orders.add(r.orderNo || r.id); s.amt += (gp || 0) * r.qty;
+    const name = String(g?.name || gk), solo = nm.length && nm.some(t => norm(name + ' ' + gk + ' ' + (r.opt || '') + ' ' + (r.prod || '')).includes(t));
+    s.lines.push({ name, qty: r.qty, solo, ret: rt.has(r.status), status: r.status });
+    if (remote.has(r.id) || remote.has(r.orderNo) || isRemote(r.addr || '') || isRemote(r.zip || '')) s.remote = true;
   }
-  const base = num(B.shipBase), free = num(B.freeOver), rf = num(B.remoteFee), retF = num(B.returnFee), exF = num(B.exchangeFee);
-  const under = [...orders.values()].filter(o => free == null || free <= 0 || o.amt < free).length;
-  const rem = [...orders.values()].filter(o => o.remote).length;
+  const out = [...ships.values()].map(s => {
+    // 박스 수: 합포장 가능한 상품끼리 한 묶음, 합포장 불가 상품은 상품마다 따로 — 각 묶음은 1박스 최대 수량으로 나눔
+    const packs = []; const mq = s.lines.filter(l => !l.solo).reduce((t, l) => t + l.qty, 0); if (mq) packs.push(mq);
+    const soloBy = {}; s.lines.filter(l => l.solo).forEach(l => { soloBy[l.name] = (soloBy[l.name] || 0) + l.qty; }); packs.push(...Object.values(soloBy));
+    const boxes = packs.reduce((t, q) => t + (boxMax ? Math.ceil(q / boxMax) : 1), 0) || 1;
+    const isFree = free != null && free > 0 && s.amt >= free;
+    const baseFee = base && !isFree ? base * boxes : 0, remoteFee = rf && s.remote ? rf * boxes : 0;
+    const notes = []; if (s.orders.size > 1) notes.push(`주문 ${s.orders.size}건 합포장`); if (Object.keys(soloBy).length) notes.push('합포장 불가: ' + Object.keys(soloBy).join(', ')); if (boxMax && packs.some(q => q > boxMax)) notes.push(`${boxMax}개 넘어 박스 추가`);
+    const cust = [...s.orders].reduce((t, o) => t + (paidShip.get(o) || 0), 0), custN = [...s.orders].filter(o => (paidShip.get(o) || 0) > 0).length;
+    const calc = baseFee + remoteFee, hasPaid = paidShip.size > 0;
+    if (hasPaid && cust !== calc) notes.push(cust > calc ? `고객 배송비 ${fmt(cust - calc)}원 더 받음` : `고객 배송비 ${fmt(calc - cust)}원 덜 받음`);
+    return { ...s, orders: [...s.orders], boxes, isFree, baseFee, remoteFee, notes, cust, custN };
+  }).sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.recv).localeCompare(String(b.recv), 'ko'));
+  return { list: out, inc, missing, byAddr, boxMax, base, free, rf, hasPaid: paidShip.size > 0, paidOrders: [...paidShip.values()].filter(v => v > 0).length, paidSum: [...paidShip.values()].reduce((t, v) => t + v, 0) };
+}
+function computeShipping() {
+  const P = shipPlan(); if (!P) return null;
+  const B = S.brandInfo, rt = retSet(), retF = num(B.returnFee), exF = num(B.exchangeFee), inc = P.inc;
+  const paidBoxes = P.list.filter(s => s.baseFee).reduce((t, s) => t + s.boxes, 0), remBoxes = P.list.filter(s => s.remoteFee).reduce((t, s) => t + s.boxes, 0);
   const rets = inc.filter(r => rt.has(r.status)).length, exch = inc.filter(r => r.status === '교환').length;
   const rows = [];
-  if (base && under) rows.push({ kind: '배송비', name: free ? `기본배송비 (${fmt(free)}원 미만 주문)` : '기본배송비', qty: under, unit: base, sign: '가산', auto: true });
-  if (rf && rem) rows.push({ kind: '배송비', name: '제주/도서산간 추가 배송비', qty: rem, unit: rf, sign: '가산', auto: true });
+  if (P.base && paidBoxes) rows.push({ kind: '배송비', name: (P.free ? `기본배송비 (${fmt(P.free)}원 미만 출고)` : '기본배송비') + ' — 배송비 내역 시트 참고', qty: paidBoxes, unit: P.base, sign: '가산', auto: true });
+  if (P.rf && remBoxes) rows.push({ kind: '배송비', name: '제주/도서산간 추가 배송비', qty: remBoxes, unit: P.rf, sign: '가산', auto: true });
   if (retF && rets) rows.push({ kind: 'CS', name: '반품 배송비 (왕복 · 단순변심 기준)', qty: rets, unit: retF, sign: '가산', auto: true });
   if (exF && exch) rows.push({ kind: 'CS', name: '교환 배송비 (왕복 · 단순변심 기준)', qty: exch, unit: exF, sign: '가산', auto: true });
   S.bExtras = S.bExtras.filter(e => !e.auto && !/주문데이터 자동/.test(e.name || '')).concat(rows);
-  S.shipCalc = { orders: orders.size, under, rem, rets, exch, missing };
+  const orders = new Set(P.list.flatMap(s => s.orders)).size;
+  S.shipCalc = { hasPaid: P.hasPaid, paidOrders: P.paidOrders, paidSum: P.paidSum, calcSum: P.list.reduce((t, s) => t + s.baseFee + s.remoteFee, 0), diffShips: P.list.filter(s => P.hasPaid && s.cust !== s.baseFee + s.remoteFee).length, orders, ships: P.list.length, merged: P.list.filter(s => s.orders.length > 1).length, boxes: P.list.reduce((t, s) => t + s.boxes, 0), under: paidBoxes, free: P.list.filter(s => s.isFree).length, rem: remBoxes, rets, exch, missing: P.missing, byAddr: P.byAddr };
   return S.shipCalc;
 }
-const shipPolicyText = () => { const B = S.brandInfo, p = []; if (num(B.shipBase)) p.push(num(B.freeOver) ? `${fmt(num(B.freeOver))}원 미만 배송비 ${fmt(num(B.shipBase))}원` : `배송비 ${fmt(num(B.shipBase))}원`); if (num(B.remoteFee)) p.push(`제주/도서산간 +${fmt(num(B.remoteFee))}원`); if (num(B.returnFee)) p.push(`반품 ${fmt(num(B.returnFee))}원(왕복)`); if (num(B.exchangeFee)) p.push(`교환 ${fmt(num(B.exchangeFee))}원(왕복)`); return p.length ? '배송 정책: ' + p.join(' · ') : ''; };
+const shipPolicyText = () => { const B = S.brandInfo, p = []; if (num(B.shipBase)) p.push(num(B.freeOver) ? `${fmt(num(B.freeOver))}원 미만 배송비 ${fmt(num(B.shipBase))}원` : `배송비 ${fmt(num(B.shipBase))}원`); if (num(B.remoteFee)) p.push(`제주/도서산간 +${fmt(num(B.remoteFee))}원`); if (num(B.returnFee)) p.push(`반품 ${fmt(num(B.returnFee))}원(왕복)`); if (num(B.exchangeFee)) p.push(`교환 ${fmt(num(B.exchangeFee))}원(왕복)`); p.push(`합포장 ${(B.mergeBy || '주문번호') === '주문번호' ? '주문번호 기준' : '같은 날·같은 받는 분·같은 주소 기준'}`); if (num(B.boxMax) > 0) p.push(`1박스 최대 ${num(B.boxMax)}개`); if (String(B.noMerge || '').trim()) p.push(`합포장 불가: ${String(B.noMerge).trim()}`); return p.length ? '배송 정책: ' + p.join(' · ') : ''; };
 function shipNote() {
   const c = S.shipCalc; if (!c) return '';
-  return `배송비 자동 계산: 주문 ${c.orders}건 중 기준 미만 ${c.under}건 · 제주/도서산간 ${c.rem}건 · 반품 ${c.rets}건 · 교환 ${c.exch}건` + (c.missing ? ' · ⚠ 공구가가 빈 상품군이 있어 기준금액 판단이 부정확할 수 있음' : '') + (S.raw.some(r => r.addr || r.zip) || (S.remoteIds || []).length ? '' : ' · 주소 정보가 없어 제주/도서산간은 출고 내역을 넣어야 계산됩니다') + ' · 반품·교환이 불량 사유면 해당 줄을 지우세요';
+  if (c.ships == null) return `배송비 자동 계산: 주문 ${c.orders}건 중 기준 미만 ${c.under}건 · 제주/도서산간 ${c.rem}건 · 반품 ${c.rets}건 · 교환 ${c.exch}건 · [배송비 다시 계산]을 누르면 합포장 기준으로 다시 셉니다`;
+  const noAddr = !S.raw.some(r => r.addr || r.zip);
+  return `배송비 자동 계산: 주문 ${c.orders}건 → 출고 ${c.ships}건${c.merged ? ` (합포장 ${c.merged}건)` : ''} · 박스 ${c.boxes}개 · 무료배송 ${c.free}건 · 유료 ${c.under}박스 · 제주/도서산간 ${c.rem}박스 · 반품 ${c.rets}건 · 교환 ${c.exch}건` + (c.hasPaid ? ` · 고객이 배송비 낸 주문 ${c.paidOrders}건 ${fmt(c.paidSum)}원 / 정책 계산 ${fmt(c.calcSum)}원` + (c.diffShips ? ` (⚠ ${c.diffShips}건 차이 — 배송비 내역 시트 비고 확인)` : ' ✓ 일치') : ' · 주문 엑셀에 배송비 열이 없어 고객 결제 배송비는 대조하지 않았습니다') + (c.missing ? ' · ⚠ 공구가가 빈 상품군이 있어 무료배송 판단이 부정확할 수 있음' : '') + (noAddr ? (c.byAddr ? ' · ⚠ 주문 엑셀에 주소가 없어 주문번호 기준으로만 합포장했습니다' : '') + ((S.remoteIds || []).length ? '' : ' · 주소 정보가 없어 제주/도서산간은 출고 내역을 넣어야 계산됩니다') : '') + ' · 반품·교환이 불량 사유면 해당 줄을 지우세요 · 주문별 내역은 브랜드 정산서의 「배송비 내역」 시트';
+}
+/* 브랜드 정산서에 붙는 「배송비 내역」 시트 — 출고 묶음별 무료/유료·합포장·박스 수 */
+function shipSheet(wb) {
+  const P = shipPlan(); if (!P || !P.list.length) return;
+  const ws = wb.addWorksheet('배송비 내역', { views: [{ showGridLines: false, state: 'frozen', ySplit: 4 }] });
+  [2, 11, 10, 22, 40, 7, 12, 8, 10, 11, 11, 12, 12, 9, 30].forEach((w_, i) => ws.getColumn(i + 1).width = w_);
+  const x = xw(ws), HD = { b: true, fill: 'D9D9D9', al: 'center' };
+  x.put('B2', '배송비 내역 (출고 묶음별)', { sz: 13, b: true, c: '1F3864', box: false });
+  x.put('B3', shipPolicyText(), { c: '595959', box: false });
+  ['주문일', '받는 분', '지역', '상품 · 수량', '박스', '출고 금액', '무료배송', '기본 배송비', '도서산간', '배송비 합계', '고객 결제 배송비', '배송비 낸 주문', '주문번호', '비고'].forEach((h, i) => x.put(String.fromCharCode(66 + i) + 4, h, HD));
+  const mask = n => { const t = String(n || '').trim(); return t.length <= 1 ? t : t[0] + '*'.repeat(Math.max(1, t.length - 2)) + (t.length > 2 ? t[t.length - 1] : ''); };
+  const region = a => String(a || '').trim().split(/\s+/).slice(0, 2).join(' ');
+  P.list.forEach((s, i) => {
+    const r = 5 + i, lines = {}; s.lines.forEach(l => { const k = l.name + (l.ret ? ' (반품)' : ''); lines[k] = (lines[k] || 0) + l.qty; });
+    [s.date, mask(s.recv), region(s.addr), Object.entries(lines).map(([k, q]) => `${k} ${q}`).join(' / '), s.boxes, s.amt, s.isFree ? '무료' : '유료', s.baseFee, s.remoteFee, { formula: `I${r}+J${r}`, result: s.baseFee + s.remoteFee }, P.hasPaid ? s.cust : '', P.hasPaid ? s.custN : '', s.orders.join(', '), s.notes.join(' · ')]
+      .forEach((v, j) => x.put(String.fromCharCode(66 + j) + r, v, { sz: 9, al: [4, 5, 7, 8, 9, 10, 11].includes(j) ? 'right' : j === 3 || j >= 12 ? 'left' : 'center', fmt: [5, 7, 8, 9, 10].includes(j) ? WONF : [4, 11].includes(j) ? '#,##0' : undefined, ...(j === 6 && !s.isFree ? { c: 'C00000', b: true } : {}), ...(j === 10 && P.hasPaid && s.cust !== s.baseFee + s.remoteFee ? { c: 'C00000', b: true } : {}) }));
+  });
+  const rr = 5 + P.list.length;
+  x.m(`B${rr}:E${rr}`, `합계 · 출고 ${P.list.length}건`, { b: true, fill: 'FBE4D5', al: 'center' });
+  x.put('F' + rr, { formula: `SUM(F5:F${rr - 1})`, result: P.list.reduce((t, s) => t + s.boxes, 0) }, { b: true, fill: 'FBE4D5', al: 'right', fmt: '#,##0' });
+  x.put('G' + rr, '', { fill: 'FBE4D5' }); x.put('H' + rr, `유료 ${P.list.filter(s => !s.isFree).length}건`, { b: true, fill: 'FBE4D5', al: 'center' });
+  ['I', 'J', 'K', 'L', 'M'].forEach(c => x.put(c + rr, { formula: `SUM(${c}5:${c}${rr - 1})`, result: P.list.reduce((t, s) => t + (c === 'I' ? s.baseFee : c === 'J' ? s.remoteFee : c === 'K' ? s.baseFee + s.remoteFee : c === 'L' ? (s.cust || 0) : (s.custN || 0)), 0) }, { b: true, fill: 'FBE4D5', al: 'right', fmt: c === 'M' ? '#,##0' : WONF }));
+  x.put('N' + rr, '', { fill: 'FBE4D5' }); x.put('O' + rr, '', { fill: 'FBE4D5' });
+  x.put('B' + (rr + 2), '※ 고객 결제 배송비 = 스마트스토어 주문 엑셀의 배송비 합계(주문번호별 1번). 정책 계산과 다르면 빨간색. 반품·교환 왕복 배송비는 본문 CS 항목에 따로 들어갑니다. 받는 분 이름은 일부 가렸습니다.', { sz: 9, c: '808080', box: false, wrap: false });
 }
 
 /* ---------- 출고 내역 (업체 통합발주서 등) ---------- */
@@ -2629,7 +3129,7 @@ function renderSettle() {
   $('#shClear').hidden = !S.shipIds?.length;
   const l = document.createElement('label'); l.className = 'fld'; l.append('정산 제외 주문상태 (취소 등)');
   const ex = document.createElement('input'); ex.value = S.excl; ex.onchange = () => { S.excl = ex.value; aggregate(); saveS(); renderSettle(); showStats(); }; l.append(ex); $('#sMeta').append(l);
-  fieldGrid($('#sBrandGrid'), S.brandInfo, [['company', '상호'], ['ceo', '대표자'], ['bizNo', '사업자등록번호'], ['mail', '세금계산서 메일'], ['account', '정산 계좌'], ['terms', '결제 조건'], ['shipBase', '기본 배송비', 'num'], ['freeOver', '무료배송 기준 (이 금액 미만 부과)', 'num'], ['remoteFee', '제주/도서산간 추가', 'num'], ['returnFee', '반품 배송비 (왕복)', 'num'], ['exchangeFee', '교환 배송비 (왕복)', 'num']]);
+  fieldGrid($('#sBrandGrid'), S.brandInfo, [['company', '상호'], ['ceo', '대표자'], ['bizNo', '사업자등록번호'], ['mail', '세금계산서 메일'], ['account', '정산 계좌'], ['terms', '결제 조건'], ['shipBase', '기본 배송비', 'num'], ['freeOver', '무료배송 기준 (이 금액 미만 부과)', 'num'], ['remoteFee', '제주/도서산간 추가', 'num'], ['returnFee', '반품 배송비 (왕복)', 'num'], ['exchangeFee', '교환 배송비 (왕복)', 'num'], ['mergeBy', '합포장 기준', 'select', ['주문번호', '같은 날·받는 분·주소']], ['boxMax', '1박스 최대 수량 (비우면 제한 없음)', 'num'], ['noMerge', '합포장 불가 상품 (상품군 이름 일부, 쉼표로)']], k => { if (['shipBase', 'freeOver', 'remoteFee', 'returnFee', 'exchangeFee', 'mergeBy', 'boxMax', 'noMerge'].includes(k) && S.raw?.length) { computeShipping(); renderExtras(); status($('#shipCalcStatus'), shipNote(), S.shipCalc?.missing ? 'warn' : 'ok'); } sChanged(); });
   if (/벤더/.test(S.seller.type || '') && S.seller.type !== '벤더사') S.seller.type = '벤더사';
   fieldGrid($('#sSellerGrid'), S.seller, [['type', '셀러 유형', 'select', ['셀러 개인', '셀러 사업자', '벤더사']], ['proof', '정산 증빙', 'select', ['현금영수증', '세금계산서', '사업소득(3.3%)']], ['contact', '연락처 / 메일'], ['account', '정산 계좌'], ['payFee', '결제수수료 셀러 부담 %', 'num'], ['terms', '지급 조건']]);
   { const ts = $('#sSellerGrid select'), ps = $('#sSellerGrid').querySelectorAll('select')[1];
@@ -3266,7 +3766,7 @@ async function exportSettle(mode) {
     await loadScript(CDN + 'exceljs/4.4.0/exceljs.min.js');
     const wb = new ExcelJS.Workbook();
     if (mode === 'brand' && R.own) { status(st, '자사 사입 공구라 브랜드 정산서가 없습니다.', 'err'); return; }
-    if (mode !== 'seller' && !R.own) brandDoc(wb, R);
+    if (mode !== 'seller' && !R.own) { brandDoc(wb, R); shipSheet(wb); }
     if (mode !== 'brand') sellerDoc(wb, R);
     optSheet(wb, R, true, mode === 'seller');
     if (mode === 'all') internalSheets(wb, R);
@@ -3625,4 +4125,5 @@ if (window.claude) {
   });
 }
 </script>
+
 </body></html>
