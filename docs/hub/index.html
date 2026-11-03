@@ -489,6 +489,9 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 @media (max-width:900px){.evcols{grid-template-columns:1fr}.evgrp+.evgrp{margin-top:14px}}
 
 .otab.ohome{position:sticky;left:0;z-index:2}
+
+.sz2{display:flex;flex-direction:column;gap:2px;align-items:center;font-size:12.5px;color:var(--sub);line-height:1.45}
+.sz2 span{white-space:nowrap}.sz2 em{font-style:normal;color:var(--mute)}
 </style>
 </head>
 <body>
@@ -2493,6 +2496,12 @@ function krList(){
 }
 
 /* 크림 추천 · 큐레이션: 요즘 뜨는 상품 / 가격 조정 필요 / 재고 있는데 안 건 상품 / 내가 최저가 */
+function szTwo(L){   // 사이즈 목록 → 2단 (윗줄·아랫줄 반씩, 줄당 최대 6개, 넘으면 +N)
+  var u=[]; (L||[]).forEach(function(x){ if(u.indexOf(x)<0) u.push(x); });
+  if(!u.length) return '—';
+  var h=Math.ceil(u.length/2), a=u.slice(0,Math.min(h,6)), b=u.slice(h,h+6), more=u.length-a.length-b.length;
+  return '<div class="sz2"><span>'+esc(a.join(' · '))+'</span>'+(b.length?'<span>'+esc(b.join(' · '))+(more>0?' <em>+'+more+'</em>':'')+'</span>':'')+'</div>';
+}
 function krCuration(el){
   XL_CUR=null;
   var acctF=function(r){ return KF.acct==='전체'||r.account===KF.acct; }, kindF=function(r){ return KF.kind==='전체'||krKind(r)===KF.kind; };
@@ -2528,7 +2537,7 @@ function krCuration(el){
       '<th>상품 · 사이즈</th><th>내 입찰가</th><th>크림 최저가</th><th>차이</th><th>판매</th><th>예상 마진</th>')+
     card('package','재고 있는데 안 걸어둔 상품','앱 현재고가 있고 최근 팔렸는데 지금 입찰이 없는 사이즈', idle.map(function(o){ return '<tr>'+nm(o, '<b>'+esc(o.option)+'</b>')+'<td class="r num">'+c2_(won(o.q)+'개','앱 재고')+'</td><td class="r num">'+c2_(o.s30+'개','30일 판매')+'</td><td class="r num">'+c2_(won(o.last),'최근 체결')+'</td><td class="r num">'+c2_(mTxt(o.m),'그 가격이면')+'</td><td></td></tr>'; }),
       '<th>상품 · 사이즈</th><th>앱 재고</th><th>판매</th><th>최근 체결가</th><th>예상 마진</th><th></th>')+
-    card('trophy','내가 최저가인 상품','1위(최저가)로 걸려 있는 사이즈가 많은 순', first.map(function(o){ return '<tr>'+nm(o)+'<td class="r num">'+c2_(o.n+'개','1위 사이즈')+'</td><td class="c" style="white-space:normal"><span class="sm">'+esc(o.sizes.join(', '))+'</span></td><td class="r num">'+c2_(o.s30+'개','30일 판매')+'</td><td></td><td></td></tr>'; }),
+    card('trophy','내가 최저가인 상품','1위(최저가)로 걸려 있는 사이즈가 많은 순', first.map(function(o){ return '<tr>'+nm(o)+'<td class="r num">'+c2_(o.n+'개','1위 사이즈')+'</td><td class="c">'+szTwo(o.sizes)+'</td><td class="r num">'+c2_(o.s30+'개','30일 판매')+'</td><td></td><td></td></tr>'; }),
       '<th>상품</th><th>1위</th><th>사이즈</th><th>판매</th><th></th><th></th>')+
     '<p class="sm" style="margin:8px 0 0">예상 마진 = 가격 × 실제 정산률('+Object.keys(rate).map(function(a){ return a+' '+Math.round(rate[a]*100)+'%'; }).join(' · ')+') − 앱 원가 · 크림 최저가는 상품 전체 기준</p>';
 }
