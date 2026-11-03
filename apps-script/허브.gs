@@ -2602,14 +2602,14 @@ function hubMcdBuild_(ym, by) {
     if (An) cp.getRange(An, 1).setValue('※ ' + ML.slice(0, 3).join('·') + ' 채널·쇼핑몰·셀러별 값은 각 월 마감 데이터에서 해당 월 주문만 집계(취소 제외)한 고정값 · ' + ML[3] +
       '은 OPS 월마감 데이터(사방넷 + 네이버 커머스API) 기준 · 공동구매/일반주문 구분 규칙(상품명 "셀러명 X 제품명") 동일 적용 · 증감률 "-"는 비교월 매출이 0인 경우');
   }
-  try { hubMcdCharts_(ss, nd, shl.length); } catch (e) {}
+  var chartErr = ''; try { hubMcdCharts_(ss, nd, shl.length); } catch (e) { chartErr = String(e.message || e); }
   SpreadsheetApp.flush();
 
   // 이력 저장 (다음 달 비교용)
   hubMcdHistPut_(ym, { g: R.g, s: R.s, tot: R.tot, cnt: R.cnt, ex: R.ex, rt: R.rt, cc: R.cc, net: R.net, ded: R.ded, ch: R.ch, shops: R.shops, sellers: R.sellers }, by);
   var resp = UrlFetchApp.fetch('https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export?format=xlsx', { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
   if (resp.getResponseCode() !== 200) throw new Error('대시보드 엑셀 내보내기 실패 ' + resp.getResponseCode());
-  return { blob: resp.getBlob().setName(name + '.xlsx'), url: ss.getUrl(), id: ss.getId(), sum: { tot: R.tot, g: R.g, s: R.s, cnt: R.cnt, ex: R.ex, rt: R.rt, cc: R.cc, net: R.net, lines: L.length, src: D.src } };
+  return { blob: resp.getBlob().setName(name + '.xlsx'), url: ss.getUrl(), id: ss.getId(), sum: { tot: R.tot, g: R.g, s: R.s, cnt: R.cnt, ex: R.ex, rt: R.rt, cc: R.cc, net: R.net, lines: L.length, src: D.src, chartErr: chartErr } };
 }
 /** 차트: 엑셀→구글시트 변환 때 빠지는 경우가 있어 매번 다시 그림 (담당자 양식과 같은 위치·제목) */
 function hubMcdCharts_(ss, nd, ns) {
