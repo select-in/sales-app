@@ -914,13 +914,6 @@ function salesDraw(){
   var grpTbl=function(title, L, showCorp){ var t=L.reduce(function(a,o){ return a+o.amt; },0)||1; return '<h3 style="margin:18px 0 6px;font-size:15px">'+title+'</h3><div class="tblwrap"><table class="tbl"><thead><tr><th>'+(showCorp?'법인':'채널그룹')+'</th><th class="r">주문</th><th class="r">매출</th><th style="width:24%">비중</th><th class="r">정산 예정</th><th class="r">이익</th><th class="r">이익률</th></tr></thead><tbody>'+
     L.map(function(o){ var c=o.amt-o.live; return '<tr><td><b>'+esc(o.k||'기타')+'</b>'+(o.live?' <span class="sm">실시간 '+won(o.live)+'</span>':'')+'</td><td class="r num">'+won(o.cnt)+'</td><td class="r num"><b>'+won(o.amt)+'</b></td><td><div class="sbar"><i style="width:'+Math.max(1,Math.round(o.amt/t*100))+'%"></i><span>'+(o.amt/t*100).toFixed(1)+'%</span></div></td><td class="r num">'+(o.st?won(o.st):'—')+'</td><td class="r num">'+won(o.profit)+'</td><td class="r num">'+(c?(o.profit/c*100).toFixed(1)+'%':'—')+'</td></tr>'; }).join('')+'</tbody></table></div>'; };
   var pay='';
-  if (full && adm){
-    var P7={}, end=ymdAdd(td,6);
-    R.forEach(function(r){ if(r[10] && r[10]>=td && r[10]<=end && !r[11] && cf(r)) P7[r[10]]=(P7[r[10]]||0)+(+r[6]||0); });
-    var pk=Object.keys(P7).sort(), ptot=pk.reduce(function(t,k){ return t+P7[k]; },0);
-    pay='<h3 style="margin:18px 0 6px;font-size:15px">입금 예정 7일 <small style="color:var(--mute);font-weight:400">관리자만 · 입금확인 안 된 정산예정액 · 합계 '+won(ptot)+'원</small></h3>'+
-      (pk.length?'<div class="tblwrap"><table class="tbl"><tbody>'+pk.map(function(k){ return '<tr><td>'+esc(k)+'</td><td class="r num"><b>'+won(P7[k])+'</b></td></tr>'; }).join('')+'</tbody></table></div>':'<div class="empty">7일 안에 입금 예정이 없어요</div>');
-  }
   el.innerHTML =
     '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:12px"><h2 style="margin:0">'+(full?'':'<a href="#sales" style="color:inherit;text-decoration:none">')+'매출 <small>'+esc(rg.a===rg.b?rg.a:rg.a+' ~ '+rg.b)+'</small>'+(full?'':' <i class="ti ti-chevron-right" style="font-size:16px;color:var(--mute)"></i></a>')+'</h2>'+
       '<div class="sfilt"><div class="seg" id="sfc">'+['전체','겐더샵','셀렉트인'].map(function(c){ return '<button data-v="'+c+'" class="'+(SF.corp===c?'on':'')+'">'+c+'</button>'; }).join('')+'</div>'+
@@ -1050,15 +1043,26 @@ function mcLoad(){
   return api('month_close',{ym:MC.ym}).then(function(j){ MC.d=j; el.style.opacity=1; mcDraw(); })
     .catch(function(e){ el.style.opacity=1; var m=String(e&&e.message||''); el.innerHTML='<div class="card"><div class="empty" style="overflow-wrap:anywhere">'+(m==='unknown_action'?'월 마감 서버 기능이 곧 켜져요 (서버 새 버전 배포 대기 중). 다른 메뉴는 그대로 쓰시면 돼요.':'마감 자료를 만들지 못했어요 · '+esc(m))+'</div></div>'; });
 }
+/* 입금 예정 7일 — 관리자만 (월 마감 화면) */
+function mcPayDraw(){
+  var el=$('mcpay'); if(!el) return;
+  if(!isAdmin()||!SALES||!SALES.cols||SALES.cols.indexOf('payDay')<0){ el.remove(); return; }
+  var td=SALES.today||today(), end=ymdAdd(td,6), P7={};
+  SALES.rows.forEach(function(r){ if(r[10] && r[10]>=td && r[10]<=end && !r[11]) P7[r[10]]=(P7[r[10]]||0)+(+r[6]||0); });
+  var pk=Object.keys(P7).sort(), ptot=pk.reduce(function(t,k){ return t+P7[k]; },0);
+  el.innerHTML='<h2>입금 예정 7일 <small>관리자만 · 입금확인 안 된 정산예정액 · 합계 '+won(ptot)+'원</small></h2>'+
+    (pk.length?'<div class="tblwrap"><table class="tbl"><tbody>'+pk.map(function(k){ return '<tr><td>'+esc(k)+'</td><td class="r num"><b>'+won(P7[k])+'</b></td></tr>'; }).join('')+'</tbody></table></div>':'<div class="empty">7일 안에 입금 예정이 없어요</div>');
+}
 VIEWS.close = {
   html: function(){
     if(!MC.ym) MC.ym=mcYms()[0];
     return '<div class="ph"><div><h1>월 마감</h1><p>지난달 매출 마감 자료를 점검하고 메일로 보내요 · 매출판 원본 + 사방넷 대조</p></div><div class="acts">'+
       (isAdmin()?'<select class="inp" id="mcym" style="width:auto">'+mcYms().map(function(m){ return '<option value="'+m+'"'+(m===MC.ym?' selected':'')+'>'+m.slice(0,4)+'년 '+(+m.slice(5))+'월</option>'; }).join('')+'</select><button class="btn" data-xl="1"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button><button class="btn" id="mcref"><i class="ti ti-refresh"></i><span>다시 점검</span></button>':'')+
-      '</div></div><div id="mcbox"></div>';
+      '</div></div><div class="card" id="mcpay" style="margin-bottom:16px"><div class="empty">입금 예정 불러오는 중…</div></div><div id="mcbox"></div>';
   },
   bind: function(){
-    if(!isAdmin()){ $('mcbox').innerHTML='<div class="card"><div class="empty">월 마감은 관리자만 볼 수 있어요</div></div>'; return; }
+    if(!isAdmin()){ if($('mcpay')) $('mcpay').remove(); $('mcbox').innerHTML='<div class="card"><div class="empty">월 마감은 관리자만 볼 수 있어요</div></div>'; return; }
+    salesLoad().then(mcPayDraw).catch(function(){ var e=$('mcpay'); if(e) e.innerHTML='<div class="empty">입금 예정을 불러오지 못했어요</div>'; });
     $('mcym').onchange=function(){ MC.ym=this.value; MC.d=null; mcLoad(); };
     $('mcref').onclick=function(){ mcLoad(); };
     if(MC.d && MC.d.report && MC.d.report.ym===MC.ym) mcDraw(); else { MC.d=null; mcLoad(); }
