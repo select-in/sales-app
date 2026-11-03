@@ -516,6 +516,13 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 .otbl tr:not(.grph) td:first-child{padding-left:26px}
 .mgh{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:10px 12px;margin:12px 0 2px;background:var(--soft);border-radius:8px;cursor:pointer}
 .mgh:first-child{margin-top:4px}.mgh span{font-size:12px;color:var(--sub)}
+
+/* 사이드 메뉴: 대분류 접기/펼치기 */
+.side .ngrp>.grp{display:flex;width:100%;align-items:center;justify-content:space-between;border:0;background:none;cursor:pointer;font-family:inherit;text-align:left;border-radius:8px}
+.side .ngrp>.grp:hover{background:var(--bg);color:var(--sub)}
+.side .ngrp>.grp .ti{font-size:14px;transition:transform .15s}
+.side .ngrp:not(.open)>.grp .ti{transform:rotate(-90deg)}
+.side .ngrp .nitems{display:none}.side .ngrp.open .nitems{display:block}
 </style>
 </head>
 <body>
@@ -763,13 +770,15 @@ var MENU = [
 ];
 function lowCount(){ return S.products.filter(function(p){ return stockState(p)==='low'; }).length; }
 function shell(){
+  var navOpen=lsGet('hubNavOpen')||{};
   var nav = MENU.map(function(g){
-    var ps='';
-    return (g.grp?'<div class="grp">'+g.grp+'</div>':'')+g.items.map(function(i){
+    var ps='', open = !!navOpen[g.grp];
+    if (!g.grp) return g.items.map(function(i){ return '<a class="it" href="#'+i.k+'" data-k="'+i.k+'"><i class="ti ti-'+i.ic+'"></i>'+i.t+'</a>'; }).join('');
+    return '<div class="ngrp'+(open?' open':'')+'" data-ng="'+esc(g.grp)+'"><button class="grp" type="button"><span>'+g.grp+'</span><i class="ti ti-chevron-down"></i></button><div class="nitems">'+g.items.map(function(i){
       var sh = i.sub && i.sub!==ps && g.items.some(function(x){ return x.sub && x.sub!==i.sub; }) ? '<div class="sgrp">'+i.sub+'</div>' : ''; ps = i.sub||'';
       var badge = i.k==='stock' && lowCount() ? '<span class="cnt">'+lowCount()+'</span>' : i.soon ? '<span class="soon">준비중</span>' : '';
       return sh+'<a class="it" href="#'+i.k+'" data-k="'+i.k+'"><i class="ti ti-'+i.ic+'"></i>'+i.t+badge+'</a>';
-    }).join('');
+    }).join('')+'</div></div>';
   }).join('');
   $('app').innerHTML =
     '<aside class="side"><a class="brand" href="#home" title="홈으로"><img src="../icon-192.png" alt=""><div>셀렉트인 OPS<small>통합 운영</small></div></a>'+
@@ -786,9 +795,11 @@ function shell(){
     '</nav>';
   $('sout').onclick = logout;
   $('mrefresh').onclick = syncAll;
+  document.querySelectorAll('.side .ngrp>.grp').forEach(function(b){ b.onclick=function(){ var g=b.parentNode; g.classList.toggle('open'); var o=lsGet('hubNavOpen')||{}; o[g.dataset.ng]=g.classList.contains('open'); lsSet('hubNavOpen',o); }; });
 }
 function setActive(k){
   document.querySelectorAll('[data-k]').forEach(function(a){ a.classList.toggle('on', a.dataset.k===k || (k==='more' && false)); });
+  var cur=document.querySelector('.side .ngrp .it.on'); if(cur){ var g=cur.closest('.ngrp'); if(g && !g.classList.contains('open')) g.classList.add('open'); }
   var mk = ['home','products','stock','cost'].indexOf(k)<0 ? 'more' : k;
   document.querySelectorAll('.tabbar a').forEach(function(a){ a.classList.toggle('on', a.dataset.k===mk); });
 }
