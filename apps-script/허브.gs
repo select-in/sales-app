@@ -102,6 +102,8 @@ function doPost(e) {
         return hubOut_(hubMcdTplPut_(req));
       case 'mc_hist_put': if (!admin) return hubOut_({ error: '관리자만 저장할 수 있습니다' });   // 월마감 대시보드 비교용 월별 이력
         return hubOut_(hubMcdHistSet_(req.rows, me));
+      case 'mc_hist_ops': if (!admin) return hubOut_({ error: '관리자만 실행할 수 있습니다' });   // 지난 달 비교 이력을 OPS 기준으로 다시 계산
+        return hubOut_({ ok: true, rows: (req.yms || []).map(function (m) { return hubMcdHistFromOps_(hubMcYm_(m), me && me.name); }) });
       case 'mc_dash': if (!admin) return hubOut_({ error: '관리자만 만들 수 있습니다' });   // 월마감 대시보드(내부 회의용) 만들기 → 구글시트 링크
         return hubOut_((function () { var x = hubMcdBuild_(hubMcYm_(req.ym), me && me.name); return { ok: true, url: x.url, sum: x.sum }; })());
       case 'month_close_send': if (!admin) return hubOut_({ error: '관리자만 보낼 수 있습니다' });
@@ -2371,11 +2373,9 @@ function hubMcdSt_(s) { s = String(s || ''); return /취소|CANCEL/i.test(s) ? '
 function hubMcdLines_(ym) {
   var tz = 'Asia/Seoul', from = ym + '-01', to = hubMcEnd_(ym), corp = {}, out = [], src = {}, N = hubNum_;
   SpreadsheetApp.openById(HUB_SALES_ID).getSheetByName('설정').getRange('A57:B120').getValues().forEach(function (r) { var id = String(r[0]).trim(); if (id) corp[id] = String(r[1]).trim(); });
-  corp[HUB_MCD.sel] = '셀렉트인';   // 셀렉트인하우스 스마트스토어 (매출판 설정 ③에는 겐더샵으로 되어 있어도 담당자 양식 기준 셀렉트인)
   var push = function (d, shop, id, name, opt, cost, qty, amt, stx) {
     var c = corp[id] || '확인필요'; if (c === '제외') return;
     var st = hubMcdSt_(stx);
-    if (id === HUB_MCD.sel && st === '정상구매') return;   // 셀렉트인하우스 정상 매출은 네이버에서
     var sel = c === '셀렉트인' ? hubMcdGongu_(name) : null;
     out.push({ d: d, shop: shop, corp: c, name: name, opt: opt, cost: cost, qty: qty, amt: amt, st: st, kind: c === '셀렉트인' ? (sel ? '공동구매' : '일반주문') : '-', seller: sel || '' });
   };
@@ -2421,6 +2421,19 @@ function hubMcdLines_(ym) {
     }
   });
   src.nv = '네이버 커머스API ' + nv.length + '줄';
+  // 3) 그 외 OPS 매출(리셀·도소매·공동구매 등): 매출판 일별입력 그대로 (상품 단위가 없어 건수만큼 행 분할, 상품 순위에서는 제외)
+  var rep = hubMonthCloseBuild_(ym, { rows: true, noApi: true }), ex = 0;
+  (rep.rows || []).forEach(function (r) {
+    if (r.grp === '사방넷' || r.grp === '스마트스토어' || !r.amt) return;
+    var cnt = Math.max(1, Math.round(r.cnt || 1)), shop = r.pf || r.grp, gb = r.corp === '셀렉트인' && (r.grp === '공동구매' || /공구/.test(shop)), sel = gb ? (hubMcdGongu_(r.mall || r.memo) || '(미확인)') : '';
+    for (var i = 0; i < cnt; i++) {
+      var a = i === cnt - 1 ? r.amt - Math.round(r.amt / cnt) * (cnt - 1) : Math.round(r.amt / cnt);
+      out.push({ d: r.d, shop: shop, corp: r.corp, name: shop + ' 판매 (OPS 매출판 ' + r.grp + ')', opt: '', cost: r.costed ? Math.round(r.cost / cnt) : 0, qty: 1, amt: a, st: '정상구매',
+        kind: r.corp === '셀렉트인' ? (gb ? '공동구매' : '일반주문') : '-', seller: sel, agg: true });
+    }
+    ex += r.amt;
+  });
+  src.ops = 'OPS 매출판(리셀·도소매 등) ' + won_(ex) + '원';
   out.sort(function (a, b) { return a.d < b.d ? -1 : a.d > b.d ? 1 : a.shop < b.shop ? -1 : a.shop > b.shop ? 1 : a.corp < b.corp ? -1 : a.corp > b.corp ? 1 : 0; });
   return { lines: out, src: src };
 }
@@ -2429,10 +2442,11 @@ function hubMcdAgg_(L) {
   var nc = L.filter(function (o) { return o.st !== '취소'; }), G = function (o) { return o.corp === '겐더샵'; }, S = function (o) { return o.corp === '셀렉트인'; };
   var by = function (src, key, pred, cnt) { var c = {}; src.forEach(function (o) { if (pred && !pred(o)) return; var k = key(o); c[k] = (c[k] || 0) + (cnt ? 1 : o.amt); }); return c; };
   var sum = function (src, pred) { return src.reduce(function (t, o) { return t + (!pred || pred(o) ? o.amt : 0); }, 0); };
-  var nm = function (o) { return o.name; }, cl = function (st, p) { return by(L, nm, function (o) { return o.st === st && (!p || p(o)); }, true); };
+  var nm = function (o) { return o.name; }, cl = function (st, p) { return by(L, nm, function (o) { return !o.agg && o.st === st && (!p || p(o)); }, true); };
+  var P = function (f) { return function (o) { return !o.agg && f(o); }; };
   var R = {
     shops: by(nc, function (o) { return o.shop; }), gshops: by(nc, function (o) { return o.shop; }, G), sshops: by(nc, function (o) { return o.shop; }, S),
-    gprod: by(nc, nm, G), sprod: by(nc, nm, S), sellers: by(nc, function (o) { return o.seller; }, function (o) { return S(o) && o.kind === '공동구매' && o.seller; }),
+    gprod: by(nc, nm, P(G)), sprod: by(nc, nm, P(S)), sellers: by(nc, function (o) { return o.seller; }, function (o) { return S(o) && o.kind === '공동구매' && o.seller; }),
     tot: sum(nc), g: sum(nc, G), s: sum(nc, S), cnt: nc.length,
     ex: L.filter(function (o) { return o.st === '교환'; }).length, rt: L.filter(function (o) { return o.st === '반품'; }).length, cc: L.filter(function (o) { return o.st === '취소'; }).length,
     ded: sum(L, function (o) { return o.st === '반품'; }),
@@ -2496,7 +2510,7 @@ function hubMcdBuild_(ym, by) {
     raw.getRange(2, 15, L.length, 2).setValues(L.map(function (o) { return [o.kind, o.seller]; }));
   }
   raw.getRange(n + 3, 1).setValue('※ 데이터 출처: (1) ' + D.src.sbn + ' — 주문일 기준, 원주문 행만 사용(반품회수·교환발송 등 재생성 행 제외) · 겐더샵 전체 채널 + 셀렉트인 스마트스토어 외 채널 + 셀렉트인 스마트스토어의 취소·반품·교환 건 ' +
-    '(2) ' + D.src.nv + ' — 셀렉트인 스마트스토어 결제완료 주문(상품·일자별, 건수만큼 행 분할) (3) 주문구분: 셀렉트인 상품명이 "셀러명 X 제품명" 형식이면 공동구매(셀러명=X 앞부분), 그 외 일반주문 · 생성 ' + hubNow_() + ' OPS 월마감');
+    '(2) ' + D.src.nv + ' — 셀렉트인 스마트스토어 결제완료 주문(상품·일자별, 건수만큼 행 분할) (3) ' + (D.src.ops || '') + ' — 크림·포이즌·도소매 등은 매출판 일별입력(OPS 월마감과 같은 원본) 일자·채널 합계를 건수만큼 행 분할 · 법인은 OPS 설정(쇼핑몰ID→법인) 기준 (4) 주문구분: 셀렉트인 상품명이 "셀러명 X 제품명" 형식이면 공동구매(셀러명=X 앞부분), 그 외 일반주문 · 생성 ' + hubNow_() + ' OPS 월마감');
 
   // 2) 기간 문구
   ss.getSheets().forEach(function (s) { s.createTextFinder('\\d{4}-\\d{2}-01 ~ \\d{4}-\\d{2}-\\d{2}').useRegularExpression(true).replaceAllWith(period); });
@@ -2583,7 +2597,7 @@ function hubMcdBuild_(ym, by) {
       if (nv2 !== vals[i][j]) cp.getRange(i + 1, j + 1).setValue(nv2);
     }
     cp.getRange(1, 1).setValue(ym.slice(0, 4) + '년 ' + ML.join(' · ') + ' 매출 비교 분석 대조표');
-    cp.getRange(2, 1).setValue(ML.slice(0, 3).join('·') + ' 수치는 각 월 마감(OPS 월마감 이력) 인용 · ' + ML[3] + ' 수치는 본 파일 월별매출/RAW데이터 시트 기준 · 매출은 취소제외(반품 포함) 기준');
+    cp.getRange(2, 1).setValue(ML.slice(0, 3).join('·') + ' 수치는 OPS 월마감(매출판 일별입력) 이력 · ' + ML[3] + ' 수치는 본 파일 RAW데이터 기준 · 매출은 취소제외(반품 포함) · 교환·반품·취소 건수는 사방넷 주문 기준');
     var colA = function () { return cp.getRange(1, 1, cp.getMaxRows(), 1).getValues().map(function (r) { return String(r[0]); }); };
     var A = colA(), s2 = A.indexOf('2. 채널별 매출 비교 (셀렉트인 일반주문·공동구매 분리)');
     if (s2 < 0) s2 = A.findIndex(function (v) { return /^2\./.test(v); });
@@ -2632,6 +2646,20 @@ function hubMcdCharts_(ss, nd, ns) {
   put('날짜별매출', C.LINE, ['A4:A' + (4 + nd), 'B4:C' + (4 + nd)], 5 + nd + 3, 1, '일자별 매출 추이 (겐더샵 vs 셀렉트인)', 1, { legend: { position: 'right' } });
   put('쇼핑몰별매출', C.COLUMN, ['B5:B' + (4 + Math.min(10, ns)), 'E5:E' + (4 + Math.min(10, ns))], 5 + ns + 2, 1, '쇼핑몰별 매출 (TOP 10)', 0, noLeg);
   put('월별매출', C.COLUMN, ['A4:A8', 'B4:C8'], 11, 1, '월별 매출 (채널별)', 1, { legend: { position: 'right' } });
+}
+/** 지난 달 비교 이력을 OPS 월마감(매출판 일별입력) 기준으로 다시 계산 — 교환·반품·취소 건수와 공구 셀러는 기존 값 유지(OPS에 없음) */
+function hubMcdHistFromOps_(ym, by) {
+  var rep = hubMonthCloseBuild_(ym, { rows: true, noApi: true }), old = hubMcdHist_()[ym] || {}, h = { g: 0, s: 0, tot: 0, cnt: 0, ch: { '겐더샵': 0, '셀렉트인 일반주문': 0, '셀렉트인 공동구매': 0 }, shops: {} };
+  (rep.rows || []).forEach(function (r) {
+    if (r.corp !== '겐더샵' && r.corp !== '셀렉트인') return;
+    var shop = r.grp === '사방넷' ? (r.mall || r.pf) : r.grp === '스마트스토어' ? '스마트스토어' : (r.pf || r.grp);
+    h.tot += r.amt; h.cnt += r.cnt; h.shops[shop] = (h.shops[shop] || 0) + r.amt;
+    if (r.corp === '겐더샵') { h.g += r.amt; h.ch['겐더샵'] += r.amt; }
+    else { h.s += r.amt; h.ch[(r.grp === '공동구매' || /공구/.test(r.pf) || /공구/.test(r.mall)) ? '셀렉트인 공동구매' : '셀렉트인 일반주문'] += r.amt; }
+  });
+  h.ex = old.ex || 0; h.rt = old.rt || 0; h.cc = old.cc || 0; h.ded = old.ded || 0; h.net = h.tot - h.ded; h.sellers = old.sellers || {};
+  hubMcdHistPut_(ym, h, by);
+  return { ym: ym, tot: h.tot, g: h.g, s: h.s, cnt: h.cnt, ch: h.ch };
 }
 /** 이력 직접 넣기 (지난 달 담당자 파일 값) */
 function hubMcdHistSet_(rows, me) {
