@@ -2602,6 +2602,7 @@ function hubMcdBuild_(ym, by) {
     if (An) cp.getRange(An, 1).setValue('※ ' + ML.slice(0, 3).join('·') + ' 채널·쇼핑몰·셀러별 값은 각 월 마감 데이터에서 해당 월 주문만 집계(취소 제외)한 고정값 · ' + ML[3] +
       '은 OPS 월마감 데이터(사방넷 + 네이버 커머스API) 기준 · 공동구매/일반주문 구분 규칙(상품명 "셀러명 X 제품명") 동일 적용 · 증감률 "-"는 비교월 매출이 0인 경우');
   }
+  try { hubMcdCharts_(ss, nd, shl.length); } catch (e) {}
   SpreadsheetApp.flush();
 
   // 이력 저장 (다음 달 비교용)
@@ -2609,6 +2610,28 @@ function hubMcdBuild_(ym, by) {
   var resp = UrlFetchApp.fetch('https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export?format=xlsx', { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
   if (resp.getResponseCode() !== 200) throw new Error('대시보드 엑셀 내보내기 실패 ' + resp.getResponseCode());
   return { blob: resp.getBlob().setName(name + '.xlsx'), url: ss.getUrl(), id: ss.getId(), sum: { tot: R.tot, g: R.g, s: R.s, cnt: R.cnt, ex: R.ex, rt: R.rt, cc: R.cc, net: R.net, lines: L.length, src: D.src } };
+}
+/** 차트: 엑셀→구글시트 변환 때 빠지는 경우가 있어 매번 다시 그림 (담당자 양식과 같은 위치·제목) */
+function hubMcdCharts_(ss, nd, ns) {
+  var W = 570, H = 285;
+  var put = function (name, type, ranges, row, col, title, heads, opt) {
+    var sh = ss.getSheetByName(name); if (!sh) return;
+    var b = sh.newChart().setChartType(type).setPosition(row, col, 0, 0).setOption('title', title).setOption('width', W).setOption('height', H).setNumHeaders(heads || 0);
+    ranges.forEach(function (r) { b.addRange(sh.getRange(r)); });
+    Object.keys(opt || {}).forEach(function (k) { b.setOption(k, opt[k]); });
+    sh.insertChart(b.build());
+  };
+  ss.getSheets().forEach(function (sh) { sh.getCharts().forEach(function (c) { sh.removeChart(c); }); });
+  var C = Charts.ChartType, noLeg = { legend: { position: 'none' } };
+  put('통합대시보드', C.PIE, ['B15:C17'], 13, 6, '채널별 매출 비중', 0, { legend: { position: 'right' } });
+  put('통합대시보드', C.COLUMN, ['B38:B41', 'D38:D41'], 36, 12, '주문 상태별 매출금액', 0, noLeg);
+  [['겐더샵대시보드', '겐더샵'], ['셀렉트인대시보드', '셀렉트인']].forEach(function (x) {
+    put(x[0], C.LINE, ['B15:B' + (14 + nd), 'C15:C' + (14 + nd)], 12, 5, x[1] + ' 일자별 매출 추이', 0, noLeg);
+    put(x[0], C.COLUMN, ['B63:B66', 'D63:D66'], 60, 8, x[1] + ' 상태별 매출금액', 0, noLeg);
+  });
+  put('날짜별매출', C.LINE, ['A4:A' + (4 + nd), 'B4:C' + (4 + nd)], 5 + nd + 3, 1, '일자별 매출 추이 (겐더샵 vs 셀렉트인)', 1, { legend: { position: 'right' } });
+  put('쇼핑몰별매출', C.COLUMN, ['B5:B' + (4 + Math.min(10, ns)), 'E5:E' + (4 + Math.min(10, ns))], 5 + ns + 2, 1, '쇼핑몰별 매출 (TOP 10)', 0, noLeg);
+  put('월별매출', C.COLUMN, ['A4:A8', 'B4:C8'], 11, 1, '월별 매출 (채널별)', 1, { legend: { position: 'right' } });
 }
 /** 이력 직접 넣기 (지난 달 담당자 파일 값) */
 function hubMcdHistSet_(rows, me) {
