@@ -2371,7 +2371,7 @@ function hubMcdSt_(s) { s = String(s || ''); return /취소|CANCEL/i.test(s) ? '
 function hubMcdLines_(ym) {
   var tz = 'Asia/Seoul', from = ym + '-01', to = hubMcEnd_(ym), corp = {}, out = [], src = {}, N = hubNum_;
   SpreadsheetApp.openById(HUB_SALES_ID).getSheetByName('설정').getRange('A57:B120').getValues().forEach(function (r) { var id = String(r[0]).trim(); if (id) corp[id] = String(r[1]).trim(); });
-  if (!corp[HUB_MCD.sel]) corp[HUB_MCD.sel] = '셀렉트인';
+  corp[HUB_MCD.sel] = '셀렉트인';   // 셀렉트인하우스 스마트스토어 (매출판 설정 ③에는 겐더샵으로 되어 있어도 담당자 양식 기준 셀렉트인)
   var push = function (d, shop, id, name, opt, cost, qty, amt, stx) {
     var c = corp[id] || '확인필요'; if (c === '제외') return;
     var st = hubMcdSt_(stx);
