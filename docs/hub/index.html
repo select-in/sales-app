@@ -495,6 +495,11 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 
 .kpi .kcol{margin-top:4px;padding-top:4px;border-top:1px dashed var(--line);font-size:12px;color:var(--mute)}
 .sfoot{margin:10px 2px 0;font-size:12px;color:var(--mute);line-height:1.6;word-break:keep-all}.sfoot b{color:var(--sub);font-weight:600}
+
+#hsales .grid.g4>.kpi{display:flex;flex-direction:column}
+#hsales .kpi .kfoot{margin-top:auto;padding-top:8px;border-top:1px dashed var(--line);font-size:12px;color:var(--mute);line-height:1.5;min-height:44px;word-break:keep-all}
+#hsales .kpi .sm{margin-bottom:8px}
+#hsales .kpi .kfoot b{color:var(--sub);font-weight:600;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -895,6 +900,7 @@ function salesFoot(){
     '<p style="margin:8px 0 0;font-size:12px;color:var(--mute)">매출판 시트 「일별입력」을 직접 읽어요 · 어제까지는 확정, 오늘은 사방넷'+(lv.sabang?' '+esc(lv.sabang):'')+'·스마트스토어'+(lv.store?' '+esc(lv.store):'')+' 실시간(주문 기준) · 크림·포이즌은 매주 월요일 반영 · 불러온 시각 '+esc(SALES.at||'')+
     ' <a href="#" id="sref" style="color:var(--accent)">새로고침</a></p>';
 }
+function kf(h){ return '<div class="kfoot">'+(h||'&nbsp;')+'</div>'; }   // KPI 카드 하단 줄 — 네 카드 높이·위치 동일
 function sregSum(a,b,corp){   // 기간 [a,b]의 사방넷 수집일 기준 건수·금액 (31일 안, 전부 조회됐을 때만)
   if(!SREG||!SREG.rows) return null; var M={}; SREG.rows.forEach(function(o){ M[o.d]=o; });
   var n=0, amt=0;
@@ -933,10 +939,10 @@ function salesDraw(){
       '<div class="seg'+(pers.length>6?' p7':'')+'" id="sfp">'+pers.map(function(p){ return '<button data-v="'+p[0]+'" class="'+(SF.per===p[0]?'on':'')+'">'+p[1]+'</button>'; }).join('')+'</div>'+
       (full&&SF.per==='custom'?'<span style="display:flex;gap:6px;align-items:center"><input type="date" id="sfa" value="'+esc(rg.a)+'" class="inp" style="width:auto"> ~ <input type="date" id="sfb" value="'+esc(rg.b)+'" class="inp" style="width:auto"></span>':'')+'</div></div>'+
     '<div class="grid g4">'+
-      '<div class="kpi"><div class="k"><i class="ti ti-chart-bar"></i>매출</div><div class="v num">'+salesMan(amt)+'</div><div class="sm">'+(chg==null?'':'<b style="color:'+(chg>=0?'var(--accent)':'var(--red)')+'">'+(chg>=0?'▲':'▼')+Math.abs(chg)+'%</b> <span class="nw">'+esc(rg.cmp)+' 대비</span>')+(lamt?'<br><span class="nw">확정 '+won(camt)+'</span> + <span class="nw">실시간 '+won(lamt)+'</span>':'')+(rsum?'<div class="kcol"><span class="nw">수집일 기준 '+won(Math.round(rsum.amt/1e4))+'만원</span></div>':'')+'</div></div>'+
-      '<div class="kpi"><div class="k"><i class="ti ti-receipt"></i>주문</div><div class="v num">'+won(cnt)+'<small>건</small></div><div class="sm">객단가 '+(cnt?won(Math.round(amt/cnt)):'—')+'원'+(rsum?'<div class="kcol"><span class="nw">수집일 기준 '+won(rsum.n)+'건</span></div>':'')+'</div></div>'+
-      '<div class="kpi"><div class="k"><i class="ti ti-wallet"></i>정산 예정</div><div class="v num">'+salesMan(st)+'</div><div class="sm">수수료 차감 후'+(lamt?' · 확정분만':'')+'</div></div>'+
-      '<div class="kpi"><div class="k"><i class="ti ti-trending-up"></i>이익</div><div class="v num">'+salesMan(pf)+'</div><div class="sm">'+(camt?'이익률 '+(pf/camt*100).toFixed(1)+'%':'')+(lamt?' · 확정분만':'')+'</div></div>'+
+      '<div class="kpi"><div class="k"><i class="ti ti-chart-bar"></i>매출</div><div class="v num">'+salesMan(amt)+'</div><div class="sm">'+(chg==null?'':'<b style="color:'+(chg>=0?'var(--accent)':'var(--red)')+'">'+(chg>=0?'▲':'▼')+Math.abs(chg)+'%</b> <span class="nw">'+esc(rg.cmp)+' 대비</span>')+(lamt?'<br><span class="nw">확정 '+won(camt)+'</span> + <span class="nw">실시간 '+won(lamt)+'</span>':'')+'</div>'+kf(rsum?'수집일 기준<br><b>'+won(Math.round(rsum.amt/1e4))+'만원 · '+won(rsum.n)+'건</b>':'')+'</div>'+
+      '<div class="kpi"><div class="k"><i class="ti ti-receipt"></i>주문</div><div class="v num">'+won(cnt)+'<small>건</small></div><div class="sm">객단가 '+(cnt?won(Math.round(amt/cnt)):'—')+'원</div>'+kf(rsum?'수집일 기준<br><b>'+won(rsum.n)+'건</b>':'')+'</div>'+
+      '<div class="kpi"><div class="k"><i class="ti ti-wallet"></i>정산 예정</div><div class="v num">'+salesMan(st)+'</div><div class="sm">수수료 차감 후</div>'+kf(lamt?'확정분만<br>오늘 실시간 제외':'')+'</div>'+
+      '<div class="kpi"><div class="k"><i class="ti ti-trending-up"></i>이익</div><div class="v num">'+salesMan(pf)+'</div><div class="sm">'+(camt?'이익률 '+(pf/camt*100).toFixed(1)+'%':'원가 입력분 기준')+'</div>'+kf(lamt?'확정분만<br>오늘 실시간 제외':'')+'</div>'+
     '</div>'+
     '<p class="sfoot">※ 매출·주문은 <b>주문한 날짜(결제일) 기준</b>이에요. 사방넷에 늦게 수집된 주문도 원래 주문한 날로 들어가서, 사방넷 <b>수집일 기준</b>(송장 출력 기준) 숫자와 다를 수 있어요.'+(rsum?' 수집일 기준은 사방넷에서 바로 조회한 값이에요(취소 제외 · 크림·포이즌·도소매·공동구매처럼 사방넷 밖 매출은 빠짐).':(SREG?'':' 수집일 기준 숫자는 불러오는 중…'))+'</p>'+
     (!full&&(CO.length||GL.length)?'<div class="grid g2 hsplit">'+(SF.corp==='전체'?miniBars('법인별',CO,amt):'')+miniBars('채널별',GL,amt)+'</div>':'')+
