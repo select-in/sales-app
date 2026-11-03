@@ -107,7 +107,7 @@ function doPost(e) {
       case 'sbn_skip_fix': if (!admin) return hubOut_({ error: '관리자만 실행할 수 있습니다' });   // 스토어팜 중복 계정 사방넷 매출 0 처리
         return hubOut_(hubLocked_(hubSbnSkipFix_));
       case 'pzn_sales': if (!admin) return hubOut_({ error: '관리자만 실행할 수 있습니다' });   // 포이즌 거래 성공 → 매출판 비교(write면 반영)
-        return hubOut_(req.write ? hubLocked_(function () { return hubPznSales_(hubMcYm_(req.ym), true); }) : hubPznSales_(hubMcYm_(req.ym), false));
+        return hubOut_(req.write ? hubLocked_(function () { return hubPznSales_(hubMcYm_(req.ym), true, req.account); }) : hubPznSales_(hubMcYm_(req.ym), false, req.account));
       case 'sbn_resync': if (!admin) return hubOut_({ error: '관리자만 실행할 수 있습니다' });   // 매출판 그 달 사방넷 행을 지금 사방넷 API 값으로 맞춤
         return hubOut_(hubLocked_(function () { return hubSbnResync_(hubMcYm_(req.ym)); }));
       case 'mc_dash': if (!admin) return hubOut_({ error: '관리자만 만들 수 있습니다' });   // 월마감 대시보드(내부 회의용) 만들기 → 구글시트 링크
@@ -1963,12 +1963,12 @@ function hubSbnSkipFix_() {
 }
 /** 포이즌 → 매출판: '포이즌판매'(판매자센터 동기화) 「거래 성공」 주문을 주문일×계정으로 묶어 '일별입력' 포이즌(계정) 행과 비교/반영.
  *  매출액=판매가, 실제수수료=판매가-정산액. write가 아니면 비교만. 매입원가·비고는 기존 값 유지 */
-function hubPznSales_(ym, write) {
+function hubPznSales_(ym, write, only) {
   var tz = 'Asia/Seoul', from = ym + '-01', to = hubMcEnd_(ym), G = {}, pend = {}, N = hubNum_;
   hubRows_('포이즌판매').vals.forEach(function (v) {
     var acct = String(v[0]).trim(), st = String(v[2]).trim(), tab = String(v[3]).trim();
     var d = v[12] instanceof Date ? Utilities.formatDate(v[12], tz, 'yyyy-MM-dd') : String(v[12]).slice(0, 10);
-    if (!acct || d < from || d > to) return;
+    if (!acct || d < from || d > to || (only && acct !== only)) return;
     var k = d + '|' + acct;
     if (tab === 'TRADE_SUCCEED' || st === '거래 성공') { var g = G[k] || (G[k] = { d: d, acct: acct, cnt: 0, amt: 0, pay: 0 }); g.cnt++; g.amt += N(v[9]); g.pay += N(v[11]); }
     else if (!/TRADE_OFF|종료|취소/.test(tab + st)) { var q = pend[k] || (pend[k] = { d: d, acct: acct, cnt: 0, amt: 0, st: {} }); q.cnt++; q.amt += N(v[9]); q.st[st] = 1; }
@@ -1978,6 +1978,7 @@ function hubPznSales_(ym, write) {
     if (r[0] !== '') lastVal = i;
     var m = String(r[1]).trim().match(/^포이즌\((.+)\)$/); if (!m) return;
     var d = hubSalesYmd_(r[0], tz); if (d < from || d > to) return;
+    if (only && m[1] !== only) return;
     var k = d + '|' + m[1]; if (have[k]) { have[k].dup = (have[k].dup || 0) + 1; return; }
     have[k] = { row: i + 3, cnt: N(r[6]), amt: N(r[7]), fee: N(r[10]) };
   });
@@ -1986,7 +1987,7 @@ function hubPznSales_(ym, write) {
     var g = G[k] || { d: k.split('|')[0], acct: k.split('|')[1], cnt: 0, amt: 0, pay: 0 }, h = have[k];
     if (h && h.cnt === g.cnt && h.amt === g.amt) return;
     diff.push({ d: g.d, acct: g.acct, sheet: h ? [h.cnt, h.amt] : null, poizon: [g.cnt, g.amt] });
-    if (!write) return;
+    if (!write || !G[k]) return;   // 판매자센터 동기화 범위 밖(기록 없음)인 날은 건드리지 않음
     if (h) sh.getRange(h.row, 7, 1, 2).setValues([[g.cnt, g.amt]]), sh.getRange(h.row, 11).setValue(g.amt - g.pay);
     else if (g.cnt) add.push(g);
   });
