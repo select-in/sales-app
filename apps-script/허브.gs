@@ -76,6 +76,8 @@ function doPost(e) {
       case 'sbn_sales_check': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 사방넷 API(주문일) 기준 일별·법인·쇼핑몰 집계 — 매출판 대조용 (읽기 전용)
         return hubOut_(hubSbnSalesRange_(req.from, req.to));
       case 'sales': return hubOut_(hubSales_(me));
+      case 'mc_raw_put': if (!admin) return hubOut_({ error: '관리자만 저장할 수 있습니다' });
+        return hubOut_(hubLocked_(function () { return hubMcRawPut_(req); }));
       case 'nv_items': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });
         return hubOut_(hubNvItems_(req.from, req.to));
       case 'cost_force_set': if (!admin) return hubOut_({ error: '관리자만 바꿀 수 있습니다' });
@@ -2263,4 +2265,26 @@ function hubNvItems_(from, to) {
     });
   }
   return { cols: ['date', 'store', 'product', 'count', 'qty', 'sales', 'fee'], rows: out };
+}
+
+
+/* ===================== 월마감 RAW (주문 단위) =====================
+ * 사방넷 관리자 화면(북마크)·스마트스토어 조회 결과를 OPS DB에 월별로 저장 → 월마감 대시보드(엑셀) 원본.
+ *  '월마감RAW'(사방넷 주문 줄) · '월마감NV'(스마트스토어 상품별 일 판매). 같은 달을 다시 넣으면 그 달 줄을 지우고 새로 씀 */
+var HUB_MCR = {
+  '월마감RAW': ['월', '주문번호', '주문일', '쇼핑몰', '쇼핑몰ID', '상품명', '수집상품명', '옵션', '원가', '수량', '주문금액', '주문상태', '상태구분', '품번', '원주문번호'],
+  '월마감NV': ['월', '날짜', '스토어', '상품명', '건수', '수량', '매출', '수수료']
+};
+function hubMcRawPut_(req) {
+  var tab = req.tab, head = HUB_MCR[tab]; if (!head) throw new Error('tab');
+  var ym = String(req.ym || ''); if (!/^\d{4}-\d{2}$/.test(ym)) throw new Error('ym');
+  var ss = hubBook_(), sh = ss.getSheetByName(tab);
+  if (!sh) { sh = ss.insertSheet(tab); sh.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight('bold'); sh.setFrozenRows(1); }
+  if (req.reset) {
+    var n = sh.getLastRow() - 1;
+    if (n > 0) { var v = sh.getRange(2, 1, n, head.length).getValues().filter(function (r) { return String(r[0]) !== ym && r[0] !== ''; }); sh.getRange(2, 1, n, head.length).clearContent(); if (v.length) sh.getRange(2, 1, v.length, head.length).setValues(v); }
+  }
+  var rows = (req.rows || []).map(function (r) { var o = [ym].concat(r.slice(0, head.length - 1)); while (o.length < head.length) o.push(''); return o.map(function (x) { return typeof x === 'string' && /^\d{9,}$/.test(x) ? "'" + x : x; }); });
+  if (rows.length) sh.getRange(sh.getLastRow() + 1, 1, rows.length, head.length).setValues(rows);
+  return { ok: true, added: rows.length, total: sh.getLastRow() - 1, sheetId: ss.getId() };
 }
