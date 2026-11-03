@@ -500,6 +500,9 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 #hsales .kpi .kfoot{margin-top:auto;padding-top:8px;border-top:1px dashed var(--line);font-size:12px;color:var(--mute);line-height:1.5;min-height:44px;word-break:keep-all}
 #hsales .kpi .sm{margin-bottom:8px}
 #hsales .kpi .kfoot b{color:var(--sub);font-weight:600;white-space:nowrap}
+
+.tbar .trow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.tbar .trow+.trow{margin-top:8px}.tbar .trow>b{font-size:13px;min-width:40px;color:var(--sub)}
+@media (max-width:900px){.tbar .trow>b{width:100%}.otbl h2 small{display:block;margin:4px 0 0}}
 </style>
 </head>
 <body>
@@ -1466,38 +1469,56 @@ function homeRegLoad(){
 }
 
 /* ---------- 홈 ---------- */
-/* 확인할 일 — 담당자별 */
-var TODO_OWN=(function(){ var v=lsGet('hubTodoOwn'); return typeof v==='string'?v:''; })();
-function todoOwnerBar(OS){
-  var nm=function(o){ return o==='-'?'미지정':o; };
-  var chips='<div class="seg segwrap" id="town"><button data-town="전체" class="'+(TODO_OWN==='전체'?'on':'')+'">전체</button>'+OS.L.map(function(m){ return '<button data-town="'+esc(m.o)+'" class="'+(TODO_OWN===m.o?'on':'')+'">'+esc(nm(m.o))+(m.o===S.me.name?' (나)':'')+'<small class="num">'+won(m.any)+'</small></button>'; }).join('')+'</div>';
-  var tbl='';
-  if (TODO_OWN==='전체'){
-    var C=OS.C;
-    tbl='<div class="card" style="margin-top:12px"><h2>담당자별 확인할 것 <small>담당 상품 중 해당 개수 · 누르면 그 담당자만 보기</small></h2>'+
-      '<div class="dtable tblwrap"><table class="tbl"><thead><tr><th>담당자</th><th class="r">담당 상품</th><th class="r">확인 필요</th>'+C.map(function(c){ return '<th class="r">'+esc(c[1])+'</th>'; }).join('')+'</tr></thead><tbody>'+
-      OS.L.map(function(m){ return '<tr class="click" data-town="'+esc(m.o)+'"><td><b>'+esc(nm(m.o))+'</b>'+(m.o===S.me.name?' <span class="pill">나</span>':'')+'</td><td class="r num">'+won(m.n)+'</td><td class="r num"><b>'+won(m.any)+'</b></td>'+C.map(function(c){ var v=m.c[c[0]]||0; return '<td class="r num'+(v?'':' sm')+'">'+(v?won(v):'—')+'</td>'; }).join('')+'</tr>'; }).join('')+'</tbody></table></div>'+
-      '<div class="mcards">'+OS.L.map(function(m){ var top=C.filter(function(c){ return m.c[c[0]]; }).map(function(c){ return esc(c[1])+' '+won(m.c[c[0]]); }); return '<div class="mc" data-town="'+esc(m.o)+'"><div class="m"><div class="t">'+esc(nm(m.o))+(m.o===S.me.name?' (나)':'')+'</div><div class="s">'+(top.length?top.join(' · '):'확인할 것 없음')+'</div></div><div class="e num"><b>'+won(m.any)+'</b><div class="s">확인 필요</div></div></div>'; }).join('')+'</div></div>';
-  }
-  return '<div class="card" style="padding:12px 16px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b style="font-size:14px">담당자</b>'+chips+'</div></div>'+tbl;
+/* 확인할 일 — 법인 · 담당자별
+ * 겐더샵: 김승현(대표) · 김혜린 · 이지나 / 셀렉트인: 진금영(대표) · 엄지희 · 김태현 · 이지나 (이지나는 두 법인 상품 등록 담당) */
+var TEAM={'겐더샵':{lead:'김승현', mem:['김혜린','이지나']}, '셀렉트인':{lead:'진금영', mem:['엄지희','김태현','이지나']}};
+var TEAM_ALL=['김승현','김혜린','이지나','진금영','엄지희','김태현'];
+function ownCanon(o){ o=String(o||'').replace(/\s/g,''); if(!o) return '-'; if(o==='대장') return '진금영'; var o2=o.length>=3?o.replace(/(이|님)$/,''):o;
+  for(var i=0;i<TEAM_ALL.length;i++){ var n=TEAM_ALL[i]; if(o===n||o2===n||n.slice(1)===o||n.slice(1)===o2) return n; } return o; }
+function todoOwnerOf(p){ return ownCanon(p.owner); }
+var TODO=(function(){ var v=lsGet('hubTodoSel'); return v&&typeof v==='object'?v:{corp:'',own:''}; })();
+function todoDefault(){
+  var me=ownCanon(S.me&&S.me.name);
+  for (var c in TEAM){ if(TEAM[c].lead===me) return {corp:c, own:'전체'}; }
+  for (var c2 in TEAM){ if(TEAM[c2].mem.indexOf(me)>=0) return {corp:c2, own:me}; }
+  return {corp:'전체', own:'전체'};
 }
-function todoOwnerOf(p){ return p.owner||'-'; }
-function todoChecks(){   // 담당자별로 나눌 확인 항목
+function todoChecks(){
   var L=[['out','품절',function(p){ return stockState(p)==='out'; }],['low','재고 부족',function(p){ return stockState(p)==='low'; }],
     ['margin','마진 '+marginMin()+'% 미만',function(p){ var m=margin(p); return m!==null && m<marginMin(); }]];
   Object.keys(PCHK).forEach(function(k){ if(k!=='noowner') L.push([k,PCHK[k].t2,function(p){ return p.sbnStatus!=='미사용' && PCHK[k].t(p); }]); });
   return L;
 }
-function todoOwnerStats(){
-  var C=todoChecks(), M={};
-  S.products.forEach(function(p){ var o=todoOwnerOf(p), m=M[o]||(M[o]={o:o, n:0, c:{}, any:0}); m.n++; var hit=false; C.forEach(function(c){ if(c[2](p)){ m.c[c[0]]=(m.c[c[0]]||0)+1; hit=true; } }); if(hit) m.any++; });
-  return {C:C, L:Object.keys(M).map(function(k){ return M[k]; }).sort(function(a,b){ return (a.o==='-')-(b.o==='-') || b.any-a.any; })};
+function todoOwnerStats(corp){
+  var C=todoChecks(), M={}, P=S.products.filter(function(p){ return corp==='전체'||p.corp===corp; });
+  var order=corp==='전체'?TEAM_ALL:[TEAM[corp].lead].concat(TEAM[corp].mem);
+  order.forEach(function(n){ M[n]={o:n, n:0, c:{}, any:0}; });
+  P.forEach(function(p){ var o=todoOwnerOf(p), m=M[o]||(M[o]={o:o, n:0, c:{}, any:0}); m.n++; var hit=false; C.forEach(function(c){ if(c[2](p)){ m.c[c[0]]=(m.c[c[0]]||0)+1; hit=true; } }); if(hit) m.any++; });
+  var L=Object.keys(M).map(function(k){ return M[k]; });
+  var rk=function(m){ var i=order.indexOf(m.o); return i>=0?i:(m.o==='-'?999:500); };
+  L.sort(function(a,b){ return rk(a)-rk(b) || b.any-a.any; });
+  return {C:C, L:L};
+}
+function todoOwnerBar(OS){
+  var nm=function(o){ return o==='-'?'미지정':o; }, me=ownCanon(S.me&&S.me.name), lead=TODO.corp!=='전체'?TEAM[TODO.corp].lead:'';
+  var tag=function(o){ return (o===lead||(TODO.corp==='전체'&&(o==='김승현'||o==='진금영')))?' (대표)':(o==='이지나'?' (등록)':''); };
+  var corps='<div class="seg" id="tcorp">'+['겐더샵','셀렉트인','전체'].map(function(c){ return '<button data-tcorp="'+c+'" class="'+(TODO.corp===c?'on':'')+'">'+(c==='전체'?'두 법인 전체':c)+'</button>'; }).join('')+'</div>';
+  var chips='<div class="seg segwrap" id="town"><button data-town="전체" class="'+(TODO.own==='전체'?'on':'')+'">'+(TODO.corp==='전체'?'전체':TODO.corp+' 전체')+'</button>'+OS.L.map(function(m){ return '<button data-town="'+esc(m.o)+'" class="'+(TODO.own===m.o?'on':'')+'">'+esc(nm(m.o))+tag(m.o)+(m.o===me?' · 나':'')+'<small class="num">'+won(m.any)+'</small></button>'; }).join('')+'</div>';
+  var tbl='';
+  if (TODO.own==='전체'){
+    var C=OS.C;
+    tbl='<div class="card otbl" style="margin-top:12px"><h2>'+(TODO.corp==='전체'?'':esc(TODO.corp)+' ')+'담당자별 확인할 것 <small>'+(TODO.corp==='전체'?'두 법인 합계':esc(TODO.corp)+' 상품만')+' · 누르면 그 담당자만 보기</small></h2>'+
+      '<div class="dtable tblwrap"><table class="tbl"><thead><tr><th>담당자</th><th class="r">담당 상품</th><th class="r">확인 필요</th>'+C.map(function(c){ return '<th class="r">'+esc(c[1])+'</th>'; }).join('')+'</tr></thead><tbody>'+
+      OS.L.map(function(m){ return '<tr class="click" data-town="'+esc(m.o)+'"><td><b>'+esc(nm(m.o))+'</b><span class="sm">'+tag(m.o)+'</span>'+(m.o===me?' <span class="pill">나</span>':'')+'</td><td class="r num">'+won(m.n)+'</td><td class="r num"><b>'+won(m.any)+'</b></td>'+C.map(function(c){ var v=m.c[c[0]]||0; return '<td class="r num'+(v?'':' sm')+'">'+(v?won(v):'—')+'</td>'; }).join('')+'</tr>'; }).join('')+'</tbody></table></div>'+
+      '<div class="mcards">'+OS.L.map(function(m){ var top=C.filter(function(c){ return m.c[c[0]]; }).map(function(c){ return esc(c[1])+' '+won(m.c[c[0]]); }); return '<div class="mc" data-town="'+esc(m.o)+'"><div class="m"><div class="t">'+esc(nm(m.o))+tag(m.o)+(m.o===me?' · 나':'')+'</div><div class="s">'+(top.length?top.join(' · '):'확인할 것 없음')+'</div></div><div class="e num"><b>'+won(m.any)+'</b><div class="s">확인 필요</div></div></div>'; }).join('')+'</div></div>';
+  }
+  return '<div class="card tbar" style="padding:12px 16px"><div class="trow"><b>법인</b>'+corps+'</div><div class="trow"><b>담당자</b>'+chips+'</div></div>'+tbl;
 }
 VIEWS.todo = {
   html: function(){
-    if (TODO_OWN==='' ) TODO_OWN = S.products.some(function(p){ return p.owner===S.me.name; }) ? S.me.name : '전체';
-    var OS=todoOwnerStats(); if (TODO_OWN!=='전체' && !OS.L.some(function(m){ return m.o===TODO_OWN; })) TODO_OWN='전체';
-    var P = TODO_OWN==='전체' ? S.products : S.products.filter(function(p){ return todoOwnerOf(p)===TODO_OWN; }), sa = P.filter(function(p){ return p.type!=='위탁' && !isVirtual(p); });
+    if (!TODO.corp || (TODO.corp!=='전체' && !TEAM[TODO.corp])) TODO=todoDefault();
+    var OS=todoOwnerStats(TODO.corp); if (TODO.own!=='전체' && !OS.L.some(function(m){ return m.o===TODO.own; })) TODO.own='전체';
+    var P = S.products.filter(function(p){ return (TODO.corp==='전체'||p.corp===TODO.corp) && (TODO.own==='전체'||todoOwnerOf(p)===TODO.own); }), sa = P.filter(function(p){ return p.type!=='위탁' && !isVirtual(p); });
     var low = P.filter(function(p){ return stockState(p)==='low'; }), out = P.filter(function(p){ return stockState(p)==='out'; });
     var td = today(), todays = S.history.filter(function(h){ return String(h.at).slice(0,10)===td; });
     var inQ = todays.filter(function(h){ return h.qty>0; }).reduce(function(a,h){ return a+h.qty; },0);
@@ -1509,12 +1530,12 @@ VIEWS.todo = {
     var A = P.filter(function(p){ return p.sbnStatus!=='미사용'; });
     var chk = Object.keys(PCHK).map(function(k){ var c=PCHK[k]; return {k:k, c:c, n:A.filter(c.t).length}; });
     var regL = P.filter(function(p){ return p.regStatus; }), rc=function(st){ return regL.filter(function(p){ return p.regStatus===st; }).length; };
-    var oq=TODO_OWN==='전체'?'':(TODO_OWN==='-'?'&o=-':'&o='+encodeURIComponent(TODO_OWN));
+    var oq=(TODO.corp==='전체'?'':'&c='+encodeURIComponent(TODO.corp))+(TODO.own==='전체'?'':'&o='+encodeURIComponent(TODO.own));
     var row=function(ic, cls, t, sub, href){ if(oq && href.indexOf('#products?')===0) href+=oq; return '<a class="todo hk" href="'+href+'"><div class="ic '+cls+'"><i class="ti ti-'+ic+'"></i></div><div class="m"><div class="t">'+t+'</div><div class="s">'+sub+'</div></div><i class="ti ti-chevron-right" style="color:var(--mute)"></i></a>'; };
     return '<div class="ph"><div><h1>확인할 일</h1><p>'+td.replace(/-/g,'.')+' ('+wd+') · 상품 확인 · 등록 · 오늘 운영</p></div>'+
       '<div class="acts"><button class="btn" data-xl="1" title="지금 보이는 조건 그대로 엑셀로 받기"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button><a class="btn pri" href="#stock"><i class="ti ti-barcode"></i>입출고 시작</a></div></div>'+
       todoOwnerBar(OS)+
-      '<h2 class="hsec">상품'+(TODO_OWN!=='전체'?' <small>· '+esc(TODO_OWN==='-'?'담당자 미지정':TODO_OWN+' 담당')+'</small>':'')+'</h2>'+
+      '<h2 class="hsec">상품 <small>· '+esc(TODO.corp==='전체'?'두 법인':TODO.corp)+(TODO.own==='전체'?' 전체':TODO.own==='-'?' · 담당자 미지정':' · '+TODO.own+' 담당')+'</small></h2>'+
       '<div class="grid g4">'+
         '<a class="kpi" href="#products"><div class="k"><i class="ti ti-package"></i>등록 상품</div><div class="v num">'+won(P.length)+'<small>개</small></div></a>'+
         '<a class="kpi amber" href="#products?f=low"><div class="k"><i class="ti ti-alert-triangle"></i>재고 부족</div><div class="v num">'+won(low.length)+'<small>개</small></div></a>'+
@@ -1550,7 +1571,8 @@ VIEWS.todo = {
   },
   bind: function(){
     opsTodayLoad(); homeRegLoad();
-    document.querySelectorAll('[data-town]').forEach(function(b){ b.onclick=function(e){ e.preventDefault(); TODO_OWN=b.dataset.town; lsSet('hubTodoOwn',TODO_OWN); route(); }; });
+    document.querySelectorAll('[data-town]').forEach(function(b){ b.onclick=function(e){ e.preventDefault(); TODO.own=b.dataset.town; lsSet('hubTodoSel',TODO); route(); }; });
+    document.querySelectorAll('[data-tcorp]').forEach(function(b){ b.onclick=function(e){ e.preventDefault(); var me=ownCanon(S.me&&S.me.name); TODO.corp=b.dataset.tcorp; TODO.own=(TODO.corp!=='전체'&&TEAM[TODO.corp].mem.indexOf(me)>=0)?me:'전체'; lsSet('hubTodoSel',TODO); route(); }; });
     $('schk').onclick = function(){
       this.disabled = true;
       api('config_set',{key:'scheduler_check',value:'ok'}).then(function(j){ S.config=j.config; persist(); toast('사방넷 스케줄러 점검 완료로 기록했어요'); route(); }).catch(function(e){ fail(e); route(); });
@@ -1583,6 +1605,7 @@ VIEWS.products = {
   html: function(){
     var m = location.hash.match(/f=(\w+)/); if (m) PF.f = m[1];
     var mo = location.hash.match(/[?&]o=([^&]+)/); if (mo) PF.owner = decodeURIComponent(mo[1]); else if (m) PF.owner = '';
+    var mc = location.hash.match(/[?&]c=([^&]+)/); if (mc) PF.corp = decodeURIComponent(mc[1]); else if (m) PF.corp = 'all';
     return '<div class="ph"><div><h1>상품 관리</h1><p>모든 메뉴가 이 상품 정보를 함께 씁니다 · 바코드·상품코드로 찾기</p></div>'+
       '<div class="acts"><button class="btn" data-xl="1" title="지금 보이는 조건 그대로 엑셀로 받기"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button><button class="btn" id="pimp"><i class="ti ti-table-import"></i>엑셀 붙여넣기</button><button class="btn pri" id="padd" title="사진·필수 정보 → 사방넷 등록서"><i class="ti ti-plus"></i>상품 등록</button></div></div>'+
       '<div class="card">'+
@@ -1603,7 +1626,7 @@ VIEWS.products = {
       var L = S.products.filter(function(p){
         if (PF.corp!=='all' && p.corp!==PF.corp) return false;
         if (!PF.st[pfStKey(p)]) return false;
-        if (PF.owner && (PF.owner==='-' ? p.owner : p.owner!==PF.owner)) return false;
+        if (PF.owner && (PF.owner==='-' ? p.owner : ownCanon(p.owner)!==ownCanon(PF.owner))) return false;
         var s = stockState(p);
         if (PF.f==='low' && s!=='low') return false;
         if (PF.f==='out' && s!=='out') return false;
