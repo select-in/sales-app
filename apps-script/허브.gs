@@ -101,7 +101,7 @@ function doPost(e) {
       case 'ext_price': return hubOut_(hubExtPrice_(req.items || []));      // 네이버 쇼핑 최저가 조회 (조회 전용)
       case 'ext_price_list': return hubOut_(hubExtPriceList_());
       case 'sbn_order_fields': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 사방넷 주문 API 응답 항목 이름 확인용 (읽기 전용, 개인정보 항목은 값 제외)
-        return hubOut_(hubSbnOrderFields_(req.items));
+        return hubOut_(hubSbnOrderFields_(req.items, req.date, req.zero));
       case 'krm_req': return hubOut_(hubLocked_(function () { var t = String(Date.now()); hubConfigSet_('krm_req', t, me); try { CacheService.getScriptCache().put('hub_krm_req', JSON.stringify({ req: Number(t), by: me.name }), 21600); } catch (e) {} return { ok: true }; }));   // 휴대폰에서 [지금 동기화] → PC 크림 창이 받아서 실행
       case 'krm_poll': try { var kq = CacheService.getScriptCache().get('hub_krm_req'); if (kq) return hubOut_(JSON.parse(kq)); } catch (e) {}   // 30초마다 오는 확인 → 캐시로 바로 응답
         var kc = hubConfig_(); return hubOut_({ req: kc.krm_req ? Number(kc.krm_req.value) || 0 : 0, by: kc.krm_req ? kc.krm_req.by : '' });
@@ -1032,14 +1032,15 @@ function hubOpsToday_(force) {
   try { cache.put('ops_today', JSON.stringify(out), 300); } catch (e) {}
   return out;
 }
-function hubSbnOrderFields_(items) {
-  var d = Utilities.formatDate(new Date(Date.now() - 864e5), 'Asia/Seoul', 'yyyyMMdd');
-  var body = { dateSearchCondition: 2, startDate: d, endDate: d, updateOrderStsYn: 'N', page: 1, perPage: 50 };
+function hubSbnOrderFields_(items, date, zero) {
+  var d = /^\d{4}-?\d{2}-?\d{2}$/.test(String(date || '')) ? String(date).replace(/-/g, '') : Utilities.formatDate(new Date(Date.now() - 864e5), 'Asia/Seoul', 'yyyyMMdd');
+  var body = { dateSearchCondition: 2, startDate: d, endDate: d, updateOrderStsYn: 'N', page: 1, perPage: zero ? 1000 : 50 };
   if (Array.isArray(items) && items.length) body.responseItems = items.slice(0, 60).map(String);
   var r = hubSbnCall_('POST', '/v3/sb/order', body), dt = (r && r.data) || {}, L = dt.results || [];
+  if (zero) L = L.filter(function (x) { return !(Number(x.COST_PRICE) > 0); }).slice(0, 40);
   var personal = /RCV|RECV|RECEIVE|ADDR|TEL|HP|PHONE|MOBILE|BUYER|ORDERER|ORD_NM|USER_NM|EMAIL|ZIP|PERSONAL|CUSTOMS|MSG|MEMO|NAME_RCV|CUST(?!OM_PRD)/i;
   var keys = {}; L.forEach(function (x) { Object.keys(x).forEach(function (k) { keys[k] = 1; }); });
-  var sample = L.slice(0, 2).map(function (x) { var o = {}; Object.keys(x).forEach(function (k) { o[k] = personal.test(k) ? '(개인정보)' : String(x[k]).slice(0, 40); }); return o; });
+  var sample = L.slice(0, zero ? 40 : 2).map(function (x) { var o = {}; Object.keys(x).forEach(function (k) { o[k] = personal.test(k) ? '(개인정보)' : String(x[k]).slice(0, 40); }); return o; });
   return { code: r && r.code, message: r && r.message, keys: Object.keys(keys), sample: sample, raw: L.length ? '' : JSON.stringify(r).slice(0, 500) };
 }
 /* ===================== 플랫폼 추천 (매출 > 플랫폼 추천) =====================
