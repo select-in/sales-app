@@ -76,6 +76,8 @@ function doPost(e) {
       case 'sbn_sales_check': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 사방넷 API(주문일) 기준 일별·법인·쇼핑몰 집계 — 매출판 대조용 (읽기 전용)
         return hubOut_(hubSbnSalesRange_(req.from, req.to));
       case 'sales': return hubOut_(hubSales_(me));
+      case 'nv_items': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });
+        return hubOut_(hubNvItems_(req.from, req.to));
       case 'cost_force_set': if (!admin) return hubOut_({ error: '관리자만 바꿀 수 있습니다' });
         return hubOut_(hubLocked_(function () { return hubCostForceSet_(req, me); }));
       case 'cost_force_apply': if (!admin) return hubOut_({ error: '관리자만 실행할 수 있습니다' });   // dry=true: 쓰기 없이 미리보기
@@ -2246,4 +2248,19 @@ function hubCostForceApply_(from, to, dry, ordMap) {
   Object.keys(add).forEach(function (k) { if (!touched[k]) res.miss.push([k, Math.round(add[k].cost)]); });
   props.setProperty('CF_DONE_' + a.slice(0, 6), JSON.stringify(done));
   return res;
+}
+
+
+/** 스마트스토어(셀렉트인하우스·모아하우스) 상품별 일 판매 — 월마감 대시보드용 (조회 전용, 결제일 기준·취소/반품 제외) */
+function hubNvItems_(from, to) {
+  var tz = 'Asia/Seoul', a = new Date(String(from) + 'T12:00:00+09:00'), b = new Date(String(to) + 'T12:00:00+09:00'), out = [];
+  if (isNaN(a) || isNaN(b) || b < a || (b - a) / 864e5 > 31) throw new Error('기간은 31일 이내');
+  for (var d = a; d <= b; d = new Date(d.getTime() + 864e5)) {
+    var ds = Utilities.formatDate(d, tz, 'yyyy-MM-dd'), r = hubNvFetch_({ date: ds });
+    (r.stores || []).forEach(function (s) {
+      if (s.error) { out.push([ds, s.channel, '(오류) ' + String(s.error).slice(0, 80), 0, 0, 0, 0]); return; }
+      (s.items || []).forEach(function (it) { out.push([ds, s.channel, it.product, it.count, it.qty, it.sales, it.fee]); });
+    });
+  }
+  return { cols: ['date', 'store', 'product', 'count', 'qty', 'sales', 'fee'], rows: out };
 }
