@@ -2379,32 +2379,28 @@ function hubMcdLines_(ym) {
     var sel = c === '셀렉트인' ? hubMcdGongu_(name) : null;
     out.push({ d: d, shop: shop, corp: c, name: name, opt: opt, cost: cost, qty: qty, amt: amt, st: st, kind: c === '셀렉트인' ? (sel ? '공동구매' : '일반주문') : '-', seller: sel || '' });
   };
-  // 1) 사방넷: OPS DB 월마감RAW(화면에서 넣은 주문 줄) → 없으면 API
-  var raw = hubBook_().getSheetByName('월마감RAW'), got = 0;
-  if (raw && raw.getLastRow() > 1) {
-    raw.getRange(2, 1, raw.getLastRow() - 1, 15).getValues().forEach(function (r) {
-      if (hubMcdYmOf_(r[0]) !== ym || !String(r[12]).startsWith('주문')) return;
-      got++; var d = hubSalesYmd_(r[2], tz) || String(r[2]).replace(/^(\d{4})(\d{2})(\d{2}).*/, '$1-$2-$3');
-      push(d, String(r[3]).trim(), String(r[4]).replace(/^'/, '').trim(), String(r[5] || r[6]).trim(), String(r[7] || ''), N(r[8]), N(r[9]) || 1, N(r[10]), r[11]);
-    });
+  // 1) 사방넷: OPS 매출과 같은 사방넷 API(주문일) 주문 줄 — 상품명·옵션은 화면에서 넣은 월마감RAW(주문번호)로 보강
+  var raw = hubBook_().getSheetByName('월마감RAW'), nmap = {}, got = 0;
+  if (raw && raw.getLastRow() > 1) raw.getRange(2, 1, raw.getLastRow() - 1, 8).getValues().forEach(function (r) {
+    if (hubMcdYmOf_(r[0]) !== ym) return; var k = String(r[1]).replace(/^'/, '').trim(); if (k && !nmap[k]) { nmap[k] = [String(r[5] || r[6]).trim(), String(r[7] || '')]; got++; }
+  });
+  var fc = hubCostForceMap_(), all = [], page = 1;
+  while (page <= 60) {
+    var res = hubSbnCall_('POST', '/v3/sb/order', { dateSearchCondition: 2, startDate: from.replace(/-/g, ''), endDate: to.replace(/-/g, ''), updateOrderStsYn: 'N', page: page, perPage: 1000,
+      responseItems: ['SB_ORD_NO', 'ORDER_STATUS', 'ORDER_DT', 'SHOP_NM', 'SHOP_LOGIN_ID', 'ORDER_TOT_AMT', 'COST_PRICE', 'ORD_CNT', 'ORG_SB_ORD_NO', 'CM_PRD_NM', 'SHOP_PRD_CD'] });
+    var dt = (res && res.data) || {}; all = all.concat(dt.results || []); if (!dt.hasNext) break; page++;
   }
-  src.sbn = got ? '사방넷 주문서확인처리(OPS 월마감RAW) ' + got + '줄' : '';
-  if (!got) {
-    var fc = hubCostForceMap_(), all = [], page = 1;
-    while (page <= 60) {
-      var res = hubSbnCall_('POST', '/v3/sb/order', { dateSearchCondition: 2, startDate: from.replace(/-/g, ''), endDate: to.replace(/-/g, ''), updateOrderStsYn: 'N', page: page, perPage: 1000,
-        responseItems: ['SB_ORD_NO', 'ORDER_STATUS', 'ORDER_DT', 'SHOP_NM', 'SHOP_LOGIN_ID', 'ORDER_TOT_AMT', 'COST_PRICE', 'ORD_CNT', 'ORG_SB_ORD_NO', 'CM_PRD_NM', 'SHOP_PRD_CD'] });
-      var dt = (res && res.data) || {}; all = all.concat(dt.results || []); if (!dt.hasNext) break; page++;
-    }
-    all.forEach(function (x) {
-      if (x.ORG_SB_ORD_NO && String(x.ORG_SB_ORD_NO) !== '0') return;
-      var s = String(x.ORDER_DT || ''), d = s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8);
-      if (d < from || d > to) return;
-      var nm = String(x.CM_PRD_NM || '').trim() || '(사방넷 미매칭 상품) ' + String(x.SHOP_PRD_CD || '');
-      push(d, String(x.SHOP_NM || '').trim(), String(x.SHOP_LOGIN_ID || '').trim(), nm, '', (N(x.COST_PRICE) || hubCostForceOf_(fc, x) / Math.max(1, N(x.ORD_CNT) || 1)), N(x.ORD_CNT) || 1, N(x.ORDER_TOT_AMT), x.ORDER_STATUS);
-    });
-    src.sbn = '사방넷 API(주문일) ' + all.length + '줄';
-  }
+  var named = 0;
+  all.forEach(function (x) {
+    if (x.ORG_SB_ORD_NO && String(x.ORG_SB_ORD_NO) !== '0') return;
+    var s = String(x.ORDER_DT || ''), d = s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8);
+    if (d < from || d > to) return;
+    var w = nmap[String(x.SB_ORD_NO)], nm = (w && w[0]) || String(x.CM_PRD_NM || '').trim();
+    if (w) named++;
+    if (!nm) nm = '(사방넷 미매칭 상품) ' + String(x.SHOP_PRD_CD || '');
+    push(d, String(x.SHOP_NM || '').trim(), String(x.SHOP_LOGIN_ID || '').trim(), nm, w ? w[1] : '', (N(x.COST_PRICE) || hubCostForceOf_(fc, x) / Math.max(1, N(x.ORD_CNT) || 1)), N(x.ORD_CNT) || 1, N(x.ORDER_TOT_AMT), x.ORDER_STATUS);
+  });
+  src.sbn = '사방넷 API(주문일, OPS 매출과 같은 원본) ' + all.length + '줄' + (got ? ' · 상품명·옵션 ' + named + '줄은 사방넷 주문서확인처리 화면 자료로 보강' : '');
   // 2) 셀렉트인 스마트스토어 정상 주문: OPS DB 월마감NV → 없으면 네이버 조회 후 저장
   var nvSh = hubBook_().getSheetByName('월마감NV'), nv = [];
   if (nvSh && nvSh.getLastRow() > 1) nvSh.getRange(2, 1, nvSh.getLastRow() - 1, 8).getValues().forEach(function (r) { if (hubMcdYmOf_(r[0]) === ym) nv.push(r.slice(1)); });
