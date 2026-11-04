@@ -4039,8 +4039,10 @@ function segCounts(){
   var get=function(){ return fetch(url+'?v='+Date.now(),{cache:'no-store'}).then(function(r){ return r.ok?r.text():null; }).catch(function(){ return null; }); };
   var go=function(){ location.replace(url+'?r='+Date.now()+(location.hash||'')); };
   var busy=function(){ return document.querySelector('.ov.on,.drawer.on,input:focus,textarea:focus,select:focus'); };
+  var cand=null;
   var check=function(){ get().then(function(t){ if(!t) return; var s2=sig(t); if(base===null){ base=s2; return; }
-    if(s2!==base){ if(document.hidden||!busy()) go(); else { base=s2; if(typeof toast==='function') toast('새 버전이 있어요 · 입력이 끝나면 새로고침(↻)해 주세요'); } } }); };
+    if(s2!==base && s2!==cand){ cand=s2; setTimeout(check, 20000); return; }   // 배포 직후 서버마다 버전이 섞일 수 있어 20초 뒤 한 번 더 같은지 확인
+    if(s2!==base){ cand=null; if(document.hidden||!busy()) go(); else { base=s2; if(typeof toast==='function') toast('새 버전이 있어요 · 입력이 끝나면 새로고침(↻)해 주세요'); } } }); };
   // 처음 로드한 파일이 이미 옛 버전(캐시)일 수 있어서, 현재 문서와 서버본을 바로 비교
   get().then(function(t){ if(t) base=sig(t); });
   if (!/[?&]r=/.test(location.search)) Promise.all([   // 브라우저 캐시본(지금 보는 화면)과 서버 최신본의 ETag 비교
