@@ -31,7 +31,11 @@ var HUB_TABS = {
   크림보관: ['계정', '보관id', '주문번호', '단계', '상태', '품번', '상품명', '사이즈', '운송장', '신청일', '수정일', '동기화'],
   크림매핑: ['크림품번', '사방넷상품코드', '컬러', '수정일', '수정자', '사이즈연결'],
   외부시세: ['상품코드', '검색어', '최저가', '판매처', '링크', '상품명', '일치', '결과수', '우리최저', '조회일시'],
-  크림판매: ['계정', '주문번호', '입찰id', '상태', '구분', '품번', '상품명', '옵션', '판매가', '수수료', '정산액', '주문일', '정산일', '지급예정일', '동기화']
+  크림판매: ['계정', '주문번호', '입찰id', '상태', '구분', '품번', '상품명', '옵션', '판매가', '수수료', '정산액', '주문일', '정산일', '지급예정일', '동기화'],
+  인스타DM: ['계정', '이름', '상태', '상품', '발송일', '팔로업', '메모', '이력', '수정일', '수정자'],
+  인스타발굴: ['계정', '팔로워', '팔로워수', '카테고리', '상품', '출처', '추적', '메모'],
+  인스타상품: ['브랜드', '카테고리', '상품수', '라인업', '허들', '타겟', '상태', '조건', '노션링크', '지난공구매출'],
+  인스타템플릿: ['이름', '내용', '수정일', '수정자']
 };
 var HUB_P_FIELDS = ['id', 'sku', 'barcode', 'name', 'brand', 'option', 'corp', 'type', 'cost', 'price', 'stock', 'safety', 'loc', 'memo', 'updatedAt', 'updatedBy', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg', 'barPending', 'stocMng', 'vstock', 'owner', 'link', 'setDiv'];
 var HUB_TOKEN_DAYS = 90;
@@ -84,6 +88,10 @@ function doPost(e) {
         return hubOut_(hubLocked_(function () { return hubCostForceSet_(req, me); }));
       case 'cost_force_apply': if (!admin) return hubOut_({ error: '관리자만 실행할 수 있습니다' });   // dry=true: 쓰기 없이 미리보기
         return hubOut_(req.dry ? hubCostForceApply_(req.from, req.to, true, req.ordMap) : hubLocked_(function () { return hubCostForceApply_(req.from, req.to, false, req.ordMap); }));
+      case 'ig_data': return hubOut_(hubIgData_(me, req.force));   // 인스타그램 공구 영업 (일정 시트 읽기 + DM 기록)
+      case 'ig_dm_save': return hubOut_(hubLocked_(function () { return hubIgDmSave_(req.d || {}, me); }));
+      case 'ig_tpl_save': if (!admin) return hubOut_({ error: '관리자만 템플릿을 바꿀 수 있습니다' });
+        return hubOut_(hubLocked_(function () { return hubIgTplSave_(req.list || [], me); }));
       case 'events': return hubOut_(hubEvents_(req.force));   // 홈 행사 일정 캘린더 (공동구매 일정 시트 「일정」 탭, 읽기 전용)
       case 'sbn_reg_daily': return hubOut_(hubSbnRegDaily_(req.days, req.force));   // 사방넷 수집일 기준 법인별 건수 (조회 전용)
       case 'archive_list': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });
@@ -2768,4 +2776,89 @@ function hubMcdHistFromOps_(ym, by) {
 function hubMcdHistSet_(rows, me) {
   (rows || []).forEach(function (h) { if (/^\d{4}-\d{2}$/.test(String(h.ym))) hubMcdHistPut_(h.ym, h, me && me.name); });
   return { ok: true, hist: Object.keys(hubMcdHist_()) };
+}
+
+/* ===================== 인스타그램 공구 영업 =====================
+ * 공동구매 일정 시트 「일정」 탭(읽기 전용) + OPS DB 탭(인스타DM·인스타발굴·인스타상품·인스타템플릿)
+ *  - 일정: A 년/월 · B 시작-종료 · C 확정구분 · D 진행구분 · E 벤더사 · F 제목 · G 셀러 · H 링크 · I 브랜드 · J 통수수료 · K 셀러수수료 · Q 매출 · AC 셀렉트인 최종 매출(관리자만)
+ *  - 인스타발굴·인스타상품은 아래 HUB_IG_SEED_ 버전이 바뀌면 다시 채움(시트에서 직접 고쳐도 됨, 다음 시드 갱신 전까지 유지)
+ *  - DM은 인스타그램 정책상 자동 전송하지 않음: 화면에서 문구 복사 + 대화창 열기 → 직원이 붙여넣고 전송 → 기록 */
+var HUB_IG_SEED_ = {"ver": "2026-11-04a", "pros": [["mim.choi._", "50.1만", 501000, "뷰티디바이스/뷰티", "릴릴", "영업시트", "N"], ["supermom_sujin", "49만", 490000, "뷰티디바이스/뷰티", "글로우엠(뷰티디바이스)", "영업시트", "N"], ["____uzaa", "44.6만", 446000, "미분류(오두스)", "오두스", "영업시트", "N"], ["yooyoi", "41만", 410000, "리빙/수납/생활잡화/세제·탈취", "셀룰라·JBJ 세탁바구니·보로탈코", "진행셀러/일정", "N"], ["1min.diet", "40만", 400000, "건강기능식품·헬스케어", "비타슈넬 이노시톨 외 2종", "영업시트", "N"], ["u.b1n", "38.5만", 385000, "미분류(오두스)", "오두스", "영업시트", "N"], ["thanks_kim", "35.2만", 352000, "미분류(오두스)", "오두스", "영업시트", "N"], ["he1.da", "32.3만", 323000, "미분류(오두스)", "오두스", "영업시트", "N"], ["darimi_unni", "29.8만", 298000, "생활잡화/세제·탈취/주방/식품", "클라세제 / 도산회관", "셀러영업(지희)", "N"], ["lovejina12", "28.3만", 283000, "뷰티디바이스/뷰티", "글로우엠(뷰티디바이스)", "영업시트", "N"], ["goonyyeonee", "25.7만", 257000, "생활잡화/세제·탈취", "픽싯 탈취제", "셀러영업(지희)", "N"], ["euun_kyung_", "25.7만", 257000, "생활잡화/세제·탈취", "픽싯(아이엔오) — 취소", "일정", "N"], ["he11o_yeojin", "24.5만", 245000, "뷰티디바이스/뷰티/소형가전", "데코아르 드라이기", "영업시트", "N"], ["roco_house_", "24.1만", 241000, "미분류(오두스)", "오두스", "영업시트", "N"], ["mangdoo_noona", "23.5만", 235000, "건강기능식품·헬스케어/리빙/수납/소형가전/육아(키즈슈즈)/주방/식품", "관심: 식품·건강·뷰티·가전·침구·육아", "셀러영업(지희)", "N"], ["sunhawww", "22.1만", 221000, "리빙/수납/주방/식품", "도산회관 / JBJ 세탁바구니", "영업시트", "N"], ["jibbab_doumi", "20.8만", 208000, "주방/식품", "올리브오일", "영업시트", "N"], ["kaone815", "20.7만", 207000, "육아(키즈슈즈)", "바크(키즈슈즈)", "영업시트", "N"], ["hyoil.kim1", "19.5만", 195000, "생활잡화/세제·탈취", "픽싯 탈취제", "셀러영업(지희)", "N"], ["sso__ne", "17.4만", 174000, "육아(키즈슈즈)", "바크(키즈슈즈)", "영업시트", "N"], ["baristayomi", "17만", 170000, "리빙/수납/주방/식품", "도산회관 / JBJ 세탁바구니", "영업시트", "N"], ["cherry_ajung", "17만", 170000, "생활잡화/세제·탈취", "딜라이드 샤워타올·보로탈코(예정)", "진행셀러/일정", "N"], ["sallimplus", "16.5만", 165000, "생활잡화/세제·탈취", "클라세제", "영업시트", "N"], ["chouchoubelle._", "15.4만", 154000, "육아(키즈슈즈)", "바크(키즈슈즈)", "영업시트", "N"], ["du_ri_nee", "15만", 150000, "생활잡화/세제·탈취", "클라세제", "셀러영업(지희)", "N"], ["amming_j", "14.8만", 148000, "미분류(오두스)", "오두스", "영업시트", "N"], ["maison_de_blah", "14.7만", 147000, "주방/식품", "올리브오일", "영업시트", "N"], ["bbu___", "14.5만", 145000, "건강기능식품·헬스케어/주방/식품", "관심: 건강/뷰티·생활·식품", "셀러영업(지희)", "N"], ["day_momtable", "14만", 140000, "주방/식품", "도산회관", "셀러영업(지희)", "N"], ["haumjie", "13.6만", 136000, "뷰티디바이스/뷰티/소형가전", "데코아르 드라이기", "영업시트", "N"], ["linakeemz", "12.5만", 125000, "미분류(오두스)", "오두스", "영업시트", "N"], ["shj0154", "12.4만", 124000, "생활잡화/세제·탈취", "클라세제", "셀러영업(지희)", "N"], ["__a.fit.__", "12.3만", 123000, "운동/요가", "만두카 요가매트", "영업시트", "N"], ["snowbambi", "12.3만", 123000, "생활잡화/세제·탈취", "클라세제", "영업시트", "N"], ["mommyland_kr", "11.5만", 115000, "육아(키즈슈즈)", "바크(키즈슈즈)", "영업시트", "N"], ["hellochaeyeon", "11.5만", 115000, "소형가전", "스텐팟 가열식 가습기", "셀러영업(지희)", "N"], ["nari_table_", "11.4만", 114000, "주방/식품", "올리브오일", "영업시트", "N"], ["bomjubu_sarlim", "10.8만", 108000, "생활잡화/세제·탈취", "클라세제", "셀러영업(지희)", "N"], ["voyantte__", "10.2만", 102000, "미분류(오두스)", "오두스", "영업시트", "N"], ["real__siri", "9.9만", 99000, "건강기능식품·헬스케어/뷰티디바이스/뷰티/소형가전/육아(키즈슈즈)/주방/식품", "뉴트리원 칼마디·이네브 압박스타킹·시노링크·바디프랜드 두피기·도산회관·바크", "진행셀러/일정", "N"], ["___e.you", "9.6만", 96000, "육아(키즈슈즈)", "바크(키즈슈즈)", "영업시트", "N"], ["boa.mom_", "8.9만", 89000, "주방/식품", "도산회관", "영업시트", "N"], ["home_taya", "8.6만", 86000, "운동/요가", "만두카 요가매트", "영업시트", "N"], ["y__blanc", "7.7만", 77000, "주방/식품", "올리브오일", "영업시트", "N"]], "cats": [["주방/식품", 13, "도산회관(주먹밥) · 올리브오일 · 상국이네 · 경자국밥", "darimi_unni|29.8만|N, mangdoo_noona|23.5만|N, sunhawww|22.1만|N, jibbab_doumi|20.8만|N, baristayomi|17만|N, maison_de_blah|14.7만|N", "도산회관 759만·863만, 상국이네 415만·212만 / 경자국밥 11월 예정"], ["생활잡화/세제·탈취", 11, "픽싯 탈취제 · 보로탈코 · 클라세제 · 셀룰라 · 딜라이드 샤워타올 · 트리오리지널세제", "yooyoi|41만|N, darimi_unni|29.8만|N, goonyyeonee|25.7만|N, euun_kyung_|25.7만|N, hyoil.kim1|19.5만|N, cherry_ajung|17만|N", "픽싯 1차 3,218만·2차 5,387만, 보로탈코 2,904만·1,524만·1,092만, 셀룰라 918만"], ["육아(키즈슈즈)", 8, "바크", "mangdoo_noona|23.5만|N, kaone815|20.7만|N, sso__ne|17.4만|N, chouchoubelle._|15.4만|N, smallmini_3j|10.8만|Y, mommyland_kr|11.5만|N", ""], ["미분류(오두스)", 8, "오두스(카테고리 미확인)", "____uzaa|44.6만|N, u.b1n|38.5만|N, thanks_kim|35.2만|N, he1.da|32.3만|N, roco_house_|24.1만|N, amming_j|14.8만|N", ""], ["뷰티디바이스/뷰티", 6, "글로우엠 · 릴릴 · 데코아르 드라이기 · 뉴메이슨 고데기 · 바디프랜드 두피기", "mim.choi._|50.1만|N, supermom_sujin|49만|N, lovejina12|28.3만|N, he11o_yeojin|24.5만|N, haumjie|13.6만|N, real__siri|9.9만|N", ""], ["소형가전", 5, "스텐팟 가열식 가습기 · 에디르 가습기 · 데코아르 드라이기 · 바디프랜드 두피기", "he11o_yeojin|24.5만|N, mangdoo_noona|23.5만|N, haumjie|13.6만|N, hellochaeyeon|11.5만|N, real__siri|9.9만|N", "뉴메이슨 고데기 1,460만, 에디르 가습기 521만·386만"], ["리빙/수납", 4, "JBJ 세탁바구니", "yooyoi|41만|N, mangdoo_noona|23.5만|N, sunhawww|22.1만|N, baristayomi|17만|N", "JBJ 세탁바구니 1,889만·1,857만·934만"], ["건강기능식품·헬스케어", 4, "뉴트리원 칼마디 · 비타슈넬 이노시톨 · 시노링크 · 이네브 압박스타킹", "1min.diet|40만|N, mangdoo_noona|23.5만|N, bbu___|14.5만|N, real__siri|9.9만|N", "시노링크·칼마디 소규모(수량 8~14)"], ["운동/요가", 2, "만두카 요가매트", "__a.fit.__|12.3만|N, home_taya|8.6만|N", ""]], "prods": [["JBJ 스테인리스", "리빙·주방", 150, "세탁바구니·식기건조대·주방 블럭선반·수납", "매출 2천만원 이상", "리빙·집꾸미기 셀러", "진행가능", "본사링크 필수 · 셀러별 샘플 1세트 무상 · 당일/익일 출고", "https://app.notion.com/3c7a6a91d31b8108b193d12656b124eb", 46803900], ["데코아르", "리빙·소형가전", 54, "가열식 가습기·전기 오방난로·무선 초퍼·쌀통·에어건·텀블러", "가격비교 노출 금지 · 일정 사전협의 · 가이드가 이하 판매 불가", "리빙·살림 셀러", "진행가능", "겨울 시즌: 가습기·난로·워머 우선", "https://app.notion.com/3c7a6a91d31b8125b527ffa32ef48fb8", 0], ["픽싯", "생활·탈취", 7, "룸데오도란트 탈취제·퍼퓸 세정 롤티슈", "예상매출 1억 이상", "청소 니즈 강한 셀러, 콘텐츠력 좋은 셀러", "내부협의필요", "본사링크(PG 벤더부담) · 제품별 샘플 1개", "https://app.notion.com/3c7a6a91d31b810fb0c7d561475aef08", 93636800], ["보로탈코 (신밧드컴퍼니)", "생활·바디", 1, "보로탈코 바디·롤온", "-", "살림·뷰티 셀러", "진행중", "11~12월 일정 다수 확정", "https://app.notion.com/p/91995ae8a79140d181e71e180c7e0e70", 59429500], ["디어커스", "생활잡화", 11, "누볼라 욕실화(성인·키즈)", "-", "생활리빙·잡화 셀러", "진행가능", "", "https://app.notion.com/3c9a6a91d31b8100ab0cdd2a9ba921ca", 3841000], ["도산회관", "식품", 1, "한우 주먹밥 (오리지널·고추장)", "매출 1천만원 이상 · 팔로워 3만 이상", "육아맘, 간편식 수요", "진행가능", "판매링크 자율", "https://app.notion.com/3c7a6a91d31b806b8ecefe684fbe7a06", 21190162], ["경자국밥", "식품", 1, "냉동 국밥 3종 + 육수", "-", "육아맘·살림", "진행가능", "사전 샘플 제공 가능", "https://app.notion.com/40da6a91d31b8048b4c6ced9fb1f77dd", 0], ["비타슈넬·비비랩 (뉴트리원)", "건강기능식품", 6, "건강기능식품 3종, 올레샷", "매출 3천만원 이상", "임신준비·다이어터·자기관리", "진행가능", "", "https://app.notion.com/3caa6a91d31b8140b2f8dd4ab657dc6d", 566500], ["더존 베트남 쌀국수", "식품", 1, "저칼로리 소고기 쌀국수", "-", "육아맘, 직장인", "검토", "", "https://app.notion.com/3c7a6a91d31b80d986c2ca107cde04c1", 0], ["머즈·키머즈", "여행·육아", 7, "캐리어·보스턴백·롤링카트·올인원 맘마포트", "팔로워 2만+ · 릴스뷰 1만+ 꾸준", "여행·육아 셀러", "검토", "", "https://app.notion.com/40da6a91d31b8058bd54ff13d5858ec8", 0], ["스테나·스텐팟·에디르 가습기", "소형가전(시즌)", 3, "가열식·복합식 가습기", "-", "육아·살림·리빙 중대형 셀러(100개+)", "검토", "겨울 시즌 상품", "https://app.notion.com/3d7a6a91d31b80c3b7cee4381e3d9495", 9078000], ["CLA 클라 세탁케어", "생활리빙", 1, "세탁케어", "-", "임산부·육아맘·다인가구", "검토", "", "https://app.notion.com/3d5a6a91d31b807fb142f0542d0e7d4f", 0], ["뷰티기기 (레스노베·유라이크·인셀라·케어클)", "뷰티기기", 4, "하이퍼샷·제모기·큐티프로·고주파 마사지기", "-", "뷰티 인플루언서, 워킹맘", "검토", "", "https://app.notion.com/3cea6a91d31b80949f68ffcbcb832f9a", 0], ["만두카 요가매트", "운동", 1, "프로 / 프로라이트", "-", "운동·자기관리", "검토", "", "https://app.notion.com/401a6a91d31b80d29020ffdd4ade1c7c", 0], ["랩소 (LAPXO)", "생활잡화", 2, "만능 틈새브러시 7,900원", "-", "살림 셀러", "검토", "저단가 추가구성용", "https://app.notion.com/3ffa6a91d31b80eda1dcdd6de70a6c9b", 0], ["잔스포츠", "패션잡화", 1, "드로우색·하프파인트·슈퍼브레이크", "-", "육아맘, 헬스", "진행가능", "셀렉트인 링크 · 샘플 공급가 구매", "https://app.notion.com/3c7a6a91d31b806eaeb9ff9956894db5", 179858625], ["바크", "패션잡화(신발)", 1, "실내화·키즈", "러프한 편", "육아맘", "진행가능", "", "https://app.notion.com/3c7a6a91d31b8030b877f363bfad1f3f", 21065600], ["UGG 이어머프·호주어그", "시즌 패션", 1, "양털 이어머프", "-", "", "진행중", "", "https://app.notion.com/40da6a91d31b803bbd7dc796ade6b803", 13519700]], "insights": ["모니터링 시트의 8만~50만 추적계정(약 20명)은 모니터링 기간 동안 패션 브랜드만 공구함 — 비패션 셀러 풀은 추적계정 밖(영업시트 리빙·살림·육아 계정)에 있음.", "셀렉트인 실매출 1위 비패션 카테고리는 생활잡화/탈취·세제(픽싯 2회 8,605만, 보로탈코 3회 5,520만), 그다음 리빙(JBJ 3회 4,680만) — 소모품·반복구매 아이템이 회차 공구로 이어짐.", "주방/식품(도산회관·상국이네)은 셀러 제안 수가 가장 많지만 회당 매출은 200만~860만 수준으로, 넓게 뿌리는 볼륨형 카테고리.", "고매출 비패션 공구는 소수 셀러에 집중됨(낭블리 7.4만 픽싯, 요이홈 41만 보로탈코·JBJ, 지쁜이 4.1만 뉴메이슨) — 팔로워보다 리빙/살림 성향 셀러가 중요.", "신규 후보 우선순위: 살림/리빙 성향 20만+ 계정(@darimi_unni, @goonyyeonee, @jibbab_doumi, @sunhawww, @mangdoo_noona)에 픽싯·보로탈코·JBJ처럼 검증된 상품을 먼저 제안하는 것이 효율적."], "note": "「1.브랜드 모니터링」(실데이터 약 240행)·브랜드랭킹·0.모바일은 100% 패션 공구라 비패션 표본 없음. 비패션은 영업시트(제안제품)·셀러영업(지희)·진행셀러/일정 탭 기준이며 대부분 '제안'이지 실제 공구 확인 건이 아님."};
+
+function hubIgSeed_() {
+  var cfg = hubConfig_(), ver = HUB_IG_SEED_.ver;
+  if (cfg.ig_seed_ver && cfg.ig_seed_ver.value === ver) return;
+  hubLocked_(function () {
+    HUB_MEMO_.cfg = null; var c2 = hubConfig_(); if (c2.ig_seed_ver && c2.ig_seed_ver.value === ver) return;
+    [['인스타발굴', HUB_IG_SEED_.pros.map(function (r) { return r.concat(['']); })], ['인스타상품', HUB_IG_SEED_.prods]].forEach(function (t) {
+      var sh = hubSheet_(t[0]), w = HUB_TABS[t[0]].length;
+      if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, w).clearContent();
+      if (t[1].length) sh.getRange(2, 1, t[1].length, w).setValues(t[1].map(function (r) { var x = r.slice(0, w); while (x.length < w) x.push(''); return x; }));
+    });
+    if (!hubRows_('인스타템플릿').vals.length) hubSheet_('인스타템플릿').getRange(2, 1, HUB_IG_TPL_.length, 4).setValues(HUB_IG_TPL_.map(function (t) { return [t[0], t[1], hubNow_(), '기본']; }));
+    hubConfigSet_('ig_seed_ver', ver, { name: '시드' });
+  });
+}
+var HUB_IG_TPL_ = [
+  ['첫 제안 (비패션)', '안녕하세요 {이름}님 :) 셀렉트인 공동구매 담당입니다.\n\n{이름}님 피드 보면서 살림·리빙 콘텐츠 반응이 정말 좋아서 연락드렸어요.\n이번에 저희가 진행 중인 [{상품}] 공구를 제안드리고 싶습니다.\n\n· 상품: {라인}\n· 진행 방식: 셀러님 일정에 맞춰 협의, 샘플 제공 가능\n· 정산: 공구 종료 후 정산서와 계산서 발행까지 저희가 진행\n\n관심 있으시면 편하신 연락처나 이메일 남겨주시면 제안서 바로 보내드릴게요!\n셀렉트인 드림 · biz@select-in.com'],
+  ['재진행 제안 (기존 셀러)', '{이름}님 안녕하세요! 셀렉트인입니다 :)\n지난번 {지난공구} 공구 함께해주셔서 정말 감사했어요.\n\n이번 시즌에 [{상품}] 조건이 좋게 나와서 {이름}님께 먼저 여쭤보고 싶었어요.\n· 상품: {라인}\n· 일정: 원하시는 주차로 맞춰드릴게요\n\n괜찮으시면 일정 가능하신 주 알려주세요!'],
+  ['팔로업 (3일 무응답)', '{이름}님 안녕하세요, 셀렉트인입니다.\n지난번 보내드린 [{상품}] 공구 제안 혹시 확인하셨을까요?\n부담 없이 의견만 주셔도 괜찮아요. 샘플 먼저 받아보시는 것도 가능합니다 :)']
+];
+function hubIgSched_(admin, force) {
+  var cache = CacheService.getScriptCache(), key = 'ig_sched_v1';
+  var base = null;
+  if (!force) { var hit = cache.get(key); if (hit) try { base = JSON.parse(hit); } catch (e) {} }
+  if (!base) {
+    var sh = SpreadsheetApp.openById(HUB_EVENT_ID).getSheetByName('일정');
+    var v = sh.getRange(4, 1, Math.max(1, sh.getLastRow() - 3), 29).getDisplayValues(), rows = [];
+    v.forEach(function (r) {
+      var ym = String(r[0]).trim(), m = String(r[1]).replace(/\s/g, '').match(/^(\d{2})(\d{2})-(\d{2})?(\d{2})?$/);
+      if (!/^\d{6}$/.test(ym) || !m) return;
+      var y = Number(ym.slice(0, 4)), ymM = Number(ym.slice(4)), sm = Number(m[1]), em = m[3] ? Number(m[3]) : sm;
+      var sy = y + (sm - ymM > 6 ? -1 : ymM - sm > 6 ? 1 : 0), ey = sy + (em < sm ? 1 : 0);
+      var a = sy + '-' + m[1] + '-' + m[2], b = m[3] ? ey + '-' + m[3] + '-' + m[4] : a;
+      var link = String(r[7]).trim(), hm = link.match(/instagram\.com\/([A-Za-z0-9._]+)/);
+      rows.push([a, b, String(r[2]).trim(), String(r[3]).trim(), String(r[4]).trim(), String(r[5]).replace(/\s+/g, ' ').trim(), String(r[6]).trim(), hm ? hm[1] : '', String(r[8]).trim(), String(r[9]).trim(), String(r[10]).trim(), hubNum_(r[16]), hubNum_(r[28])]);
+    });
+    base = { cols: ['a', 'b', 'st', 'kind', 'vendor', 'title', 'seller', 'handle', 'brand', 'fee', 'sfee', 'sales', 'profit'], rows: rows, at: Utilities.formatDate(new Date(), 'Asia/Seoul', 'MM-dd HH:mm') };
+    try { cache.put(key, JSON.stringify(base), 600); } catch (e) {}
+  }
+  if (!admin) base.rows.forEach(function (r) { r[12] = null; });   // 셀렉트인 수익은 관리자만
+  return base;
+}
+function hubIgData_(me, force) {
+  hubIgSeed_();
+  var admin = me.role === '관리자', out = {};
+  try { out.sched = hubIgSched_(admin, force); } catch (e) { out.sched = { rows: [], cols: [], err: '공구 일정 시트를 읽지 못했어요: ' + String(e.message || e).slice(0, 80) }; }
+  var obj = function (tab, keys) { return hubRows_(tab).vals.filter(function (v) { return v[0] !== ''; }).map(function (v) { var o = {}; keys.forEach(function (k, i) { var x = v[i]; o[k] = x instanceof Date ? Utilities.formatDate(x, 'Asia/Seoul', 'yyyy-MM-dd') : x; }); return o; }); };
+  out.dm = obj('인스타DM', ['handle', 'name', 'status', 'product', 'sentAt', 'followUp', 'note', 'log', 'updatedAt', 'by']).map(function (d) { try { d.log = d.log ? JSON.parse(d.log) : []; } catch (e) { d.log = []; } return d; });
+  out.pros = obj('인스타발굴', ['handle', 'followers', 'fnum', 'cats', 'products', 'source', 'tracked', 'memo']);
+  out.prods = obj('인스타상품', ['brand', 'cat', 'count', 'line', 'hurdle', 'target', 'status', 'rule', 'url', 'pastSales']);
+  out.tpl = obj('인스타템플릿', ['name', 'body']);
+  out.cats = HUB_IG_SEED_.cats; out.insights = HUB_IG_SEED_.insights; out.note = HUB_IG_SEED_.note; out.seedVer = HUB_IG_SEED_.ver;
+  out.notion = 'https://app.notion.com/p/91995ae8a79140d181e71e180c7e0e70';
+  out.sheet = 'https://docs.google.com/spreadsheets/d/' + HUB_EVENT_ID + '/edit';
+  return out;
+}
+function hubIgDmSave_(d, me) {
+  var h = hubStr_(d.handle, 60).replace(/^@/, '').toLowerCase();
+  if (!/^[a-z0-9._]+$/.test(h)) throw new Error('인스타 계정 형식이 아니에요');
+  var st = ['후보', '발송', '답장', '협의', '확정', '거절'].indexOf(d.status) >= 0 ? d.status : '후보';
+  var r = hubRows_('인스타DM'), idx = -1, prev = null;
+  for (var i = 0; i < r.vals.length; i++) if (String(r.vals[i][0]).toLowerCase() === h) { idx = i; prev = r.vals[i]; break; }
+  var log = []; try { log = prev && prev[7] ? JSON.parse(prev[7]) : []; } catch (e) {}
+  if (d.logText) log.push({ at: Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd'), text: hubStr_(d.logText, 120), by: me.name });
+  log = log.slice(-20);
+  var keep = function (k, j, max) { return d[k] != null ? hubStr_(d[k], max || 200) : (prev ? String(prev[j] instanceof Date ? Utilities.formatDate(prev[j], 'Asia/Seoul', 'yyyy-MM-dd') : prev[j]) : ''); };
+  var row = [h, keep('name', 1, 40), d.status ? st : (prev ? prev[2] : '후보'), keep('product', 3, 80), keep('sentAt', 4, 10), keep('followUp', 5, 10), keep('note', 6, 400), JSON.stringify(log), hubNow_(), me.name];
+  if (idx >= 0) r.sh.getRange(idx + 2, 1, 1, row.length).setValues([row]); else r.sh.appendRow(row);
+  r.sh.getRange(idx >= 0 ? idx + 2 : r.sh.getLastRow(), 5, 1, 2).setNumberFormat('@');
+  return { ok: true, d: { handle: h, name: row[1], status: row[2], product: row[3], sentAt: row[4], followUp: row[5], note: row[6], log: log, updatedAt: row[8], by: row[9] } };
+}
+function hubIgTplSave_(list, me) {
+  var sh = hubSheet_('인스타템플릿'), rows = (list || []).slice(0, 12).map(function (t) { return [hubStr_(t.name, 40), hubStr_(t.body, 3000), hubNow_(), me.name]; }).filter(function (r) { return r[0] && r[1]; });
+  if (!rows.length) throw new Error('템플릿이 비어 있어요');
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 4).clearContent();
+  sh.getRange(2, 1, rows.length, 4).setValues(rows);
+  return { ok: true, tpl: rows.map(function (r) { return { name: r[0], body: r[1] }; }) };
 }
