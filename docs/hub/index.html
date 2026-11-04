@@ -523,6 +523,11 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 .side .ngrp>.grp .ti{font-size:14px;transition:transform .15s}
 .side .ngrp:not(.open)>.grp .ti{transform:rotate(-90deg)}
 .side .ngrp .nitems{display:none}.side .ngrp.open .nitems{display:block}
+
+.paydt summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer}
+.paydt summary::-webkit-details-marker{display:none}
+.paydt summary .ti{color:var(--mute);transition:transform .15s}.paydt[open] summary .ti{transform:rotate(180deg)}
+.paydt summary small b{color:var(--ink)}
 </style>
 </head>
 <body>
@@ -1114,8 +1119,10 @@ function mcPayDraw(){
   var td=SALES.today||today(), end=ymdAdd(td,6), P7={};
   SALES.rows.forEach(function(r){ if(r[10] && r[10]>=td && r[10]<=end && !r[11]) P7[r[10]]=(P7[r[10]]||0)+(+r[6]||0); });
   var pk=Object.keys(P7).sort(), ptot=pk.reduce(function(t,k){ return t+P7[k]; },0);
-  el.innerHTML='<h2>입금 예정 7일 <small>관리자만 · 입금확인 안 된 정산예정액 · 합계 '+won(ptot)+'원</small></h2>'+
-    (pk.length?'<div class="tblwrap"><table class="tbl"><tbody>'+pk.map(function(k){ return '<tr><td>'+esc(k)+'</td><td class="r num"><b>'+won(P7[k])+'</b></td></tr>'; }).join('')+'</tbody></table></div>':'<div class="empty">7일 안에 입금 예정이 없어요</div>');
+  var op=lsGet('hubPayOpen')===true;
+  el.innerHTML='<details class="paydt"'+(op?' open':'')+'><summary><h2 style="margin:0">입금 예정 7일 <small>관리자만 · 합계 <b>'+won(ptot)+'원</b></small></h2><i class="ti ti-chevron-down"></i></summary><div style="margin-top:10px">'+
+    (pk.length?'<div class="tblwrap"><table class="tbl"><tbody>'+pk.map(function(k){ return '<tr><td>'+esc(k)+'</td><td class="r num"><b>'+won(P7[k])+'</b></td></tr>'; }).join('')+'</tbody></table></div>':'<div class="empty">7일 안에 입금 예정이 없어요</div>')+'<p class="sm" style="margin:8px 0 0">입금확인 안 된 정산예정액</p></div></details>';
+  var d=el.querySelector('details'); d.addEventListener('toggle',function(){ lsSet('hubPayOpen',d.open); });
 }
 VIEWS.close = {
   html: function(){
