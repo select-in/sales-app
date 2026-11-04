@@ -3487,6 +3487,7 @@ function igLoad(force){
     }).then(function(x){ IG_BUSY=false; return x; }, function(e){ IG_BUSY=false; throw e; });
 }
 function igBuild(j){
+  try { j = JSON.parse(JSON.stringify(j).replace(/미분류\(오두스\)/g,'뷰티').replace(/오두스\(카테고리 미확인\)/g,'오두스')); } catch(e){}
   var td = igYmd(new Date()), C = (j.sched&&j.sched.cols)||[];
   var rows = ((j.sched&&j.sched.rows)||[]).map(function(r){ var o={}; C.forEach(function(k,i){ o[k]=r[i]; }); return o; });
   rows.forEach(function(r){
@@ -3532,8 +3533,9 @@ function igFill(){
   var d=IGF.d, t=IG.tpl[d.tpl]||IG.tpl[0], p=IG.prods.filter(function(x){ return x.brand===d.product; })[0];
   var s=IG.sellers.filter(function(x){ return x.handle && igKey(x.handle)===igKey(d.handle); })[0];
   var nm = d.name || (s&&s.seller) || igKey(d.handle) || '셀러';
-  return String(t.body).split('{이름}').join(nm).split('{상품}').join(d.product||'상품명').split('{라인}').join((p&&p.line)||'-').split('{지난공구}').join((s&&s.products[s.products.length-1])||'지난');
+  return String(t.body).split('{이름}').join(nm).split('{상품}').join(igPName(d.product)||'상품명').split('{라인}').join((p&&p.line)||'-').split('{지난공구}').join((s&&s.products[s.products.length-1])||'지난');
 }
+function igPName(n){ return String(n||'').replace(/\s*[(（][^)）]*[)）]/g,'').replace(/\s{2,}/g,' ').trim(); }
 function igQSel(){ return Object.keys(IGF.qsel||{}).filter(function(k){ return IGF.qsel[k]; }); }
 function igQLoad(){ var it=IGF.q[IGF.qi]; if (!it) return; IGF.d={handle:it.h,name:it.n||'',product:it.p||'',tpl:Number(it.tpl||0),text:''}; IGF.tab='dm'; igSave(); }
 function igQStart(items){ IGF.q=items; IGF.qi=0; igQLoad(); }
@@ -3752,7 +3754,6 @@ function igDm(){
     '<label class="igl">보낼 내용 <small>직접 고쳐도 돼요</small><textarea class="inp" id="igtx" rows="11">'+esc(d.text)+'</textarea></label>'+
     '<div class="igbtns">'+(h?'<a class="btn pri" id="igsend" href="https://ig.me/m/'+encodeURIComponent(h)+'" target="_blank" rel="noopener"><i class="ti ti-brand-instagram"></i>복사하고 인스타 DM 열기</a>':'<span class="btn pri" style="opacity:.45">계정을 입력하세요</span>')+
       '<button class="btn" id="igre"><i class="ti ti-rotate"></i>문구 다시 채우기</button><button class="btn" id="igcp"><i class="ti ti-copy"></i>복사만</button></div>'+
-    '<label class="igrl"><input type="checkbox" id="igrl"'+(IGF.rl?' checked':'')+'> 셀러가 바로 「참여할게요 / 이번엔 어려워요」를 누를 수 있는 회신 링크 같이 보내기</label>'+
     '<p class="ignote">① 복사하고 DM 열기 → ② 인스타 대화창에 붙여넣기 → ③ 전송. 버튼을 누르면 「발송」으로 기록되고 3일 뒤 팔로업이 잡혀요. 인스타그램 정책상 전송 버튼은 직접 눌러야 해요.</p>'+
     (h?'<h2 style="font-size:14px;margin-top:14px">@'+esc(h)+' 진행 상태</h2><div class="seg segwrap">'+IG_ST.map(function(s){ return '<button data-igst="'+s+'" class="'+(rec&&rec.status===s?'on':'')+'">'+s+'</button>'; }).join('')+'</div>'+
       '<label class="igl" style="margin-top:10px">메모 <small>연락처·조건·회신 내용</small><input class="inp" id="ignote" value="'+esc(rec&&rec.note||'')+'" placeholder="예: 카톡 아이디 받음, 12월 2주차 희망"></label>'+
@@ -3777,6 +3778,7 @@ function igAiAsk(q){
     .then(function(){ IG_AI_BUSY=false; igSave(); if ((location.hash||'').indexOf('#influencer')===0 && IGF.tab==='dm') route(); var b=document.querySelector('.igaimsgs'); if(b) b.scrollTop=b.scrollHeight; });
 }
 function igLinkAdd(){
+  return;   // 회신 링크 자동 첨부는 사용 안 함 (DM 문구에 링크 붙이지 않음)
   var h=igKey(IGF.d.handle); if (!IGF.rl || !/^[a-z0-9._]+$/.test(h)) return;
   var t=$('igtx'); if (t && /\?r=[\w-]+\.[\w-]+/.test(t.value)) return;
   var k=h+'|'+IGF.d.product, put=function(url){ var t2=$('igtx'); if(!t2 || /\?r=[\w-]+\.[\w-]+/.test(t2.value)) return; t2.value=t2.value.replace(/\s+$/,'')+'\n\n👉 참여 여부 선택 (1초): '+url; IGF.d.text=t2.value; igSave(); };
@@ -3789,7 +3791,7 @@ function igDmSave(h, patch, logText){
 }
 function igDmBind(){
   var refill=function(){ IGF.d.text=igFill(); var t=$('igtx'); if (t) t.value=IGF.d.text; igSave(); igLinkAdd(); };
-  igLinkAdd();
+  (function(){ var t=$('igtx'); if (t && /👉 참여 여부 선택/.test(t.value)){ t.value=t.value.replace(/\n*👉 참여 여부 선택[^\n]*(\n[^\n]*\?r=[^\n]*)?/,''); IGF.d.text=t.value; igSave(); } if (t && IGF.d.product && igPName(IGF.d.product)!==IGF.d.product && t.value.indexOf(IGF.d.product)>=0){ t.value=t.value.split(IGF.d.product).join(igPName(IGF.d.product)); IGF.d.text=t.value; igSave(); } })();
   if ($('igrl')) $('igrl').onchange=function(){ IGF.rl=this.checked; igSave(); if (IGF.rl) igLinkAdd(); else { var t=$('igtx'); t.value=t.value.replace(/\n*👉 참여 여부 선택[^\n]*/,''); IGF.d.text=t.value; igSave(); } };
   document.querySelectorAll('[data-igaiq]').forEach(function(b){ b.onclick=function(){ igAiAsk(b.dataset.igaiq); }; });
   if ($('igaisend')) $('igaisend').onclick=function(){ var q=$('igaiq').value.trim(); if(q) igAiAsk(q); };
