@@ -37,6 +37,7 @@ var HUB_TABS = {
   인스타상품: ['브랜드', '카테고리', '상품수', '라인업', '허들', '타겟', '상태', '조건', '노션링크', '지난공구매출', '상세정보'],
   인스타템플릿: ['이름', '내용', '수정일', '수정자']
 };
+HUB_TABS['상품삭제보관'] = HUB_TABS['상품'].concat(['삭제일시', '삭제자']);
 var HUB_P_FIELDS = ['id', 'sku', 'barcode', 'name', 'brand', 'option', 'corp', 'type', 'cost', 'price', 'stock', 'safety', 'loc', 'memo', 'updatedAt', 'updatedBy', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg', 'barPending', 'stocMng', 'vstock', 'owner', 'link', 'setDiv'];
 var HUB_TOKEN_DAYS = 90;
 var HUB_DEFAULT_PIN = '1234';   // 새 직원·초기화 PIN
@@ -78,6 +79,8 @@ function doPost(e) {
       case 'product_save': return hubOut_(hubLocked_(function () { return hubProductSave_(req.p, me); }));
       case 'product_delete': if (!admin) return hubOut_({ error: '관리자만 삭제할 수 있습니다' });
         return hubOut_(hubLocked_(function () { return hubProductDelete_(req.id); }));
+      case 'products_purge_missing': if (!admin) return hubOut_({ error: '관리자만 삭제할 수 있습니다' });
+        return hubOut_(hubLocked_(function () { return hubPurgeMissing_(me, req.dry); }));
       case 'products_import': return hubOut_(hubLocked_(function () { return hubImport_(req.rows, me); }));
       case 'sbn_sync': if (!admin) return hubOut_({ error: '관리자만 사방넷 동기화를 할 수 있습니다' });
         return hubOut_(hubLocked_(function () { return hubSbnSync_(req.rows, me, req.final); }));
@@ -436,6 +439,18 @@ function hubProductDelete_(id) {
   if (!hit) return { error: '상품을 찾을 수 없습니다' };
   hit.sh.deleteRow(hit.row);
   return { ok: true };
+}
+/** 사방넷에 없는 앱 단품(사방넷상태 '사방넷없음') 한 번에 삭제 — 지운 행은 '상품삭제보관' 탭에 그대로 옮겨 보관 */
+function hubPurgeMissing_(me, dry) {
+  var r = hubRows_('상품'), col = HUB_TABS['상품'].indexOf('사방넷상태'), keep = [], gone = [], now = hubNow_();
+  r.vals.forEach(function (v) { (String(v[col]) === '사방넷없음' ? gone : keep).push(v); });
+  if (dry || !gone.length) return { ok: true, count: gone.length, dry: !!dry };
+  var bk = hubSheet_('상품삭제보관'), w = HUB_TABS['상품'].length;
+  bk.getRange(bk.getLastRow() + 1, 1, gone.length, w + 2).setValues(gone.map(function (v) { return v.concat([now, me.name]); }));
+  r.sh.getRange(2, 1, r.vals.length, w).clearContent();
+  if (keep.length) r.sh.getRange(2, 1, keep.length, w).setValues(keep);
+  hubUGenBump_();
+  return { ok: true, count: gone.length, left: keep.length };
 }
 function hubImport_(rows, me) {
   if (!rows || !rows.length) return { error: '가져올 행이 없습니다' };
