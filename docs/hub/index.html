@@ -603,6 +603,15 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 /* 목록 앞쪽 구분 라벨(입고·출고·사방넷동기화 등): 고정 너비 가운데 → 내용 시작선 고정 */
 .list .li>.pill:first-child{display:inline-flex;flex:0 0 96px;width:96px;justify-content:center;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-sizing:border-box}
 @media (max-width:900px){.list .li>.pill:first-child{flex-basis:84px;width:84px;font-size:11.5px}}
+
+/* 사이드 메뉴: 아이콘 없이 글자만, 전체 열기/접기 */
+.side a.it{padding-left:14px}
+.side .ngrp .nitems a.it{padding-left:18px}
+.side .sgrp{display:none}
+.navall{display:flex;gap:6px;padding:10px 4px 2px}
+.navall button{flex:1;border:1px solid var(--line);background:var(--card);border-radius:7px;padding:5px 0;font-size:12px;color:var(--sub);cursor:pointer;font-family:inherit}
+.navall button:hover{color:var(--accent);border-color:var(--accent)}
+.otab span{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -823,27 +832,28 @@ function persist(){ if (DEMO) return; clearTimeout(_pt); _pt=setTimeout(function
 /* ===================== 메뉴 ===================== */
 var MENU = [
   {grp:'', items:[{k:'home',t:'홈',ic:'home'}]},
-  {grp:'상품', ic:'package', items:[
-    {k:'todo',t:'확인할 일',ic:'list-check',sub:'상품 · 재고'},
-    {k:'products',t:'상품 관리',ic:'package',sub:'상품 · 재고'},
-    {k:'stock',t:'재고 입출고',ic:'barcode',sub:'상품 · 재고'},
-    {k:'barcode',t:'바코드 점검',ic:'barcode-off',sub:'상품 · 재고'},
-    {k:'cost',t:'원가 · 마진',ic:'calculator',sub:'원가'}]},
-  {grp:'채널', ic:'building-store', items:[
-    {k:'chmgr',t:'채널 관리',ic:'layout-grid',sub:'전체 채널'},
-    {k:'register',t:'사방넷 등록',ic:'cloud-upload',sub:'사방넷'},
-    {k:'reg',t:'사방넷 점검',ic:'building-store',sub:'사방넷'},
-    {k:'reco',t:'플랫폼 추천',ic:'bulb',sub:'일반 쇼핑몰'},
-    {k:'kream',t:'크림 판매 관리',ic:'gavel',sub:'크림 · 포이즌'},
-    {k:'poizon',t:'포이즌 판매 관리',ic:'brand-shopee',sub:'크림 · 포이즌'},
-    {k:'channel',t:'크림 · 포이즌 출고',ic:'shoe',sub:'크림 · 포이즌'}]},
-  {grp:'매출 · 주문', ic:'chart-bar', items:[
-    {k:'sales',t:'매출',ic:'chart-bar',sub:'매출'},
-    {k:'close',t:'월 마감',ic:'calendar-check',sub:'매출'},
-    {k:'orders',t:'주문 · 발주 · 송장',ic:'truck-delivery',sub:'주문',soon:1}]},
-  {grp:'마케팅', ic:'speakerphone', items:[
-    {k:'gonggu',t:'공동구매',ic:'users-group',sub:'공동구매'},
-    {k:'influencer',t:'인스타그램 공구',ic:'brand-instagram',sub:'인플루언서'}]},
+  {grp:'상품 · 재고', ic:'package', items:[
+    {k:'todo',t:'확인할 일',ic:'list-check'},
+    {k:'products',t:'상품 관리',ic:'package'},
+    {k:'stock',t:'재고 입출고',ic:'barcode'},
+    {k:'barcode',t:'바코드 점검',ic:'barcode-off'},
+    {k:'cost',t:'원가 · 마진',ic:'calculator'}]},
+  {grp:'쇼핑몰 · 사방넷', ic:'building-store', items:[
+    {k:'chmgr',t:'채널 관리',ic:'layout-grid'},
+    {k:'register',t:'사방넷 등록',ic:'cloud-upload'},
+    {k:'reg',t:'사방넷 점검',ic:'building-store'},
+    {k:'reco',t:'플랫폼 추천',ic:'bulb'}]},
+  {grp:'크림 · 포이즌', ic:'gavel', items:[
+    {k:'kream',t:'크림',ic:'gavel'},
+    {k:'poizon',t:'포이즌',ic:'brand-shopee'},
+    {k:'channel',t:'출고',ic:'shoe'}]},
+  {grp:'매출', ic:'chart-bar', items:[
+    {k:'sales',t:'매출',ic:'chart-bar'},
+    {k:'close',t:'월 마감',ic:'calendar-check'},
+    {k:'orders',t:'주문 · 발주',ic:'truck-delivery',soon:1}]},
+  {grp:'공구 · 마케팅', ic:'speakerphone', items:[
+    {k:'gonggu',t:'공동구매',ic:'users-group'},
+    {k:'influencer',t:'인스타 공구',ic:'brand-instagram'}]},
   {grp:'기타', ic:'dots', items:[
     {k:'links',t:'기존 프로그램',ic:'apps'},
     {k:'archive',t:'보관함',ic:'archive'},
@@ -854,11 +864,11 @@ function shell(){
   var navOpen=lsGet('hubNavOpen')||{};
   var nav = MENU.map(function(g){
     var ps='', open = !!navOpen[g.grp];
-    if (!g.grp) return g.items.map(function(i){ return '<a class="it" href="#'+i.k+'" data-k="'+i.k+'"><i class="ti ti-'+i.ic+'"></i>'+i.t+'</a>'; }).join('');
+    if (!g.grp) return g.items.map(function(i){ return '<a class="it" href="#'+i.k+'" data-k="'+i.k+'">'+i.t+'</a>'; }).join('')+'<div class="navall"><button type="button" data-navall="1">전체 열기</button><button type="button" data-navall="0">전체 접기</button></div>';
     return '<div class="ngrp'+(open?' open':'')+'" data-ng="'+esc(g.grp)+'"><button class="grp" type="button"><span>'+g.grp+'</span><i class="ti ti-chevron-down"></i></button><div class="nitems">'+g.items.map(function(i){
       var sh = i.sub && i.sub!==ps && g.items.some(function(x){ return x.sub && x.sub!==i.sub; }) ? '<div class="sgrp">'+i.sub+'</div>' : ''; ps = i.sub||'';
       var badge = i.k==='stock' && lowCount() ? '<span class="cnt">'+lowCount()+'</span>' : i.soon ? '<span class="soon">준비중</span>' : '';
-      return sh+'<a class="it" href="#'+i.k+'" data-k="'+i.k+'"><i class="ti ti-'+i.ic+'"></i>'+i.t+badge+'</a>';
+      return sh+'<a class="it" href="#'+i.k+'" data-k="'+i.k+'">'+i.t+badge+'</a>';
     }).join('')+'</div></div>';
   }).join('');
   $('app').innerHTML =
@@ -876,6 +886,7 @@ function shell(){
     '</nav>';
   $('sout').onclick = logout;
   $('mrefresh').onclick = syncAll;
+  document.querySelectorAll('[data-navall]').forEach(function(b){ b.onclick=function(){ var on=b.dataset.navall==='1', o={}; document.querySelectorAll('.side .ngrp').forEach(function(g){ g.classList.toggle('open',on); o[g.dataset.ng]=on; }); if(!on){ var cur=document.querySelector('.side .ngrp .it.on'); if(cur){ var cg=cur.closest('.ngrp'); cg.classList.add('open'); o[cg.dataset.ng]=true; } } lsSet('hubNavOpen',o); }; });
   document.querySelectorAll('.side .ngrp>.grp').forEach(function(b){ b.onclick=function(){ var g=b.parentNode; g.classList.toggle('open'); var o=lsGet('hubNavOpen')||{}; o[g.dataset.ng]=g.classList.contains('open'); lsSet('hubNavOpen',o); }; });
 }
 function setActive(k){
@@ -898,7 +909,7 @@ function otabsDraw(k){
     if (i<0){ OTABS.push({k:k, h:hash}); if (OTABS.length>9) OTABS.splice(OTABS.findIndex(function(t){ return t.k!==k && t.k!=='home'; }),1); } else OTABS[i].h=hash;
     otabsSave(); }
   var cur=k||((location.hash||'#home').slice(1).split('?')[0]||'home');
-  el.innerHTML = '<button class="osync'+(SYNC_BUSY?' busy':'')+'" id="osync" title="상품·재고·매출·크림 최신 내용 바로 가져오기"><i class="ti ti-refresh"></i><span>'+(SYNC_BUSY?'동기화 중…':'동기화')+'</span>'+(SYNC_AT?'<small>'+esc(SYNC_AT)+'</small>':'')+'</button>' + OTABS.map(function(t){ return '<a class="otab'+(t.k===cur?' on':'')+(t.k==='home'?' ohome':'')+'" href="'+esc(t.h)+'" data-ot="'+esc(t.k)+'"><i class="ti ti-'+esc(viewIcon(t.k))+'"></i><span>'+esc(viewTitle(t.k))+'</span>'+(t.k!=='home'?'<b class="cx" data-cx="'+esc(t.k)+'" title="탭 닫기">×</b>':'')+'</a>'; }).join('');
+  el.innerHTML = '<button class="osync'+(SYNC_BUSY?' busy':'')+'" id="osync" title="상품·재고·매출·크림 최신 내용 바로 가져오기"><i class="ti ti-refresh"></i><span>'+(SYNC_BUSY?'동기화 중…':'동기화')+'</span>'+(SYNC_AT?'<small>'+esc(SYNC_AT)+'</small>':'')+'</button>' + OTABS.map(function(t){ return '<a class="otab'+(t.k===cur?' on':'')+(t.k==='home'?' ohome':'')+'" href="'+esc(t.h)+'" data-ot="'+esc(t.k)+'"><span>'+esc(viewTitle(t.k))+'</span>'+(t.k!=='home'?'<b class="cx" data-cx="'+esc(t.k)+'" title="탭 닫기">×</b>':'')+'</a>'; }).join('');
   el.querySelectorAll('[data-cx]').forEach(function(x){ x.onclick=function(e){ e.preventDefault(); e.stopPropagation();
     var i=OTABS.findIndex(function(t){ return t.k===x.dataset.cx; }); if(i<0) return; OTABS.splice(i,1); otabsSave();
     if (x.dataset.cx===cur){ var n=OTABS[Math.min(i,OTABS.length-1)]; location.hash=n?n.h:'#home'; } else otabsDraw(); }; });
@@ -1359,7 +1370,7 @@ function prDraw(){
   var ext=best.map(function(x){ var e=EXT&&EXT.map[x.o.prd]; return {o:x.o, here:x.here, e:e, gap:(e&&e.low)? (x.here.unit-e.low)/e.low*100 : null}; })
     .sort(function(a,b){ var ga=a.gap==null?-1e9:a.gap, gb=b.gap==null?-1e9:b.gap; return gb-ga || b.here.amt-a.here.amt; });
   var extHi=ext.filter(function(x){ return x.gap!=null && x.gap>3; }).length;
-  var tabs=[['price','비싼 채널 · 가격 조정',price.length],['miss','여기선 안 팔림 · 등록/노출',miss.length],['best','이 채널 베스트',best.length],['stale','재고 소진 · 30일 판매 0',stale.length]].concat(EXT&&EXT.key?[['ext','외부 최저가 · 네이버',extHi]]:[]);
+  var tabs=[['price','가격 조정',price.length],['miss','미판매 채널',miss.length],['best','베스트',best.length],['stale','재고 소진',stale.length]].concat(EXT&&EXT.key?[['ext','외부 최저가',extHi]]:[]);
   if (PRF.tab==='ext' && !(EXT&&EXT.key)) PRF.tab='price';
   var img=function(prd){ var m=M[prd]; return thumb(m||{}); };
   var stockTxt=function(prd){ var m=M[prd]; return m? (m.type==='위탁'?'위탁':won(m.stock)) : '<span class="sm">앱 미등록</span>'; };
@@ -2919,7 +2930,7 @@ function regDraw(){
         return '<tr class="click'+(RG.acct===k?' open':'')+'" data-a="'+esc(k)+'"><td><div class="c2 nm2"><b>'+esc(a.mall)+'</b><span>'+esc(a.id)+'</span></div></td><td class="r num">'+c2_(won(a.has)+'개', pct+'%')+'</td><td class="r num">'+c2_(a.miss?'<em class="wn">'+won(a.miss)+'개</em>':'0', '')+'</td><td class="r num">'+(a.pause?won(a.pause)+'개':'<span class="sm">0</span>')+'</td><td class="r num">'+(a.wrong?'<em class="wn">'+won(a.wrong)+'개</em>':'<span class="sm">0</span>')+'</td><td class="c"><span class="sm">'+(RG.acct===k?'선택됨':'미등록 보기')+'</span></td></tr>'; }).join('')+
       '</tbody></table></div><p class="sm" style="margin:8px 0 0">다른 법인 상품 = 이 계정에 다른 법인(마이카테고리) 상품이 등록된 수 · 계정→법인은 데일리매출판 설정 ③ 기준 (없으면 겐더샵) · 전체 '+SBR.accts.length+'개 계정 중 제외 '+(SBR.accts.length-D.accts.length)+'개는 뺌</p></div>'+
     '<div class="card" style="margin-top:16px"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'+
-      '<div class="seg" id="rgo">'+[['miss','미등록 있는 상품'],['all','전체']].map(function(t){ return '<button data-v="'+t[0]+'" class="'+(RG.only===t[0]?'on':'')+'">'+t[1]+'</button>'; }).join('')+'</div>'+
+      '<div class="seg" id="rgo">'+[['miss','미등록 상품'],['all','전체']].map(function(t){ return '<button data-v="'+t[0]+'" class="'+(RG.only===t[0]?'on':'')+'">'+t[1]+'</button>'; }).join('')+'</div>'+
       '<div class="search" style="flex:1;min-width:200px"><i class="ti ti-search"></i><input class="inp" id="rgq" placeholder="상품명, 사방넷 코드, 브랜드" value="'+esc(RG.q)+'"></div></div><div id="rglist"></div></div>';
   document.querySelectorAll('#rgc button').forEach(function(b){ b.onclick=function(){ RG.corp=b.dataset.v; RG.acct=''; RG.page=1; regDraw(); }; });
   document.querySelectorAll('#rgo button').forEach(function(b){ b.onclick=function(){ RG.only=b.dataset.v; RG.page=1; regDraw(); }; });
@@ -3184,7 +3195,7 @@ function barGroups(){
 VIEWS.barcode = {
   html: function(){
     var G = barGroups();
-    var tabs = [['auto','사방넷 자동 바코드','21로 시작 · 실제 바코드로 교체 필요'],['dup','중복 바코드','두 상품이 같은 바코드'],['odd','이상한 값','짧거나 형식이 맞지 않음'],['pending','사방넷 반영 대기','바꿨지만 아직 사방넷엔 옛 값']];
+    var tabs = [['auto','자동 바코드','21로 시작 · 실제 바코드로 교체 필요'],['dup','중복','두 상품이 같은 바코드'],['odd','이상값','짧거나 형식이 맞지 않음'],['pending','반영 대기','바꿨지만 아직 사방넷엔 옛 값']];
     var su = lsGetRaw('hubBarSheetUrl');
     return '<div class="ph"><div><h1>바코드 점검</h1><p>실물은 스캔으로, 대량은 시트로 고치고 → 모아서 사방넷에 반영해요</p></div>'+
       (isAdmin()?'<div class="acts pconly"><button class="btn" id="bsx"><i class="ti ti-table-export"></i>지금 목록 시트로 내보내기</button>'+(su?'<a class="btn" href="'+esc(su)+'" target="_blank" rel="noopener"><i class="ti ti-external-link"></i>바코드작업 시트 열기</a>':'')+
@@ -3293,7 +3304,7 @@ VIEWS.cost = {
       '<div class="card" style="margin-top:16px">'+
         '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"><div class="search"><i class="ti ti-search"></i><input class="inp" id="cq" placeholder="상품 검색" value="'+esc(CF.q)+'"></div>'+
         '<div class="seg" id="cb">'+[['현재고','현재고 기준'],['모음전','모음전'],['가상재고','가상재고'],['전체','전체']].map(function(c){ return '<button data-v="'+c[0]+'" class="'+(CF.basis===c[0]?'on':'')+'">'+c[1]+' <small class="num">'+won(S.products.filter(function(p){ return c[0]==='전체'||stockMode(p)===c[0]; }).length)+'</small></button>'; }).join('')+'</div>'+
-        '<div class="seg" id="cs">'+[['margin','마진율 낮은 순'],['value','재고금액 큰 순'],['name','이름순']].map(function(c){ return '<button data-v="'+c[0]+'" class="'+(CF.sort===c[0]?'on':'')+'">'+c[1]+'</button>'; }).join('')+'</div>'+
+        '<div class="seg" id="cs">'+[['margin','마진순'],['value','재고금액순'],['name','이름순']].map(function(c){ return '<button data-v="'+c[0]+'" class="'+(CF.sort===c[0]?'on':'')+'">'+c[1]+'</button>'; }).join('')+'</div>'+
         '<button class="btn'+(CF.hid?' pri':'')+'" id="chid" title="재고 0이면서 마진율 마이너스인 상품 — 집계에서 빠지고 기본 목록에서 숨겨져요"><i class="ti ti-eye'+(CF.hid?'':'-off')+'"></i><span>'+(CF.hid?'숨김 상품 보는 중 · 돌아가기':'재고 0 역마진 숨김 '+won(HID.length)+'개')+'</span></button></div>'+
         (CF.hid?'<div style="margin:-4px 0 12px;padding:10px 12px;border-radius:10px;background:var(--amberbg);color:var(--amber);font-size:13px">재고 0 · 마진율 마이너스 상품이에요. 평균 마진율·기준 미만·홈 확인 항목에서 빠져 있어요. 재고가 들어오거나 판매가·원가를 고쳐 마진이 0% 이상이 되면 자동으로 원래 목록으로 돌아가요.</div>':'')+
         '<div id="clist"></div></div>';
@@ -3421,7 +3432,7 @@ VIEWS.gonggu = {
     var mc=IG.rows.filter(function(r){ return r.a.slice(0,7)===td.slice(0,7) && r.phase!=='cancel'; });
     var on=IG.rows.filter(function(r){ return r.phase!=='cancel' && r.a<=td && r.b>=td; });
     var past=IG.rows.filter(function(r){ return r.phase==='past'; }).slice().reverse(), next2=IG.rows.filter(function(r){ return r.phase==='next'; }), cancel=IG.rows.filter(function(r){ return r.phase==='cancel'; }).slice().reverse();
-    var T=[['on','진행 중',on],['now','2주 안 시작',now],['month','이번 달',mc],['need','확정·변경 필요',need],['next','그 이후 예정',next2],['past','지난 공구',past],['cancel','취소·매출X',cancel]];
+    var T=[['on','진행 중',on],['now','2주 내',now],['month','이번 달',mc],['need','확인 필요',need],['next','예정',next2],['past','지난',past],['cancel','취소·매출X',cancel]];
     var sel=IGF.gk||'now', cur=T.filter(function(t){ return t[0]===sel; })[0]||T[1];
     var kp=function(k,lab,n,cls){ return '<button class="kpi ggk'+(cls||'')+(k===sel?' on':'')+'" data-ggk="'+k+'"><div class="k">'+lab+'</div><div class="v num">'+n+'<small>건</small></div></button>'; };
     var st=function(r){ return r.st==='진행완료'?'g':r.st==='공구/확정'?'b':(r.st==='미확정'||r.st==='가픽스')?'a':r.phase==='cancel'?'r':''; };
@@ -3435,7 +3446,7 @@ VIEWS.gonggu = {
       : (cur[2].length?tbl(cur[2]):'<div class="empty">해당 공구가 없어요</div>');
     var months=IG.months.filter(function(m){ return m.sales>0; }).slice(-12);
     return head+
-      '<div class="grid g4" style="margin-bottom:16px">'+kp('on','진행 중',on.length)+kp('now','2주 안에 시작',now.length)+kp('month','이번 달 공구',mc.length)+kp('need','일정 확정·변경 필요',need.length,need.length?' amber':'')+'</div>'+
+      '<div class="grid g4" style="margin-bottom:16px">'+kp('on','진행 중',on.length)+kp('now','2주 내 시작',now.length)+kp('month','이번 달',mc.length)+kp('need','확인 필요',need.length,need.length?' amber':'')+'</div>'+
       '<div class="card" style="margin-bottom:16px"><div class="ggtabs"><div class="seg segwrap">'+T.map(function(t){ return '<button data-ggk="'+t[0]+'" class="'+(t[0]===sel?'on':'')+'">'+t[1]+' <span class="num">'+t[2].length+'</span></button>'; }).join('')+'</div></div>'+body+'</div>'+
       '<div class="grid g2 ggeq" style="margin-bottom:16px">'+
         '<div class="card"><h2>월별 공구 매출 <small>최근 12개월</small></h2>'+igBars(months,function(m){ return esc(m.m.replace('-','.'))+' <em>'+m.n+'건</em>'; })+'</div>'+
@@ -3569,7 +3580,7 @@ function igCompose(h,n,p,tpl){ IGF.ai=[]; IGF.d={handle:h||'',name:n||'',product
 VIEWS.influencer = {
   html: function(){
     var m=(location.hash||'').match(/[?&]t=(\w+)/); if (m){ IGF.tab=m[1]; igSave(); }
-    var tabs=[['home','요약'],['sellers','진행 셀러'],['pros','신규 발굴 (비패션)'],['fashion','패션 셀러'],['sourcing','소싱 후보'],['prods','제안 상품'],['dm','DM 발송']];
+    var tabs=[['home','요약'],['sellers','진행 셀러'],['pros','신규 발굴'],['fashion','패션 셀러'],['sourcing','소싱'],['prods','제안 상품'],['dm','DM']];
     var head='<div class="ph"><div><h1>인스타그램 공구</h1><p>공구 일정·셀러·신규 발굴·제안 상품과 DM 발송을 한 곳에서</p></div><div class="acts">'+
       (IG&&IG.sheet?'<a class="btn sm" href="'+esc(IG.sheet)+'" target="_blank" rel="noopener"><i class="ti ti-table"></i>공구 시트</a>':'')+
       '<button class="btn sm" id="igref"><i class="ti ti-refresh"></i>'+(IG_BUSY?'불러오는 중…':'새로고침')+'</button></div></div>'+
@@ -3644,7 +3655,7 @@ function igHome(){
   var today=dms.filter(function(d){ return d.sentAt===td; });
   var chk=dms.filter(function(d){ return d.status==='답장'||d.status==='수락'||d.status==='협의'; }).concat(dms.filter(function(d){ return d.status==='발송' && d.followUp && d.followUp<=td; }));
   var fresh=IG.pros.filter(function(n){ return !IG.dm[igKey(n.handle)]; }).sort(function(a,b){ return (Number(b.fnum)||0)-(Number(a.fnum)||0); });
-  var K=[['today','오늘 DM 발송',today.length,''],['chk','답장·협의·팔로업',chk.length,chk.length?' red':''],['acts','재진행·시즌 제안',acts.length,''],['fresh','아직 연락 안 한 신규 후보',fresh.length,'']];
+  var K=[['today','오늘 발송',today.length,''],['chk','답장·협의',chk.length,chk.length?' red':''],['acts','재진행',acts.length,''],['fresh','신규 후보',fresh.length,'']];
   var sel=IGF.hk||'acts'; if (!K.some(function(k){ return k[0]===sel; })) sel='acts';
   var dmRow=function(d){ var f=d.status==='발송'&&d.followUp&&d.followUp<=td;
     return '<div class="li"><span class="pill '+(f?'a':IG_STC[d.status])+'" style="flex:none">'+(f?'팔로업':esc(d.status))+'</span><div class="m"><div class="t">@'+esc(d.handle)+(d.name?' <span style="color:var(--mute);font-weight:500">'+esc(d.name)+'</span>':'')+'</div><div class="s" style="white-space:normal">'+esc(d.product||'-')+' · '+igMd(d.sentAt)+' 발송'+(d.by?' · '+esc(d.by):'')+(d.note?' · '+esc(d.note):'')+'</div></div><div class="e"><button class="btn sm" data-igpick="'+esc(d.handle)+'">열기</button></div></div>'; };
@@ -3663,7 +3674,7 @@ function igHome(){
     '<p class="ignote" style="margin-top:12px">공구 일정·확정 필요·카테고리/브랜드 매출은 <a href="#gonggu">마케팅 → 공동구매</a>에 있어요.</p>';
 }
 function igSched(){
-  var L={now:'현재(2주 안)',next:'예정',past:'지난 공구',cancel:'취소·매출X'}, rows=IG.rows.filter(function(r){ return r.phase===IGF.ph; });
+  var L={now:'2주 내',next:'예정',past:'지난',cancel:'취소'}, rows=IG.rows.filter(function(r){ return r.phase===IGF.ph; });
   if (IGF.ph==='past'||IGF.ph==='cancel') rows=rows.slice().reverse();
   var tot=rows.reduce(function(a,r){ return a+r.sales; },0), months=IG.months.filter(function(m){ return m.sales>0; }).slice(-12);
   return '<div class="grid igsplit"><div class="card"><h2>공구 일정 <small>'+rows.length+'건'+(tot?' · 매출 '+igMan(tot):'')+'</small></h2>'+
@@ -3862,9 +3873,9 @@ VIEWS.more = {
       MENU.filter(function(g){ return g.grp; }).map(function(g){
         var subs=[], by={}; g.items.forEach(function(i){ var k=i.sub||''; if(!by[k]){ by[k]=[]; subs.push(k); } by[k].push(i); });
         var isOpen = op[g.grp]===undefined ? g.grp!=='기타' : !!op[g.grp];
-        return '<details class="card mgrp"'+(isOpen?' open':'')+' data-g="'+esc(g.grp)+'"><summary><i class="ti ti-'+(g.ic||'point')+'"></i><b>'+g.grp+'</b><small>'+g.items.filter(function(i){ return !i.soon; }).length+'</small><i class="ti ti-chevron-down cv"></i></summary>'+
+        return '<details class="card mgrp"'+(isOpen?' open':'')+' data-g="'+esc(g.grp)+'"><summary><b>'+g.grp+'</b><small>'+g.items.filter(function(i){ return !i.soon; }).length+'</small><i class="ti ti-chevron-down cv"></i></summary>'+
           subs.map(function(k){ return (k&&subs.length>1?'<div class="msub">'+k+'</div>':'')+'<div class="mitems">'+by[k].map(function(i){
-            return '<a href="#'+i.k+'" class="'+(i.soon?'soon':'')+'"><i class="ti ti-'+i.ic+'"></i><span>'+i.t+'</span>'+(i.soon?'<em>준비중</em>':'')+'</a>'; }).join('')+'</div>'; }).join('')+
+            return '<a href="#'+i.k+'" class="'+(i.soon?'soon':'')+'"><span>'+i.t+'</span>'+(i.soon?'<em>준비중</em>':'')+'</a>'; }).join('')+'</div>'; }).join('')+
         '</details>';
       }).join('')+'</div>'+
       '<div class="card"><div style="display:flex;align-items:center;gap:12px"><div style="flex:1"><b>'+esc(S.me.name)+'</b> <span class="pill">'+esc(S.me.role)+'</span>'+(DEMO?' <span class="pill a">체험 모드</span>':'')+'</div><button class="btn sm" onclick="logout()"><i class="ti ti-logout"></i>로그아웃</button></div></div>';
