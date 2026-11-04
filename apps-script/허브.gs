@@ -2255,14 +2255,14 @@ function hubArchSave_(req, me) {
 
 /* ===================== 사방넷 수집일 기준 법인별 건수 =====================
  * 송장 출력은 수집일 기준이라 매출(주문일)과 따로 봄. 사방넷 API dateSearchCondition 1(수집일)로 하루씩 조회.
- * 규칙: 취소 제외 · 반품/교환 재생성 행 제외 · 설정 ③ 쇼핑몰ID→법인('제외' 빼기). 지난 날은 6시간, 오늘은 5분 캐시 */
+ * 규칙: 취소 제외 · 반품/교환 재생성 행 제외 · 설정 ③ 쇼핑몰ID→법인('제외' 빼기) · 스토어팜도 포함(매출과 달리 사방넷 수집 그대로). 지난 날은 6시간, 오늘은 5분 캐시 */
 function hubSbnRegDaily_(days, force) {
   var tz = 'Asia/Seoul', n = Math.max(1, Math.min(31, Number(days) || 14)), cache = CacheService.getScriptCache();
   var ss = SpreadsheetApp.openById(HUB_SALES_ID), corp = {};
   ss.getSheetByName('설정').getRange('A57:B120').getValues().forEach(function (r) { var id = String(r[0]).trim(); if (id) corp[id] = String(r[1]).trim(); });
   var out = [];
   for (var k = 0; k < n; k++) {
-    var d = Utilities.formatDate(new Date(Date.now() - k * 864e5), tz, 'yyyyMMdd'), ck = 'sbn_reg_' + d, hit = force ? null : cache.get(ck);
+    var d = Utilities.formatDate(new Date(Date.now() - k * 864e5), tz, 'yyyyMMdd'), ck = 'sbn_reg2_' + d, hit = force ? null : cache.get(ck);
     if (hit) { try { out.push(JSON.parse(hit)); continue; } catch (e) {} }
     var o = { d: d.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'), 겐더샵: 0, 셀렉트인: 0, 기타: 0, amt: { 겐더샵: 0, 셀렉트인: 0, 기타: 0 } }, page = 1;
     try {
@@ -2273,7 +2273,7 @@ function hubSbnRegDaily_(days, force) {
         (dt.results || []).forEach(function (x) {
           if (/CANCEL/i.test(String(x.ORDER_STATUS))) return;
           if (x.ORG_SB_ORD_NO && String(x.ORG_SB_ORD_NO) !== '0') return;
-          var c = corp[String(x.SHOP_LOGIN_ID || '').trim()] || '기타'; if (c === '제외' || hubSbnSkip_(x.SHOP_LOGIN_ID)) return;
+          var c = corp[String(x.SHOP_LOGIN_ID || '').trim()] || '기타'; if (c === '제외') return;   // 수집 기준은 송장 출력용이라 스토어팜(ncp_1p0lvc_01)도 포함
           if (c !== '겐더샵' && c !== '셀렉트인') c = '기타';
           o[c]++; o.amt[c] += Number(x.ORDER_TOT_AMT) || 0;
         });
