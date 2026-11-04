@@ -1424,6 +1424,7 @@ VIEWS.chmgr = {
 function cmDraw(){
   var box=$('cmbody'); if(!box) return;
   var sb=SBR||{accts:[],collect:[]}, D=sb.accts&&sb.accts.length?regData():{accts:[],P:{}};
+  var bd0=syncDate(sb.collectAt); REG_BASE=bd0?bd0.getTime():null;
   var idx={}, row=function(mall,id){ var k=String(mall).replace(/\s/g,'')+'|'+id; return idx[k]||(idx[k]={mall:mall,id:id,corp:'',c:null,a:null,t:null}); };
   (sb.collect||[]).forEach(function(c){ var o=row(c.mall,c.id); o.c=c; o.corp=sbrCorp(c); });
   D.accts.forEach(function(a){ var o=row(a.mall,a.id); o.a=a; o.corp=o.corp||a.corp;
@@ -1473,7 +1474,7 @@ function cmDraw(){
     '</div>'+
     '<div class="card" style="margin-top:16px"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px"><div class="seg" id="cmc">'+['전체','겐더샵','셀렉트인'].map(function(c){ return '<button data-v="'+c+'" class="'+(CM.corp===c?'on':'')+'">'+c+'</button>'; }).join('')+'</div>'+
       '<div class="seg" id="cmo">'+[['','전체'],['issue','확인 필요<small class="num">'+won(nIss)+'</small>']].map(function(t){ return '<button data-v="'+t[0]+'" class="'+(CM.only===t[0]?'on':'')+'">'+t[1]+'</button>'; }).join('')+'</div>'+
-      '<span class="sm">'+(sb.collectAt?'사방넷 '+esc(sb.collectAt):'사방넷 동기화 정보 없음')+(OPT?' · 오늘 주문 '+esc(OPT.at):'')+'</span></div>'+
+      '<span class="sm">'+(sb.collectAt?'사방넷 '+esc(syncFmt(sb.collectAt)):'사방넷 동기화 정보 없음')+(OPT?' · 오늘 주문 '+esc(OPT.at):'')+'</span></div>'+
       (L.length?'<div class="dtable tblwrap"><table class="tbl ktbl"><thead><tr><th>쇼핑몰 · 계정</th><th class="c">법인</th><th>확인할 것</th><th class="r">마지막 주문수집</th><th>스케줄러 자동</th><th class="r">오늘 주문</th><th class="r">상품 등록</th></tr></thead><tbody>'+tblRows+'</tbody></table></div><div class="mcards">'+cards+'</div>'
         :'<div class="empty">'+(CM.only?'확인할 계정이 없어요':'채널 정보가 아직 없어요 — PC 사방넷 관리자 화면에서 「OPS 사방넷 동기화」 실행')+'</div>')+
     '</div>'+
@@ -2912,8 +2913,15 @@ function regDraw(){
   regList(A, prods);
 }
 /* 주문 수집 상태 + 정리할 것 */
-function regAgo(t){ if(!t) return null; var d=new Date(String(t).replace(' ','T')+':00+09:00'); return isNaN(d)?null:(Date.now()-d)/36e5; }
+function syncDate(v){ if(!v) return null; var d=new Date(v); if(isNaN(d)) d=new Date(String(v).replace(' ','T')+(String(v).length<=16?':00':'')+'+09:00'); return isNaN(d)?null:d; }
+function syncFmt(v){ var d=syncDate(v); if(!d) return v?String(v):''; var k=new Date(d.getTime()+9*36e5), p=function(n){ return ('0'+n).slice(-2); }; return p(k.getUTCMonth()+1)+'/'+p(k.getUTCDate())+' '+p(k.getUTCHours())+':'+p(k.getUTCMinutes()); }
+function syncAgeH(v){ var d=syncDate(v); return d?(Date.now()-d)/36e5:null; }
+function syncStaleBanner(v){ var h=syncAgeH(v); if(h==null||h<1) return ''; var t=h>=48?Math.floor(h/24)+'일':Math.round(h)+'시간';
+  return '<div class="sel" style="margin:0 0 12px;border-color:#d64545;background:#fdf1f1"><div class="nm" style="color:#b42318"><i class="ti ti-plug-connected-x"></i> 사방넷 동기화가 '+t+'째 멈춰 있어요 (마지막 '+esc(syncFmt(v))+')</div><div class="meta" style="white-space:normal">아래 내용은 그 시점 기준이에요. PC 크롬에서 사방넷 관리자 로그인이 풀렸거나 창이 닫히면 멈춰요.</div><div class="meta" style="white-space:normal"><b>할 일:</b> 사방넷 관리자에 로그인 → 「OPS 사방넷 동기화」 북마크 실행 (또는 OPS 채팅에 「동기화 해줘」)</div></div>'; }
+var REG_BASE=null;
+function regAgo(t){ if(!t) return null; var d=new Date(String(t).replace(' ','T')+':00+09:00'); return isNaN(d)?null:((REG_BASE||Date.now())-d)/36e5; }
 function regCollectHtml(D){
+  var bd=syncDate(SBR.collectAt); REG_BASE=bd?bd.getTime():null;
   var C=(SBR.collect||[]).map(function(c){ var corp=sbrCorp(c); return Object.assign({}, c, {corp:corp, h:regAgo(c.orderAt)}); });
   if (!C.length) return '<div class="card"><h2>주문 수집 상태</h2><div class="empty">아직 정보가 없어요. 사방넷 관리자 화면의 「OPS 사방넷 동기화」를 한 번 실행하면 보여요</div></div>';
   var act=C.filter(function(c){ return c.corp!=='제외'; });
@@ -2933,7 +2941,7 @@ function regCollectHtml(D){
   var rows=C.slice().sort(function(a,b){ return (b.h==null?999:b.h)-(a.h==null?999:a.h); }).map(function(c){ var bad=c.corp!=='제외' && (c.h==null||c.h>6);
     var yn=function(v,l){ return '<span class="pill" style="margin:1px;'+(v==='Y'?'':'opacity:.45;text-decoration:line-through')+'">'+l+'</span>'; };
     return '<tr><td><div class="c2 nm2"><b>'+esc(c.mall)+'</b><span>'+esc(c.id)+'</span></div></td><td class="c"><span class="pill">'+esc(c.corp)+'</span></td><td class="r num">'+c2_((bad?'<em class="wn">':'<em>')+(c.orderAt?esc(c.orderAt.slice(5)):'없음')+'</em>', c.h==null?'':Math.round(c.h)+'시간 전 · '+esc(c.orderBy))+'</td><td class="r num">'+c2_(c.claimAt?esc(c.claimAt.slice(5)):'없음', esc(c.claimBy))+'</td><td>'+(c.on==='Y'?'':'<em class="wn">스케줄러 꺼짐</em> ')+yn(c.sOrd,'주문')+yn(c.sClm,'클레임')+yn(c.sStk,'재고송신')+yn(c.sShip,'송장')+'</td></tr>'; });
-  return '<div class="card"><h2><i class="ti ti-list-check"></i> 정리할 것 <small>사방넷 기준 · '+esc(SBR.collectAt||'')+'</small></h2>'+
+  return '<div class="card"><h2><i class="ti ti-list-check"></i> 정리할 것 <small>사방넷 기준 · '+esc(syncFmt(SBR.collectAt))+'</small></h2>'+syncStaleBanner(SBR.collectAt)+
     (issues.length?'<div style="display:flex;flex-direction:column;gap:10px">'+issues.map(function(x){ return '<div class="sel" style="margin:0"><div class="nm"><i class="ti ti-'+x[0]+'"></i> '+x[1]+'</div><div class="meta" style="white-space:normal">'+x[2]+'</div><div class="meta" style="white-space:normal"><b>할 일:</b> '+x[3]+'</div></div>'; }).join('')+'</div>':'<div class="empty">정리할 게 없어요</div>')+'</div>'+
     '<div class="card" style="margin-top:16px"><h2>주문 수집 상태 <small>계정별 마지막 수집 · 오래된 순</small></h2><div class="tblwrap"><table class="tbl ktbl"><thead><tr><th>쇼핑몰 · 계정</th><th class="c">법인</th><th class="r">마지막 주문수집</th><th class="r">마지막 클레임수집</th><th>스케줄러 자동</th></tr></thead><tbody>'+rows.join('')+'</tbody></table></div></div>';
 }
