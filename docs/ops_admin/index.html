@@ -636,7 +636,7 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-11-04name'; var APP_BUILD_PREV = '2026-11-04acct';
+var APP_BUILD = '2026-11-04promo'; var APP_BUILD_PREV = '2026-11-04acct';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -3922,7 +3922,8 @@ VIEWS.owner = {
         '<div class="li"><div class="m"><div class="t">직원 OPS</div><div class="s">'+base+'hub/</div></div><a class="btn sm" href="'+base+'hub/" target="_blank" rel="noopener">열기</a></div>'+
       '</div></div>'+
       '<div class="card"><h2>반영 상태</h2><div id="ownver"><div class="empty">확인 중…</div></div>'+
-        '<p style="margin:10px 0 0;font-size:13px;color:var(--mute)">작업판에서 확인이 끝나면 Claude에게 「직원 OPS에 반영해줘」라고 하면 돼요. 직원 화면은 보는 중에 새로고침되지 않고 「새 버전 적용」 버튼으로 바뀌어요.</p></div>'+
+        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px"><button class="btn pri" id="ownpro"><i class="ti ti-send"></i><span>즉시 반영</span></button><span class="sm" id="ownpst" style="color:var(--mute)">평소에는 매일 8시 · 13시 · 19시에 자동 반영</span></div>'+
+        '<p style="margin:10px 0 0;font-size:13px;color:var(--mute)">ops_admin의 화면·서버를 ops_work(직원)로 넘겨요. 즉시 반영은 5~10분 안에 적용되고, 직원 화면은 보는 중에 새로고침되지 않고 「새 버전 적용」 버튼으로 바뀌어요. 데이터는 원래 같이 써서 바로 보여요.</p></div>'+
       '<div class="card"><h2>계정 · 권한 <a class="btn sm" href="#settings">관리</a></h2><div class="list">'+
         [['총괄','전체 + 관리자 계정·입금·수익·서버 설정·보관함'],['관리자','운영 기능 전체, 직원 계정 관리'],['직원','일반 기능']].map(function(r){ return '<div class="li"><span class="pill '+(r[0]==='총괄'?'b':r[0]==='관리자'?'g':'')+'">'+r[0]+'</span><div class="m"><div class="t num">'+(cnt[r[0]]||0)+'명</div><div class="s">'+r[1]+'</div></div></div>'; }).join('')+
         (off?'<div class="li"><span class="pill r">사용 중지</span><div class="m"><div class="t num">'+off+'명</div></div></div>':'')+
@@ -3938,6 +3939,10 @@ VIEWS.owner = {
       el.innerHTML='<div class="list"><div class="li"><div class="m"><div class="t">직원 OPS</div><div class="s num">'+esc(a)+'</div></div></div><div class="li"><div class="m"><div class="t">총괄 작업판</div><div class="s num">'+esc(n)+'</div></div></div>'+
         '<div class="li"><span class="pill '+(same?'g':'a')+'">'+(same?'같음':'반영 대기')+'</span><div class="m"><div class="s">'+(same?'직원 화면과 작업판이 같아요':'작업판에만 있는 변경이 있어요')+'</div></div></div></div>';
     });
+    var pst=function(j){ var el=$('ownpst'); if(!el||!j) return; var t=+j.req||0; el.textContent='평소에는 매일 '+(j.hours||[8,13,19]).join('시 · ')+'시에 자동 반영'+(t?' · 마지막 즉시 반영 요청 '+new Date(t+9*36e5).toISOString().slice(5,16).replace('T',' ')+(j.by?' ('+j.by+')':''):''); };
+    if(!DEMO) api('promote_state',{}).then(pst).catch(function(){});
+    $('ownpro').onclick=function(){ var b=this; if(DEMO) return toast('체험 모드에서는 반영하지 않아요'); b.disabled=true;
+      api('promote_now',{}).then(function(j){ pst(j); toast('반영을 요청했어요 · 5~10분 안에 ops_work에 적용돼요'); }).catch(function(e){ fail(e); }).then(function(){ setTimeout(function(){ b.disabled=false; }, 3000); }); };
     fetch('https://api.github.com/repos/select-in/sales-app/commits?per_page=12',{cache:'no-store'}).then(function(r){ return r.ok?r.json():[]; }).catch(function(){ return []; }).then(function(L){
       var el=$('ownlog'); if(!el) return;
       if(!L||!L.length){ el.innerHTML='<div class="empty">변경 내역을 불러오지 못했어요</div>'; return; }

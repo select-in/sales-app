@@ -181,6 +181,10 @@ function doPost(e) {
       case 'users': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });
         return hubOut_({ users: hubUsers_() });
       case 'user_rename': return hubOut_(hubLocked_(function () { return hubUserRename_(req, me); }));
+      case 'promote_now': if (!owner) return hubOut_({ error: '총괄만 할 수 있어요' });   // ops_admin → ops_work 즉시 반영 요청
+        return hubOut_(hubPromoteReq_(me));
+      case 'promote_state': if (!owner) return hubOut_({ error: '총괄만 볼 수 있어요' });
+        return hubOut_(hubPromoteState_());
       case 'user_pin': return hubOut_(hubLocked_(function () { return hubUserPin_(req, me); }));   // 내 PIN 바꾸기
       case 'user_save': if (!admin) return hubOut_({ error: '관리자만 바꿀 수 있습니다' });
         return hubOut_(hubLocked_(function () { return hubUserSave_(req, me); }));
@@ -192,6 +196,7 @@ function doPost(e) {
 }
 function doGet(e) {
   if (e && e.parameter && e.parameter.r) return hubIgReplyPage_(e.parameter.r);   // 셀러용 공구 제안 회신(수락·거절) 페이지
+  if (e && e.parameter && e.parameter.q === 'promote') return hubOut_(hubPromoteState_());   // ops_admin → ops_work 반영 요청 상태 (자동배포·GitHub 반영 작업이 읽음, 개인정보 없음)
   return ContentService.createTextOutput('셀렉트인 OPS 서버가 동작 중입니다. 화면은 https://select-in.github.io/sales-app/ops_work/ (대장: /ops_admin/) 에서 여세요.');
 }
 function hubOut_(obj) {
@@ -360,6 +365,19 @@ function hubUserSave_(req, me) {
   else sh.appendRow(row);
   hubUGenBump_();
   return { ok: true, users: hubUsers_() };
+}
+/* ===================== ops_admin → ops_work 반영 =====================
+ * 평소: 매일 8·13·19시 자동 반영 (서버 = 「OPS 자동배포」, 화면 = GitHub 반영 작업)
+ * 즉시: 총괄 관리 → [즉시 반영] → 요청 시각 기록 → 두 작업이 5~10분 안에 가져가 반영 */
+var HUB_PROMOTE_HOURS = [8, 13, 19];
+function hubPromoteReq_(me) {
+  var t = String(Date.now());
+  PropertiesService.getScriptProperties().setProperties({ promote_req: t, promote_by: me.name });
+  return hubPromoteState_();
+}
+function hubPromoteState_() {
+  var P = PropertiesService.getScriptProperties();
+  return { req: P.getProperty('promote_req') || '', by: P.getProperty('promote_by') || '', hours: HUB_PROMOTE_HOURS };
 }
 /* 내 PIN 바꾸기 — 현재 PIN 확인 → 새 PIN (숫자 4~8자리). 다른 기기 로그인은 풀리고 새 토큰을 돌려줌 */
 function hubUserPin_(req, me) {

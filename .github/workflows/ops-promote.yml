@@ -1,0 +1,63 @@
+# ops_admin(대장 총괄판) 화면 → ops_work(직원 OPS) 반영
+#  - 평소: 매일 8·13·19시(서울) 자동
+#  - 즉시: ops_admin 총괄 관리 [즉시 반영] → ops_admin 서버에 요청 시각이 기록됨 → 10분 안에 가져가 반영
+# 서버(Apps Script 직원용 배포)는 「OPS 자동배포」가 같은 기준으로 맞춤
+name: ops-promote
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+  pages: write
+concurrency:
+  group: ops-promote
+  cancel-in-progress: false
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 반영할지 판단
+        id: check
+        run: |
+          ADMIN='https://script.google.com/macros/s/AKfycbyC7Bc-4VPDsVWxe-IoUEnHLzzDbhr5xsPn8_vUwnKeQdom_uxWhuojZkJtOo76QZOdrA/exec?q=promote'
+          REQ=$(curl -sL --max-time 30 "$ADMIN" | python3 -c "import sys,json
+          try: print(json.load(sys.stdin).get('req',''))
+          except Exception: print('')" || true)
+          ST=docs/ops_work/promote-state.json
+          LREQ=$(python3 -c "import json;print(json.load(open('$ST')).get('req',''))" 2>/dev/null || echo '')
+          LSLOT=$(python3 -c "import json;print(json.load(open('$ST')).get('slot',''))" 2>/dev/null || echo '')
+          H=$(TZ=Asia/Seoul date +%-H); SLOT=''
+          case "$H" in 8|13|19) SLOT="$(TZ=Asia/Seoul date +%F) $H";; esac
+          WHY=''
+          if [ -n "$REQ" ] && [ "$REQ" != "$LREQ" ]; then WHY="즉시 반영"; fi
+          if [ -z "$WHY" ] && [ -n "$SLOT" ] && [ "$SLOT" != "$LSLOT" ]; then WHY="정기 $SLOT시"; fi
+          echo "why=$WHY" >> "$GITHUB_OUTPUT"; echo "req=$REQ" >> "$GITHUB_OUTPUT"; echo "slot=$SLOT" >> "$GITHUB_OUTPUT"
+          echo "REQ=$REQ LREQ=$LREQ SLOT=$SLOT LSLOT=$LSLOT WHY=$WHY"
+      - name: ops_admin → ops_work 복사·푸시
+        if: steps.check.outputs.why != ''
+        env:
+          WHY: ${{ steps.check.outputs.why }}
+          REQ: ${{ steps.check.outputs.req }}
+          SLOT: ${{ steps.check.outputs.slot }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ST=docs/ops_work/promote-state.json
+          python3 - <<'PY'
+          import json, os
+          p='docs/ops_work/promote-state.json'
+          try: d=json.load(open(p))
+          except Exception: d={}
+          if os.environ['WHY']=='즉시 반영': d['req']=os.environ['REQ']
+          if os.environ['SLOT'] and os.environ['WHY'].startswith('정기'): d['slot']=os.environ['SLOT']
+          if os.environ['REQ'] and not d.get('req'): d['req']=os.environ['REQ']
+          json.dump(d, open(p,'w'), ensure_ascii=False)
+          PY
+          cp docs/ops_admin/index.html docs/ops_work/index.html
+          git config user.name "ops-promote"; git config user.email "ops-promote@users.noreply.github.com"
+          git add docs/ops_work
+          if git diff --cached --quiet; then echo "변경 없음"; exit 0; fi
+          git commit -q -m "ops_work 반영 ($WHY)"
+          for i in 1 2 3; do git pull -q --rebase origin main && git push -q origin HEAD:main && break; sleep 5; done
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/pages/builds" >/dev/null 2>&1 || true
