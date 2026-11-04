@@ -26,7 +26,8 @@ function toUrl(t) {
   return pathToFileURL(path.resolve(t)).href;
 }
 
-const browser = await chromium.launch();
+// CI는 기본 브라우저, 로컬은 설치된 Chromium 경로를 선택할 수 있습니다.
+const browser = await chromium.launch(process.env.OPS_CHROMIUM_EXECUTABLE ? { executablePath: process.env.OPS_CHROMIUM_EXECUTABLE } : {});
 let failed = 0;
 const lines = [];
 

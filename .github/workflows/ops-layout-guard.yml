@@ -17,6 +17,8 @@ jobs:
         with: { node-version: 22 }
       - run: npm ci || npm i -D playwright
       - run: npx playwright install --with-deps chromium
+      - name: 동기화 실패·중복 클릭 회귀 점검
+        run: node --test tools/ops-mobile-sync.test.mjs
       - name: PC·MO 점검
         run: node tools/layout-check.mjs docs/ops_admin/index.html docs/ops_work/index.html
       - if: always()
