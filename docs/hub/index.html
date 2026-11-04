@@ -618,11 +618,13 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-11-03sw-m1';
+var APP_BUILD = '2026-11-04acct';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
-var LS_TOKEN = 'hubToken_v1', LS_DEMO = 'hubDemo_v1', LS_CACHE = 'hubCache_v1';
+/* 채널: stable = 직원·관리자용 OPS(/hub/), next = 총괄 작업판(/hub-next/) — 저장소를 따로 써서 서로 안 섞임 */
+var HUBCH = window.HUB_CHANNEL==='next' ? 'next' : 'stable', CHS = HUBCH==='next' ? '_next' : '';
+var LS_TOKEN = 'hubToken_v1'+CHS, LS_DEMO = 'hubDemo_v1'+CHS, LS_CACHE = 'hubCache_v1'+CHS;
 
 /* ===================== 유틸 ===================== */
 function $(id){ return document.getElementById(id); }
@@ -683,13 +685,14 @@ function bindPager(root, onPage){
 }
 function deadNeg(p){ var m=margin(p); return m!==null && m<0 && stockMode(p)!=='위탁' && effStock(p)<=0; }  /* 재고 0 + 역마진: 집계·목록에서 빼고 숨김 */
 function marginMin(){ var v=Number(S.config.margin_min&&S.config.margin_min.value); return isFinite(v)&&v>0?v:20; }
-function isAdmin(){ return S.me && S.me.role==='관리자'; }
+function isAdmin(){ return S.me && (S.me.role==='관리자'||S.me.role==='총괄'); }
+function isOwner(){ return S.me && S.me.role==='총괄'; }
 
 /* ===================== 서버 / 체험 모드 ===================== */
 function api(action, body){
   body = body || {}; body.action = action;
   if (DEMO){ var dj = demoApi(body); return dj && dj.error ? Promise.reject({message:dj.error}) : Promise.resolve(dj); }
-  body.token = lsGetRaw(LS_TOKEN);
+  body.token = lsGetRaw(LS_TOKEN); body.ch = HUBCH;
   return fetch(API,{method:'POST',body:JSON.stringify(body),redirect:'follow',cache:'no-store'})
     .then(function(r){ return r.json(); })
     .then(function(j){
@@ -757,7 +760,7 @@ function demoApi(b){
     case 'cost_history': return {costs:d.costs[b.id]||[]};
     case 'config_set': d.config[b.key]={value:String(b.value),at:t,by:me.name}; save(); return {ok:true,config:d.config};
     case 'users': return {users:d.users};
-    case 'user_save': { var x=d.users.filter(function(u){ return u.name===b.name; })[0]; if(!x){ if(!/^\d{4,8}$/.test(b.pin||'')) return {error:'새 직원은 숫자 4~8자리 PIN이 필요합니다'}; d.users.push({name:b.name,role:b.role,active:b.active!==false,createdAt:t}); } else { x.role=b.role; x.active=b.active!==false; } save(); return {ok:true,users:d.users}; }
+    case 'user_save': { var x=d.users.filter(function(u){ return u.name===b.name; })[0]; if(!x){ d.users.push({name:b.name,role:b.role,active:b.active!==false,createdAt:t}); } else { x.role=b.role; x.active=b.active!==false; } save(); return {ok:true,users:d.users}; }
   }
   return {error:'unknown'};
 }
@@ -767,10 +770,10 @@ function showLogin(msg){
   stopCam();
   $('app').innerHTML =
     '<div class="login"><div class="box">'+
-    '<img src="../icon-192.png" alt=""><h1>셀렉트인 OPS</h1><p>상품 · 재고 · 원가를 한 곳에서</p>'+
+    '<img src="../icon-192.png" alt=""><h1>셀렉트인 OPS'+(HUBCH==='next'?' <span class="pill a">총괄 작업판</span>':'')+'</h1><p>'+(HUBCH==='next'?'총괄 계정 전용 · 여기서 바꾼 화면은 확인 후 직원 OPS에 반영돼요':'상품 · 재고 · 원가를 한 곳에서')+'</p>'+
     (API ?
       '<input class="inp" id="lname" placeholder="이름" autocomplete="username">'+
-      '<input class="inp" id="lpin" placeholder="PIN (숫자)" type="password" inputmode="numeric" autocomplete="current-password">'+
+      '<input class="inp" id="lpin" placeholder="PIN (숫자 · 처음은 1234)" type="password" inputmode="numeric" autocomplete="current-password">'+
       '<button class="btn pri" id="lgo">로그인</button><div class="msg" id="lmsg">'+esc(msg||'')+'</div>'+
       '<div class="alt"><button id="ldemo">체험 모드로 둘러보기</button></div>'
     :
@@ -786,12 +789,12 @@ function showLogin(msg){
     var n=$('lname').value.trim(), p=$('lpin').value.trim();
     if(!n||!p){ $('lmsg').textContent='이름과 PIN을 입력하세요'; return; }
     $('lgo').disabled=true; $('lmsg').textContent='';
-    fetch(API,{method:'POST',body:JSON.stringify({action:'login',name:n,pin:p}),redirect:'follow'})
+    fetch(API,{method:'POST',body:JSON.stringify({action:'login',name:n,pin:p,ch:HUBCH}),redirect:'follow'})
       .then(function(r){ return r.json(); })
       .then(function(j){
         if(j.error){ $('lmsg').textContent=j.error; $('lgo').disabled=false; return; }
         try{ localStorage.setItem(LS_TOKEN,j.token); }catch(e){}
-        lsSet('hubLastName',n); DEMO=false; boot();
+        lsSet('hubLastName',n); DEMO=false; if(j.pinDefault) lsSet('hubPinAsk'+CHS,1); boot();
       }, function(){ $('lmsg').textContent='서버에 연결할 수 없습니다'; $('lgo').disabled=false; });
   }
   $('lgo').onclick = go;
@@ -806,7 +809,7 @@ function logout(){
 /* ===================== 시작 ===================== */
 /* 기기 저장소: 상품이 많아 localStorage(5MB) 대신 IndexedDB 사용 */
 var IDB = null;
-function idb(){ if (IDB) return IDB; IDB = new Promise(function(ok){ try{ var r=indexedDB.open('selectin-ops',1); r.onupgradeneeded=function(){ r.result.createObjectStore('kv'); }; r.onsuccess=function(){ ok(r.result); }; r.onerror=function(){ ok(null); }; }catch(e){ ok(null); } }); return IDB; }
+function idb(){ if (IDB) return IDB; IDB = new Promise(function(ok){ try{ var r=indexedDB.open('selectin-ops'+CHS,1); r.onupgradeneeded=function(){ r.result.createObjectStore('kv'); }; r.onsuccess=function(){ ok(r.result); }; r.onerror=function(){ ok(null); }; }catch(e){ ok(null); } }); return IDB; }
 function idbGet(k){ return idb().then(function(db){ if(!db) return null; return new Promise(function(ok){ try{ var q=db.transaction('kv').objectStore('kv').get(k); q.onsuccess=function(){ ok(q.result||null); }; q.onerror=function(){ ok(null); }; }catch(e){ ok(null); } }); }); }
 function idbSet(k,v){ return idb().then(function(db){ if(!db) return; try{ db.transaction('kv','readwrite').objectStore('kv').put(v,k); }catch(e){} }); }
 function expandProducts(j){
@@ -824,6 +827,7 @@ function boot(){
     fresh = true;
     S = {me:j.me, products:expandProducts(j), history:j.history||[], config:j.config||{}, users:j.users||[]};
     persist(); shell(); route();
+    if (lsGet('hubPinAsk'+CHS)){ lsDel('hubPinAsk'+CHS); setTimeout(function(){ pinMe(true); }, 300); }
   }).catch(fail);
 }
 var _pt=null;
@@ -872,7 +876,7 @@ function shell(){
     }).join('')+'</div></div>';
   }).join('');
   $('app').innerHTML =
-    '<aside class="side"><a class="brand" href="#home" title="홈으로"><img src="../icon-192.png" alt=""><div>셀렉트인 OPS<small>통합 운영</small></div></a>'+
+    '<aside class="side"><a class="brand" href="#home" title="홈으로"><img src="../icon-192.png" alt=""><div>셀렉트인 OPS<small>'+(HUBCH==='next'?'총괄 작업판':'통합 운영')+'</small></div></a>'+
     '<nav>'+nav+'</nav>'+
     '<div class="me"><div class="av">'+esc((S.me.name||'?').slice(0,1))+'</div><div style="flex:1;min-width:0"><b>'+esc(S.me.name)+'</b><small>'+esc(S.me.role)+(DEMO?' · 체험 모드':'')+'</small></div>'+
     '<button class="x" title="로그아웃" id="sout"><i class="ti ti-logout"></i></button></div></aside>'+
@@ -3885,12 +3889,12 @@ VIEWS.more = {
 /* ---------- 설정 ---------- */
 VIEWS.settings = {
   html: function(){
-    var h = '<div class="ph"><div><h1>설정</h1><p>'+esc(S.me.name)+' · '+esc(S.me.role)+(DEMO?' · 체험 모드':'')+'</p></div><div class="acts">'+(DEMO?'':'<button class="btn" onclick="renameMe()"><i class="ti ti-user-edit"></i>내 이름 바꾸기</button>')+'<button class="btn" onclick="logout()"><i class="ti ti-logout"></i>로그아웃</button></div></div>';
+    var h = '<div class="ph"><div><h1>설정</h1><p>'+esc(S.me.name)+' · '+esc(S.me.role)+(DEMO?' · 체험 모드':'')+'</p></div><div class="acts">'+(DEMO?'':'<button class="btn" onclick="pinMe()"><i class="ti ti-lock"></i>내 PIN 바꾸기</button><button class="btn" onclick="renameMe()"><i class="ti ti-user-edit"></i>내 이름 바꾸기</button>')+'<button class="btn" onclick="logout()"><i class="ti ti-logout"></i>로그아웃</button></div></div>';
     if (!isAdmin()) return h+'<div class="card"><div class="empty">직원 관리와 기준 설정은 관리자만 할 수 있어요.</div></div>';
     return h+'<div class="grid g2">'+
       '<div class="card"><h2>직원 계정 <button class="btn sm pri" id="uadd"><i class="ti ti-plus"></i>추가</button></h2><div class="list">'+
-      S.users.map(function(u){ return '<div class="li"><div class="av" style="width:34px;height:34px;border-radius:50%;background:var(--soft);color:var(--brand);display:grid;place-items:center;font-weight:700">'+esc(u.name.slice(0,1))+'</div><div class="m"><div class="t">'+esc(u.name)+' <span class="pill '+(u.role==='관리자'?'g':'')+'">'+esc(u.role)+'</span>'+(u.active?'':' <span class="pill r">사용 중지</span>')+'</div><div class="s">등록 '+esc(String(u.createdAt).slice(0,10))+'</div></div><button class="btn sm" data-u="'+esc(u.name)+'">수정</button></div>'; }).join('')+
-      '</div><p style="margin:12px 0 0;font-size:13px;color:var(--mute)">직원은 이름 + 숫자 PIN으로 로그인해요. 퇴사자는 「사용 중지」하면 바로 접속이 막힙니다.</p></div>'+
+      S.users.map(function(u){ return '<div class="li"><div class="av" style="width:34px;height:34px;border-radius:50%;background:var(--soft);color:var(--brand);display:grid;place-items:center;font-weight:700">'+esc(u.name.slice(0,1))+'</div><div class="m"><div class="t">'+esc(u.name)+' <span class="pill '+(u.role==='총괄'?'b':u.role==='관리자'?'g':'')+'">'+esc(u.role)+'</span>'+(u.active?'':' <span class="pill r">사용 중지</span>')+'</div><div class="s">등록 '+esc(String(u.createdAt).slice(0,10))+'</div></div><button class="btn sm" data-u="'+esc(u.name)+'">수정</button></div>'; }).join('')+
+      '</div><p style="margin:12px 0 0;font-size:13px;color:var(--mute)">이름 + 숫자 PIN으로 로그인해요. 새 직원·PIN 초기화는 <b>1234</b>, 로그인 후 각자 「내 PIN 바꾸기」로 바꿔요. 퇴사자는 「사용 중지」하면 바로 막힙니다.'+(isOwner()?' 관리자·총괄 계정은 총괄만 바꿀 수 있어요.':'')+'</p></div>'+
       '<div class="card"><h2>기준 설정</h2>'+
         '<label class="fld"><span>마진율 기준 (%) — 이보다 낮으면 빨간색으로 표시</span><div class="scanrow"><input class="inp r num" id="mmin" inputmode="numeric" value="'+marginMin()+'"><button class="btn" id="msave">저장</button></div></label>'+
         '<div style="font-size:13px;color:var(--mute)">서버: '+(DEMO?'체험 모드 (이 기기에만 저장)':'연결됨')+' · 버전 '+APP_BUILD+'</div>'+
@@ -3923,17 +3927,38 @@ function renameMe(){
     api('user_rename',{newName:nn,pin:pin}).then(function(j){ try{ localStorage.setItem(LS_TOKEN,j.token); }catch(e){} closeDrawer(); toast('이름을 「'+j.name+'」(으)로 바꿨어요'); boot(); }).catch(function(e){ b.disabled=false; fail(e); });
   };
 }
+function pinMe(first){
+  drawer(first?'PIN을 바꿔 주세요':'내 PIN 바꾸기',
+    (first?'<p style="font-size:14px;color:var(--sub);margin:0 0 4px">지금 기본 PIN(1234)이에요. 나만 아는 숫자로 바꿔 주세요.</p>':'')+
+    '<label class="fld"><span>현재 PIN <em>*</em></span><input class="inp num" id="pc" type="password" inputmode="numeric" autocomplete="current-password"'+(first?' value="1234"':'')+'></label>'+
+    '<label class="fld"><span>새 PIN (숫자 4~8자리) <em>*</em></span><input class="inp num" id="pn" type="password" inputmode="numeric" autocomplete="new-password"></label>'+
+    '<label class="fld"><span>새 PIN 확인 <em>*</em></span><input class="inp num" id="pn2" type="password" inputmode="numeric" autocomplete="new-password"></label>',
+    '<button class="btn" onclick="closeDrawer()">'+(first?'나중에':'취소')+'</button><button class="btn pri" id="pgo">바꾸기</button>');
+  $('pgo').onclick = function(){
+    var b=this, c=$('pc').value.trim(), n=$('pn').value.trim();
+    if(!c) return toast('현재 PIN을 입력하세요',true);
+    if(!/^\d{4,8}$/.test(n)) return toast('새 PIN은 숫자 4~8자리로 정하세요',true);
+    if(n!==$('pn2').value.trim()) return toast('새 PIN이 서로 달라요',true);
+    if(DEMO){ closeDrawer(); return toast('체험 모드에서는 PIN이 저장되지 않아요'); }
+    b.disabled=true;
+    api('user_pin',{pin:c,newPin:n}).then(function(j){ try{ localStorage.setItem(LS_TOKEN,j.token); }catch(e){} closeDrawer(); toast('PIN을 바꿨어요'); }).catch(function(e){ b.disabled=false; fail(e); });
+  };
+}
 function userForm(u){
-  drawer(u?'직원 정보 수정':'직원 추가',
+  var roles = isOwner() ? ['직원','관리자','총괄'] : ['직원'], cur = u?u.role:'직원';
+  var locked = u && !isOwner() && cur!=='직원';
+  if (locked) return toast('관리자·총괄 계정은 총괄만 바꿀 수 있어요',true);
+  drawer(u?'계정 수정':'계정 추가',
     '<label class="fld"><span>이름 <em>*</em></span><input class="inp" id="un" value="'+esc(u?u.name:'')+'"'+(u?' disabled':'')+' placeholder="로그인할 때 쓰는 이름"></label>'+
-    '<label class="fld"><span>권한</span><select class="inp" id="ur"><option'+(u&&u.role==='관리자'?'':' selected')+'>직원</option><option'+(u&&u.role==='관리자'?' selected':'')+'>관리자</option></select></label>'+
-    '<label class="fld"><span>PIN (숫자 4~8자리)'+(u?' — 바꿀 때만 입력':' <em>*</em>')+'</span><input class="inp num" id="up" inputmode="numeric" placeholder="'+(u?'비워두면 그대로':'예) 1234')+'"></label>'+
+    '<label class="fld"><span>권한</span><select class="inp" id="ur">'+roles.map(function(r){ return '<option'+(r===cur?' selected':'')+'>'+r+'</option>'; }).join('')+'</select></label>'+
+    (u?'<label style="display:flex;gap:8px;align-items:center;font-size:15px"><input type="checkbox" id="urs"> PIN을 1234로 초기화</label>'
+      :'<p style="font-size:13px;color:var(--mute);margin:0">PIN은 <b>1234</b>로 만들어져요. 첫 로그인 때 본인이 바꾸도록 안내돼요.</p>')+
     (u?'<label style="display:flex;gap:8px;align-items:center;font-size:15px"><input type="checkbox" id="ua"'+(u.active?' checked':'')+'> 사용 (끄면 로그인 불가)</label>':''),
     '<button class="btn" onclick="closeDrawer()">취소</button><button class="btn pri" id="usave">저장</button>');
   $('usave').onclick = function(){
     var b=this, name=$('un').value.trim(); if(!name) return toast('이름을 입력하세요',true);
     b.disabled = true;
-    api('user_save',{name:name,role:$('ur').value,pin:$('up').value.trim(),active:u?$('ua').checked:true}).then(function(j){ S.users=j.users; persist(); closeDrawer(); toast('저장했어요'); route(); }).catch(function(e){ b.disabled=false; fail(e); });
+    api('user_save',{name:name,role:$('ur').value,resetPin:u?$('urs').checked:false,active:u?$('ua').checked:true}).then(function(j){ S.users=j.users; persist(); closeDrawer(); toast(u&&$('urs')&&$('urs').checked?'저장했어요 · PIN 1234':'저장했어요'); route(); }).catch(function(e){ b.disabled=false; fail(e); });
   };
 }
 
@@ -4053,7 +4078,8 @@ function segCounts(){
   var cand=null;
   var check=function(){ get().then(function(t){ if(!t) return; var s2=sig(t); if(base===null){ base=s2; return; }
     if(s2!==base && s2!==cand){ cand=s2; setTimeout(check, 20000); return; }   // 배포 직후 서버마다 버전이 섞일 수 있어 20초 뒤 한 번 더 같은지 확인
-    if(s2!==base){ cand=null; if(document.hidden||!busy()) go(); else { base=s2; if(typeof toast==='function') toast('새 버전이 있어요 · 입력이 끝나면 새로고침(↻)해 주세요'); } } }); };
+    if(s2!==base){ cand=null; if(document.hidden||(HUBCH==='next'&&!busy())) go(); else { base=s2; newBar(); } } }); };
+  var newBar=function(){ if(document.getElementById('nvbar')) return; var d=document.createElement('button'); d.id='nvbar'; d.type='button'; d.textContent='새 버전이 준비됐어요 · 눌러서 적용'; d.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:9999;max-width:calc(100% - 32px);padding:10px 16px;border:0;border-radius:999px;background:var(--ink,#111);color:#fff;font:600 13px/1.3 inherit;box-shadow:0 4px 16px rgba(0,0,0,.18);cursor:pointer'; d.onclick=function(){ if(!busy()||confirm('입력 중인 내용이 있어요. 지금 새로고침할까요?')) go(); }; document.body.appendChild(d); };
   // 처음 로드한 파일이 이미 옛 버전(캐시)일 수 있어서, 현재 문서와 서버본을 바로 비교
   get().then(function(t){ if(t) base=sig(t); });
   if (!/[?&]r=/.test(location.search)) Promise.all([   // 브라우저 캐시본(지금 보는 화면)과 서버 최신본의 ETag 비교

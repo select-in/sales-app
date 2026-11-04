@@ -39,16 +39,40 @@ var HUB_TABS = {
 };
 var HUB_P_FIELDS = ['id', 'sku', 'barcode', 'name', 'brand', 'option', 'corp', 'type', 'cost', 'price', 'stock', 'safety', 'loc', 'memo', 'updatedAt', 'updatedBy', 'sbnPrd', 'sbnSku', 'img', 'sbnStatus', 'cat', 'regStatus', 'reg', 'barPending', 'stocMng', 'vstock', 'owner', 'link', 'setDiv'];
 var HUB_TOKEN_DAYS = 90;
+var HUB_DEFAULT_PIN = '1234';   // 새 직원·초기화 PIN
+/* 권한: 총괄(대장, 전체) > 관리자(진금영 등) > 직원 */
+function hubIsAdmin_(role) { return role === '총괄' || role === '관리자'; }
+function hubIsOwner_(role) { return role === '총괄'; }
+/* 한 번만: 대장 → 총괄, 진금영 관리자 계정(PIN 1234) 추가 */
+function hubRolesV2_() {
+  var P = PropertiesService.getScriptProperties();
+  if (P.getProperty('hub_roles_v2')) return;
+  hubLocked_(function () {
+    if (P.getProperty('hub_roles_v2')) return;
+    var sh = hubSheet_('직원'), r = hubRows_('직원');
+    if (!r.vals.some(function (v) { return String(v[1]) === '총괄'; })) {
+      var i = -1;
+      r.vals.forEach(function (v, k) { if (String(v[0]) === '대장') i = k; });
+      if (i < 0) r.vals.forEach(function (v, k) { if (i < 0 && String(v[1]) === '관리자') i = k; });
+      if (i >= 0) sh.getRange(i + 2, 2).setValue('총괄');
+    }
+    if (!hubUserRow_('진금영')) sh.appendRow(['진금영', '관리자', hubHash_('진금영|' + HUB_DEFAULT_PIN), true, hubNow_()]);
+    hubUGenBump_();
+    P.setProperty('hub_roles_v2', hubNow_());
+  });
+}
 
 /* ===================== 진입점 ===================== */
 function doPost(e) {
   var req = {};
   try { req = JSON.parse(e.postData.contents || '{}'); } catch (x) { return hubOut_({ error: 'bad_request' }); }
   try {
-    if (req.action === 'login') return hubOut_(hubLogin_(req.name, req.pin));
+    try { hubRolesV2_(); } catch (x) {}
+    if (req.action === 'login') { var lg = hubLogin_(req.name, req.pin); if (lg.token && req.ch === 'next' && !hubIsOwner_(lg.role)) return hubOut_({ error: '총괄 작업판은 총괄 계정만 들어올 수 있어요. 일반 OPS 주소로 접속하세요' }); return hubOut_(lg); }
     var me = hubVerify_(req.token);
     if (!me) return hubOut_({ error: 'login' });
-    var admin = me.role === '관리자';
+    if (req.ch === 'next' && !hubIsOwner_(me.role)) return hubOut_({ error: 'login' });
+    var admin = hubIsAdmin_(me.role);
     switch (req.action) {
       case 'boot': return hubOut_(hubBoot_(me, req.compact));
       case 'product_save': return hubOut_(hubLocked_(function () { return hubProductSave_(req.p, me); }));
@@ -154,6 +178,7 @@ function doPost(e) {
       case 'users': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });
         return hubOut_({ users: hubUsers_() });
       case 'user_rename': return hubOut_(hubLocked_(function () { return hubUserRename_(req, me); }));
+      case 'user_pin': return hubOut_(hubLocked_(function () { return hubUserPin_(req, me); }));   // 내 PIN 바꾸기
       case 'user_save': if (!admin) return hubOut_({ error: '관리자만 바꿀 수 있습니다' });
         return hubOut_(hubLocked_(function () { return hubUserSave_(req, me); }));
       default: return hubOut_({ error: 'unknown_action' });
@@ -183,9 +208,9 @@ function hubSetup() {
   var p = PropertiesService.getScriptProperties();
   if (!p.getProperty('HUB_SECRET')) p.setProperty('HUB_SECRET', hubRandom_(40));
   var users = hubUsers_();
-  if (!users.some(function (u) { return u.role === '관리자'; })) {
+  if (!users.some(function (u) { return hubIsAdmin_(u.role); })) {
     var pin = String(Math.floor(100000 + Math.random() * 900000));
-    hubUserSave_({ name: '대표', role: '관리자', pin: pin, active: true }, { name: '설정' });
+    hubUserSave_({ name: '대장', role: '총괄', pin: pin, active: true }, { name: '설정', role: '총괄' });
     Logger.log('관리자 계정이 만들어졌습니다 → 이름: 대표 / PIN: ' + pin + '  (앱 설정 화면에서 바꿀 수 있습니다)');
   } else {
     Logger.log('이미 관리자 계정이 있습니다. PIN을 잊었다면 hubResetAdminPin 을 실행하세요.');
@@ -193,10 +218,10 @@ function hubSetup() {
 }
 /** 관리자 PIN을 새로 발급 (잊어버렸을 때) */
 function hubResetAdminPin() {
-  var u = hubUsers_().filter(function (x) { return x.role === '관리자'; })[0];
+  var u = hubUsers_().filter(function (x) { return x.role === '총괄'; })[0] || hubUsers_().filter(function (x) { return hubIsAdmin_(x.role); })[0];
   if (!u) return hubSetup();
   var pin = String(Math.floor(100000 + Math.random() * 900000));
-  hubUserSave_({ name: u.name, role: '관리자', pin: pin, active: true }, { name: '설정' });
+  hubUserSave_({ name: u.name, role: u.role, pin: pin, active: true }, { name: '설정', role: '총괄' });
   Logger.log('관리자 ' + u.name + ' 의 새 PIN: ' + pin);
 }
 
@@ -267,7 +292,7 @@ function hubLogin_(name, pin) {
   cache.remove(k);
   var exp = Date.now() + HUB_TOKEN_DAYS * 864e5;
   var body = exp + '.' + Utilities.base64EncodeWebSafe(name, Utilities.Charset.UTF_8).replace(/=+$/, '');
-  return { token: body + '.' + hubSign_(body, String(u.v[2])), name: name, role: String(u.v[1]) };
+  return { token: body + '.' + hubSign_(body, String(u.v[2])), name: name, role: String(u.v[1]), pinDefault: pin === HUB_DEFAULT_PIN };
 }
 /* 로그인 확인 결과를 5분 기억 → 매 요청마다 직원 탭을 읽지 않음. 직원 정보가 바뀌면 세대값을 바꿔 즉시 무효 */
 function hubUGen_() { try { return CacheService.getScriptCache().get('hub_ugen') || '0'; } catch (e) { return '0'; } }
@@ -315,13 +340,16 @@ function hubUserRename_(req, me) {
 function hubUserSave_(req, me) {
   var name = hubStr_(req.name, 30);
   if (!name) return { error: '이름을 입력하세요' };
-  var role = req.role === '관리자' ? '관리자' : '직원';
+  var role = ['총괄', '관리자', '직원'].indexOf(req.role) >= 0 ? req.role : '직원';
   var active = req.active !== false;
-  var u = hubUserRow_(name);
-  var pin = hubStr_(req.pin, 30);
-  if (!u && !/^\d{4,8}$/.test(pin)) return { error: '새 직원은 숫자 4~8자리 PIN이 필요합니다' };
+  var u = hubUserRow_(name), owner = hubIsOwner_(me.role);
+  var oldRole = u ? String(u.v[1]) : '';
+  if (!owner && (role !== '직원' || hubIsAdmin_(oldRole))) return { error: '관리자·총괄 계정은 총괄만 바꿀 수 있어요' };
+  var pin = req.resetPin ? HUB_DEFAULT_PIN : hubStr_(req.pin, 30);
+  if (!u && !pin) pin = HUB_DEFAULT_PIN;   // 새 직원 기본 PIN
   if (pin && !/^\d{4,8}$/.test(pin)) return { error: 'PIN은 숫자 4~8자리로 정하세요' };
-  if (u && me.name === name && (!active || role !== '관리자')) return { error: '본인 관리자 권한은 끌 수 없습니다' };
+  if (u && me.name === name && (!active || role !== oldRole)) return { error: '본인 계정 권한·사용 여부는 바꿀 수 없습니다' };
+  if (oldRole === '총괄' && role !== '총괄' && hubUsers_().filter(function (x) { return x.role === '총괄' && x.active; }).length < 2) return { error: '총괄 계정은 최소 1개 있어야 해요' };
   var hash = pin ? hubHash_(name + '|' + pin) : String(u.v[2]);
   var row = [name, role, hash, active, u ? u.v[4] : hubNow_()];
   var sh = hubSheet_('직원');
@@ -329,6 +357,16 @@ function hubUserSave_(req, me) {
   else sh.appendRow(row);
   hubUGenBump_();
   return { ok: true, users: hubUsers_() };
+}
+/* 내 PIN 바꾸기 — 현재 PIN 확인 → 새 PIN (숫자 4~8자리). 다른 기기 로그인은 풀리고 새 토큰을 돌려줌 */
+function hubUserPin_(req, me) {
+  var cur = hubStr_(req.pin, 30), nw = hubStr_(req.newPin, 30);
+  var u = hubUserRow_(me.name);
+  if (!u || hubHash_(me.name + '|' + cur) !== String(u.v[2])) return { error: '현재 PIN이 맞지 않습니다' };
+  if (!/^\d{4,8}$/.test(nw)) return { error: '새 PIN은 숫자 4~8자리로 정하세요' };
+  if (nw === cur) return { error: '지금 PIN과 같아요' };
+  hubSheet_('직원').getRange(u.row, 3).setValue(hubHash_(me.name + '|' + nw)); hubUGenBump_();
+  return hubLogin_(me.name, nw);
 }
 
 /* ===================== 상품 ===================== */
@@ -915,7 +953,7 @@ function hubSalesYmd_(v, tz) {
 }
 function hubSales_(me) {
   var ss = SpreadsheetApp.openById(HUB_SALES_ID), tz = 'Asia/Seoul', today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
-  var admin = me && me.role === '관리자';
+  var admin = me && hubIsAdmin_(me.role);
   var sh = ss.getSheetByName('일별입력');
   if (!sh) return { error: "매출판에 '일별입력' 탭이 없어요" };
   var v = sh.getRange(1, 1, Math.max(1, sh.getLastRow()), sh.getLastColumn()).getValues();
@@ -1711,14 +1749,14 @@ function hubConfigSet_(key, value, me) {
 
 /* ===================== 첫 화면 데이터 ===================== */
 function hubBoot_(me, compact) {
-  if (!compact) { var o0 = { me: me, products: hubProducts_(), history: hubHistory_(null, 200), config: hubConfig_() }; if (me.role === '관리자') o0.users = hubUsers_(); return o0; }   // 옛 화면 호환
+  if (!compact) { var o0 = { me: me, products: hubProducts_(), history: hubHistory_(null, 200), config: hubConfig_() }; if (hubIsAdmin_(me.role)) o0.users = hubUsers_(); return o0; }   // 옛 화면 호환
   // 상품은 가볍게: 열 이름 + 값 배열 (객체 키 반복 제거, 등록서 JSON은 등록서 상품만)
   var iReg = HUB_P_FIELDS.indexOf('reg'), iRs = HUB_P_FIELDS.indexOf('regStatus');
   var rows = hubRows_('상품').vals.filter(function (v) { return v[0]; }).map(function (v) {
     return v.map(function (x, i) { if (x instanceof Date) return Utilities.formatDate(x, 'Asia/Seoul', 'yyyy-MM-dd HH:mm'); if (i === iReg && !v[iRs]) return ''; return x === '' ? '' : x; });
   });
   var out = { me: me, pcols: HUB_P_FIELDS, prows: rows, history: hubHistory_(null, 200), config: hubConfig_() };
-  if (me.role === '관리자') out.users = hubUsers_();
+  if (hubIsAdmin_(me.role)) out.users = hubUsers_();
   return out;
 }
 
@@ -2835,7 +2873,7 @@ function hubIgSched_(admin, force) {
 }
 function hubIgData_(me, force) {
   hubIgSeed_();
-  var admin = me.role === '관리자', out = {};
+  var admin = hubIsAdmin_(me.role), out = {};
   try { out.sched = hubIgSched_(admin, force); } catch (e) { out.sched = { rows: [], cols: [], err: '공구 일정 시트를 읽지 못했어요: ' + String(e.message || e).slice(0, 80) }; }
   var obj = function (tab, keys) { return hubRows_(tab).vals.filter(function (v) { return v[0] !== ''; }).map(function (v) { var o = {}; keys.forEach(function (k, i) { var x = v[i]; o[k] = x instanceof Date ? Utilities.formatDate(x, 'Asia/Seoul', 'yyyy-MM-dd') : x; }); return o; }); };
   out.dm = obj('인스타DM', ['handle', 'name', 'status', 'product', 'sentAt', 'followUp', 'note', 'log', 'updatedAt', 'by']).map(function (d) { try { d.log = d.log ? JSON.parse(d.log) : []; } catch (e) { d.log = []; } return d; });
@@ -2912,7 +2950,7 @@ function hubIgAi_(req, me) {
   else if (brand) ctx.push('제안 상품: ' + brand + ' (OPS 상품 자료 없음)');
   if (handle) {
     try {
-      var hist = hubIgSched_(me.role === '관리자', false).rows.filter(function (r) { return String(r[7]).toLowerCase() === handle; }).slice(-8)
+      var hist = hubIgSched_(hubIsAdmin_(me.role), false).rows.filter(function (r) { return String(r[7]).toLowerCase() === handle; }).slice(-8)
         .map(function (r) { return r[0] + '~' + r[1] + ' ' + r[5] + ' (' + r[2] + ', 매출 ' + r[11] + ')'; });
       ctx.push('셀러 @' + handle + ' 지난 공구: ' + (hist.length ? hist.join(' / ') : '없음(신규 셀러)'));
     } catch (e) {}
