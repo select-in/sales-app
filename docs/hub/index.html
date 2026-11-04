@@ -805,7 +805,7 @@ var MENU = [
     {k:'close',t:'월 마감',ic:'calendar-check',sub:'매출'},
     {k:'orders',t:'주문 · 발주 · 송장',ic:'truck-delivery',sub:'주문',soon:1}]},
   {grp:'마케팅', ic:'speakerphone', items:[
-    {k:'gonggu',t:'공동구매',ic:'users-group',sub:'공동구매',soon:1},
+    {k:'gonggu',t:'공동구매',ic:'users-group',sub:'공동구매'},
     {k:'influencer',t:'인스타그램 공구',ic:'brand-instagram',sub:'인플루언서'}]},
   {grp:'기타', ic:'dots', items:[
     {k:'links',t:'기존 프로그램',ic:'apps'},
@@ -3363,9 +3363,35 @@ function soonView(title, desc, plan, linksNote){
 VIEWS.orders = soonView('주문 · 발주 · 송장','사방넷 주문을 모아 업체별 발주서와 송장까지 한 번에',
   ['<b>주문 모으기</b> — 사방넷 주문을 정해진 시간마다 자동 수집','<b>업체별 발주서 자동 변환</b> — 업체 양식을 한 번 등록하면 계속 재사용','<b>송장 등록</b> — 업체·CJ 송장번호를 사방넷에 자동 반영','<b>취소·반품</b> — 취소되면 재고 자동 복구, 발주 취소 알림'],
   '발주서는 지금처럼 스토어팜·사방넷에서 받아 처리하고, 상품·재고는 이 앱에서 관리하세요.');
-VIEWS.gonggu = soonView('공동구매','제안서부터 정산까지 공구 한 건을 처음부터 끝까지',
-  ['<b>공구 일정</b> — 오픈·종료·디자인 마감(D-7)·정산 기한(종료 후 14일) 알림','<b>제안서 변환</b> — 지금 쓰는 운영 프로그램 기능을 이 앱으로 옮김','<b>정산서</b> — 인플루언서용·브랜드사용 정산서, 상품 마스터와 연결','<b>수수료 계산</b> — 셀러·프리랜서·셀렉트인 수수료 자동 분배'],
-  '제안서·정산서·사입 원가표는 기존 운영 프로그램을 계속 쓰면 됩니다.');
+/* 공동구매 = 우리가 직접 잡은 공구 일정 (공동구매 정산 및 일정시트 「일정」 탭, 인스타그램 공구와 같은 데이터) */
+VIEWS.gonggu = {
+  html: function(){
+    var head='<div class="ph"><div><h1>공동구매</h1><p>공동구매 정산 및 일정시트 「일정」 탭 기준 · 현재·예정·지난 공구와 확정 필요 일정</p></div><div class="acts">'+
+      (IG&&IG.sheet?'<a class="btn sm" href="'+esc(IG.sheet)+'" target="_blank" rel="noopener"><i class="ti ti-table"></i>공구 시트</a>':'')+
+      '<button class="btn sm" id="ggref"><i class="ti ti-refresh"></i>'+(IG_BUSY?'불러오는 중…':'새로고침')+'</button></div></div>';
+    if (!IG){ if (!IG_BUSY) igLoad(false).then(function(){ if ((location.hash||'').indexOf('#gonggu')===0) route(); }).catch(function(e){ fail(e); });
+      return head+'<div class="card"><div class="empty">공구 일정 시트를 불러오는 중이에요…</div></div>'; }
+    var td=igYmd(new Date()), now=IG.rows.filter(function(r){ return r.phase==='now'; }), next=IG.rows.filter(function(r){ return r.phase==='next'; });
+    var need=IG.acts.filter(function(a){ return /필요/.test(a.type); });
+    var mc=IG.rows.filter(function(r){ return r.a.slice(0,7)===td.slice(0,7) && r.phase!=='cancel'; });
+    var on=IG.rows.filter(function(r){ return r.phase!=='cancel' && r.a<=td && r.b>=td; });
+    return head+'<div class="grid g4" style="margin-bottom:16px">'+
+      '<div class="kpi"><div class="k">진행 중</div><div class="v num">'+on.length+'<small>건</small></div></div>'+
+      '<div class="kpi"><div class="k">2주 안에 시작</div><div class="v num">'+now.length+'<small>건</small></div></div>'+
+      '<div class="kpi"><div class="k">이번 달 공구</div><div class="v num">'+mc.length+'<small>건</small></div></div>'+
+      '<div class="kpi'+(need.length?' amber':'')+'"><div class="k">일정 확정·변경 필요</div><div class="v num">'+need.length+'<small>건</small></div></div></div>'+
+      (need.length?'<div class="card" style="margin-bottom:16px"><h2>일정 확정·변경 필요 <small>'+need.length+'건</small></h2>'+igMore('need',need,5,function(a){ return '<div class="li"><span class="pill a" style="flex:none">'+esc(a.type)+'</span><div class="m"><div class="t">'+esc(a.seller)+'</div><div class="s" style="white-space:normal">'+esc(a.why)+'</div></div></div>'; })+'</div>':'')+
+      igSched()+'<p style="margin:14px 0 0;font-size:12px;color:var(--mute)">'+esc(IG.at)+' 기준 · 셀러 영업·DM은 <a href="#influencer">인스타그램 공구</a>에서</p>';
+  },
+  bind: function(){
+    $('ggref').onclick=function(){ igLoad(true).then(function(){ toast('최신으로 불러왔어요'); route(); }).catch(fail); route(); };
+    if (!IG) return;
+    var V=$('view');
+    V.querySelectorAll('[data-igph]').forEach(function(b){ b.onclick=function(){ IGF.ph=b.dataset.igph; igSave(); route(); }; });
+    V.querySelectorAll('[data-igmore]').forEach(function(b){ b.onclick=function(){ var y=scrollY; IG_MORE[b.dataset.igmore]=(IG_MORE[b.dataset.igmore]||0)+1; route(); scrollTo(0,y); }; });
+    V.querySelectorAll('[data-igless]').forEach(function(b){ b.onclick=function(){ IG_MORE[b.dataset.igless]=0; route(); }; });
+  }
+};
 /* ---------- 인스타그램 공구 영업 (공구 일정·셀러·신규 발굴·제안 상품·DM 반자동) ----------
  * 서버: ig_data(공동구매 일정 시트 「일정」 탭 + OPS DB 인스타DM·인스타발굴·인스타상품·인스타템플릿) · ig_dm_save · ig_tpl_save
  * DM은 인스타그램 정책상 자동 전송하지 않음 → 문구 복사 + 대화창 열기 → 직원이 붙여넣고 전송 → 발송 기록·3일 뒤 팔로업 */
@@ -3461,13 +3487,14 @@ function igCompose(h,n,p,tpl){ IGF.d={handle:h||'',name:n||'',product:p||IGF.d.p
 VIEWS.influencer = {
   html: function(){
     var m=(location.hash||'').match(/[?&]t=(\w+)/); if (m){ IGF.tab=m[1]; igSave(); }
-    var tabs=[['home','요약'],['sched','공구 일정'],['sellers','진행 셀러'],['pros','신규 발굴'],['prods','제안 상품'],['dm','DM 발송']];
+    var tabs=[['home','요약'],['sellers','진행 셀러'],['pros','신규 발굴'],['prods','제안 상품'],['dm','DM 발송']];
     var head='<div class="ph"><div><h1>인스타그램 공구</h1><p>공구 일정·셀러·신규 발굴·제안 상품과 DM 발송을 한 곳에서</p></div><div class="acts">'+
       (IG&&IG.sheet?'<a class="btn sm" href="'+esc(IG.sheet)+'" target="_blank" rel="noopener"><i class="ti ti-table"></i>공구 시트</a>':'')+
       '<button class="btn sm" id="igref"><i class="ti ti-refresh"></i>'+(IG_BUSY?'불러오는 중…':'새로고침')+'</button></div></div>'+
       '<div class="seg igtabs" style="margin-bottom:16px">'+tabs.map(function(t){ return '<button data-igt="'+t[0]+'" class="'+(IGF.tab===t[0]?'on':'')+'">'+t[1]+'</button>'; }).join('')+'</div>';
     if (!IG){ if (!IG_BUSY) igLoad(false).then(function(){ if ((location.hash||'').indexOf('#influencer')===0) route(); }).catch(function(e){ fail(e); if ((location.hash||'').indexOf('#influencer')===0) route(); });
       return head+'<div class="card"><div class="empty">공구 일정 시트와 DM 기록을 불러오는 중이에요…</div></div>'; }
+    if (IGF.tab==='sched'){ IGF.tab='home'; igSave(); }
     var body = IG.pending && /^(pros|prods|dm)$/.test(IGF.tab)
       ? '<div class="card"><h2>서버 업데이트 대기 중</h2><p style="margin:0;color:var(--sub);font-size:14px">신규 발굴·제안 상품·DM 발송은 OPS 서버를 새 버전으로 배포하면 바로 열려요. 지금은 공구 일정과 셀러 화면만 볼 수 있어요(최근 5개월 일정, 매출 숫자 없이).</p></div>'
       : ({home:igHome, sched:igSched, sellers:igSellers, pros:igPros, prods:igProds, dm:igDm}[IGF.tab]||igHome)();
@@ -3527,8 +3554,8 @@ function igHome(){
     '<div class="kpi'+(need?' amber':'')+'"><div class="k">일정 확정·변경 필요</div><div class="v num">'+need+'<small>건</small></div></div>'+
     '<div class="kpi'+(fol.length+rep.length?' red':'')+'"><div class="k">DM 답장·팔로업</div><div class="v num">'+(fol.length+rep.length)+'<small>명</small></div></div></div>'+
   '<div class="grid g2">'+
-    '<div class="card"><h2>현재 공구 <small>2주 안 시작</small></h2>'+(now.length?igMore('now',now,5,igRow):'<div class="empty">2주 안에 시작하는 공구가 없어요</div>')+
-      '<h2 style="margin-top:16px">그 다음 예정 <small>'+next.length+'건</small></h2>'+(next.length?igMore('next',next,5,igRow):'<div class="empty">예정된 공구가 없어요</div>')+'</div>'+
+    '<div class="card"><h2>공구 일정 <a class="btn sm" href="#gonggu"><i class="ti ti-arrow-right"></i>공동구매에서 보기</a></h2><p style="margin:0;color:var(--sub);font-size:14px">우리가 잡은 공구 일정(현재 '+now.length+'건 · 예정 '+next.length+'건)은 <b>마케팅 → 공동구매</b>로 옮겼어요. 여기는 셀러 영업·DM 전용이에요.</p>'+
+      (now.length?'<h2 style="margin-top:16px;font-size:14px">2주 안에 시작</h2>'+igMore('now',now,3,igRow):'')+'</div>'+
     '<div class="card"><h2>영업 할 일 <small>'+IG.acts.length+'건</small></h2>'+igMore('acts',IG.acts,6,function(a){
       return '<div class="li"><span class="pill '+a.w+'" style="flex:none">'+esc(a.type)+'</span><div class="m"><div class="t">'+esc(a.seller)+(a.handle?' <span style="color:var(--mute);font-weight:500">@'+esc(a.handle)+'</span>':'')+'</div><div class="s" style="white-space:normal">'+esc(a.why)+'</div></div>'+
       (a.handle&&a.tpl?'<div class="e"><a class="btn sm" href="#influencer" data-igc data-h="'+esc(a.handle)+'" data-n="'+esc(a.seller)+'" data-tpl="'+a.tpl+'"><i class="ti ti-send"></i>DM</a></div>':'')+'</div>'; })+
