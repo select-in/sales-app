@@ -559,6 +559,11 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 .igl textarea{min-height:220px;resize:vertical;line-height:1.6}
 .igbtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 .igmore{width:100%;margin-top:8px;color:var(--sub)}.igmore small{color:var(--mute);font-weight:500}
+.igqbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}.igqbar select{flex:1 1 180px;width:auto;height:32px;font-size:13px}
+.igck{display:flex;align-items:center;flex:none}.igck input{width:18px;height:18px;accent-color:var(--brand);cursor:pointer}
+.igqrun{margin-bottom:12px;border-color:var(--accent)}.igqtop{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.igqtop span{color:var(--sub);font-size:13px;flex:1}
+.igqprog{height:6px;background:var(--bg);border-radius:3px;margin-top:10px;overflow:hidden}.igqprog i{display:block;height:100%;background:var(--accent)}
+.igwarn{margin-bottom:12px;color:var(--amber);background:var(--amberbg);border-color:transparent;font-size:14px}
 .igol{margin:0;padding-left:18px;font-size:13.5px;display:flex;flex-direction:column;gap:6px}
 @media (max-width:900px){.igsplit{grid-template-columns:1fr}.igf{grid-template-columns:1fr}.igbar{grid-template-columns:96px minmax(0,1fr) 56px}.igbtns .btn{flex:1 1 100%}.igtabs{width:100%}}
 </style>
@@ -3365,7 +3370,7 @@ VIEWS.gonggu = soonView('공동구매','제안서부터 정산까지 공구 한 
  * 서버: ig_data(공동구매 일정 시트 「일정」 탭 + OPS DB 인스타DM·인스타발굴·인스타상품·인스타템플릿) · ig_dm_save · ig_tpl_save
  * DM은 인스타그램 정책상 자동 전송하지 않음 → 문구 복사 + 대화창 열기 → 직원이 붙여넣고 전송 → 발송 기록·3일 뒤 팔로업 */
 var IG = null, IG_BUSY = false, IGF = lsGet('hubIgF') || {};
-IGF = Object.assign({ tab:'home', ph:'now', sq:'', sel:'', pc:'전체', df:'전체', d:{handle:'',name:'',product:'',tpl:0,text:''} }, IGF);
+IGF = Object.assign({ q:[], qi:0, qsel:{}, qp:'', tab:'home', ph:'now', sq:'', sel:'', pc:'전체', df:'전체', d:{handle:'',name:'',product:'',tpl:0,text:''} }, IGF);
 function igSave(){ lsSet('hubIgF', IGF); }
 var IG_MORE = {};   // 목록 더보기 (화면 이동해도 유지, 새로 열면 접힘)
 function igMore(id, items, n, fn){
@@ -3447,6 +3452,10 @@ function igFill(){
   var nm = d.name || (s&&s.seller) || igKey(d.handle) || '셀러';
   return String(t.body).split('{이름}').join(nm).split('{상품}').join(d.product||'상품명').split('{라인}').join((p&&p.line)||'-').split('{지난공구}').join((s&&s.products[s.products.length-1])||'지난');
 }
+function igQSel(){ return Object.keys(IGF.qsel||{}).filter(function(k){ return IGF.qsel[k]; }); }
+function igQLoad(){ var it=IGF.q[IGF.qi]; if (!it) return; IGF.d={handle:it.h,name:it.n||'',product:it.p||'',tpl:Number(it.tpl||0),text:''}; IGF.tab='dm'; igSave(); }
+function igQStart(items){ IGF.q=items; IGF.qi=0; igQLoad(); }
+function igTodaySent(){ var td=igYmd(new Date()); return Object.keys(IG.dm).filter(function(k){ return IG.dm[k].sentAt===td; }).length; }
 function igCompose(h,n,p,tpl){ IGF.d={handle:h||'',name:n||'',product:p||IGF.d.product||'',tpl:Number(tpl||0),text:''}; IGF.tab='dm'; igSave(); }
 
 VIEWS.influencer = {
@@ -3481,6 +3490,20 @@ VIEWS.influencer = {
     V.querySelectorAll('[data-igpick]').forEach(function(b){ b.onclick=function(){ var r=IG.dm[igKey(b.dataset.igpick)]||{}; IGF.tab='dm'; IGF.d={handle:b.dataset.igpick,name:r.name||'',product:r.product||IGF.d.product,tpl:r.status==='발송'?Math.min(2,IG.tpl.length-1):IGF.d.tpl,text:''}; igSave(); route(); }; });
     var sq=$('igsq'); if (sq) sq.oninput=function(){ IGF.sq=sq.value; igSave(); clearTimeout(sq._t); sq._t=setTimeout(function(){ route(); var x=$('igsq'); if(x){ x.focus(); x.setSelectionRange(x.value.length,x.value.length); } },350); };
     if (IGF.tab==='dm') igDmBind();
+    V.querySelectorAll('[data-igq]').forEach(function(c){ c.onchange=function(){ IGF.qsel[igKey(c.dataset.igq)]=c.checked; igSave(); var b=$('igqgo'); if(b){ var n=igQSel().length; b.disabled=!n; b.lastChild.textContent='선택 '+n+'명 연속 발송'; } }; });
+    if ($('igqp')) $('igqp').onchange=function(){ IGF.qp=this.value; igSave(); };
+    if ($('igqall')) $('igqall').onclick=function(){ V.querySelectorAll('[data-igq]').forEach(function(c){ c.checked=true; IGF.qsel[igKey(c.dataset.igq)]=true; }); igSave(); route(); };
+    if ($('igqgo')) $('igqgo').onclick=function(){ var hs=igQSel(); if(!hs.length) return; if(!IGF.qp){ toast('제안 상품을 먼저 골라 주세요',true); return; }
+      var sent=hs.filter(function(h){ var d=IG.dm[h]; return d&&d.status&&d.status!=='후보'; });
+      var go=hs.filter(function(h){ return sent.indexOf(h)<0; });
+      if (!go.length){ toast('선택한 셀러는 이미 DM을 보냈어요',true); return; }
+      igQStart(go.map(function(h){ return {h:h,n:'',p:IGF.qp,tpl:0}; })); IGF.qsel={}; igSave();
+      if (sent.length) toast('이미 보낸 '+sent.length+'명은 빼고 시작해요');
+      if (/[?&]t=/.test(location.hash)) history.replaceState(null,'','#influencer'); route(); };
+    if ($('igqfu')) $('igqfu').onclick=function(){ var td=igYmd(new Date()), fu=Object.keys(IG.dm).map(function(k){ return IG.dm[k]; }).filter(function(x){ return x.status==='발송'&&x.followUp&&x.followUp<=td; });
+      igQStart(fu.map(function(x){ return {h:x.handle,n:x.name,p:x.product,tpl:Math.min(2,IG.tpl.length-1)}; })); route(); };
+    if ($('igqskip')) $('igqskip').onclick=function(){ IGF.qi++; igQLoad(); igSave(); route(); };
+    if ($('igqstop')) $('igqstop').onclick=function(){ IGF.q=[]; IGF.qi=0; igSave(); route(); };
   }
 };
 
@@ -3546,15 +3569,17 @@ function igSellerDet(s){
 }
 function igPros(){
   var cats=['전체'].concat(IG.pcats.map(function(c){ return c[0]; }));
-  var list=IG.pros.filter(function(n){ return IGF.pc==='전체' || String(n.cats).split('/').indexOf(IGF.pc)>=0; }).sort(function(a,b){ return (Number(b.fnum)||0)-(Number(a.fnum)||0); });
+  var list=IG.pros.filter(function(n){ return IGF.pc==='전체' || String(n.cats).indexOf(IGF.pc)>=0; }).sort(function(a,b){ return (Number(b.fnum)||0)-(Number(a.fnum)||0); });
   return '<div class="grid igsplit"><div class="card"><h2>비패션 카테고리 분석 <small>팔로워 8만~50만</small></h2><div class="list">'+IG.pcats.map(function(c){
       var ex=String(c[3]||'').split(', ').filter(Boolean).slice(0,3).map(function(x){ var p=x.split('|'); return '@'+esc(p[0])+(p[2]==='Y'?'':' (미추적)'); }).join(', ');
       return '<div class="li"><div class="m"><div class="t">'+esc(c[0])+' <span style="color:var(--mute);font-weight:500">'+esc(c[1])+'명</span></div><div class="s" style="white-space:normal">'+esc(c[2])+'</div><div class="s" style="white-space:normal">예: '+ex+'</div>'+(c[4]?'<div class="s" style="white-space:normal;color:var(--accent)">셀렉트인 실적: '+esc(c[4])+'</div>':'')+'</div></div>'; }).join('')+'</div>'+
     (IG.insights.length?'<h2 style="margin-top:16px">인사이트</h2><ol class="igol">'+IG.insights.map(function(t){ return '<li>'+esc(t)+'</li>'; }).join('')+'</ol>':'')+
     (IG.note?'<p class="ignote">'+esc(IG.note)+'</p>':'')+'</div>'+
-    '<div class="card"><h2>추적 밖 신규 후보 <small>'+list.length+'명</small></h2><div class="seg segwrap" style="margin-bottom:10px">'+cats.map(function(c){ return '<button data-igpc="'+esc(c)+'" class="'+(IGF.pc===c?'on':'')+'">'+esc(c)+'</button>'; }).join('')+'</div>'+
+    '<div class="card"><h2>추적 밖 신규 후보 <small>'+list.length+'명</small></h2>'+
+    '<div class="igqbar"><select class="inp" id="igqp"><option value="">제안 상품 선택</option>'+IG.prods.map(function(p){ return '<option'+(p.brand===IGF.qp?' selected':'')+'>'+esc(p.brand)+'</option>'; }).join('')+'</select>'+
+      '<button class="btn sm" id="igqall">이 목록 전체 선택</button><button class="btn sm pri" id="igqgo"'+(igQSel().length?'':' disabled')+'><i class="ti ti-player-play"></i>선택 '+igQSel().length+'명 연속 발송</button></div><div class="seg segwrap" style="margin-bottom:10px">'+cats.map(function(c){ return '<button data-igpc="'+esc(c)+'" class="'+(IGF.pc===c?'on':'')+'">'+esc(c)+'</button>'; }).join('')+'</div>'+
     (list.length?igMore('pros_'+IGF.pc,list,10,function(n){ var d=IG.dm[igKey(n.handle)];
-      return '<div class="li"><div class="m"><div class="t"><a href="https://www.instagram.com/'+encodeURIComponent(n.handle)+'/" target="_blank" rel="noopener">@'+esc(n.handle)+'</a> <span class="num" style="color:var(--mute);font-weight:500">'+esc(n.followers)+'</span></div><div class="s" style="white-space:normal">'+esc(n.cats)+' · '+esc(n.products)+'</div></div>'+
+      return '<div class="li"><label class="igck"><input type="checkbox" data-igq="'+esc(n.handle)+'"'+(IGF.qsel[igKey(n.handle)]?' checked':'')+' aria-label="@'+esc(n.handle)+' 선택"></label><div class="m"><div class="t"><a href="https://www.instagram.com/'+encodeURIComponent(n.handle)+'/" target="_blank" rel="noopener">@'+esc(n.handle)+'</a> <span class="num" style="color:var(--mute);font-weight:500">'+esc(n.followers)+'</span></div><div class="s" style="white-space:normal">'+esc(n.cats)+' · '+esc(n.products)+'</div></div>'+
       '<div class="e" style="display:flex;gap:6px;align-items:center;justify-content:flex-end">'+(d?'<span class="pill '+IG_STC[d.status]+'">'+esc(d.status)+'</span>':'')+'<a class="btn sm" href="#influencer" data-igc data-h="'+esc(n.handle)+'" data-tpl="0">DM</a></div></div>'; }):'<div class="empty">해당 카테고리 후보가 없어요</div>')+'</div></div>';
 }
 function igProds(){
@@ -3571,7 +3596,14 @@ function igDm(){
   var d=IGF.d, h=igKey(d.handle), rec=h?IG.dm[h]:null; if (!d.text) d.text=igFill();
   var cnt={}; all.forEach(function(x){ cnt[x.status]=(cnt[x.status]||0)+1; }); cnt['팔로업']=all.filter(function(x){ return x.status==='발송'&&x.followUp&&x.followUp<=td; }).length;
   var handles={}; IG.sellers.forEach(function(s){ if(s.handle) handles[s.handle]=1; }); IG.pros.forEach(function(n){ handles[n.handle]=1; });
-  return '<div class="grid igsplit"><div class="card"><h2>DM 기록 <small>'+all.length+'명 · 팀 공유</small></h2>'+
+  var fuList=all.filter(function(x){ return x.status==='발송'&&x.followUp&&x.followUp<=td; }), sentToday=igTodaySent(), q=IGF.q||[], qa=q.length&&IGF.qi<q.length;
+  var qbar = qa ? '<div class="card igqrun"><div class="igqtop"><b>연속 발송 '+(IGF.qi+1)+' / '+q.length+'</b><span>'+(q[IGF.qi+1]?'다음: @'+esc(q[IGF.qi+1].h):'마지막 셀러')+'</span><button class="btn sm" id="igqskip">건너뛰기</button><button class="btn sm" id="igqstop">종료</button></div>'+
+      '<div class="igqprog"><i style="width:'+(IGF.qi/q.length*100).toFixed(1)+'%"></i></div>'+
+      '<p class="ignote" style="margin-top:8px">아래 「복사하고 인스타 DM 열기」 → 인스타에서 붙여넣기·전송 → 이 창으로 돌아오면 다음 셀러가 자동으로 준비돼요.</p></div>'
+    : (q.length && IGF.qi>=q.length ? '<div class="card igqrun"><b>연속 발송 끝 · '+q.length+'명</b> <button class="btn sm" id="igqstop" style="margin-left:8px">닫기</button></div>' : '');
+  var warn = sentToday>=20 ? '<div class="card igwarn">오늘 '+sentToday+'명에게 보냈어요. 하루 20명이 넘으면 인스타그램 발송 제한이 걸릴 수 있어요. 남은 셀러는 내일 이어서 보내세요.</div>' : '';
+  return qbar+warn+'<div class="grid igsplit"><div class="card"><h2>DM 기록 <small>'+all.length+'명 · 오늘 '+sentToday+'명 발송</small></h2>'+
+    (fuList.length&&!qa?'<button class="btn sm" id="igqfu" style="margin-bottom:10px"><i class="ti ti-player-play"></i>팔로업 '+fuList.length+'명 연속 발송</button>':'')+
     '<div class="seg segwrap" style="margin-bottom:10px">'+['전체','팔로업'].concat(IG_ST).map(function(s){ return '<button data-igdf="'+s+'" class="'+(f===s?'on':'')+'">'+s+(cnt[s]?' '+cnt[s]:'')+'</button>'; }).join('')+'</div>'+
     (list.length?igMore('dm_'+f,list,10,function(x){ var fu=x.status==='발송'&&x.followUp&&x.followUp<=td;
       return '<button class="li igpick'+(igKey(x.handle)===h?' on':'')+'" data-igpick="'+esc(x.handle)+'"><div class="m"><div class="t">@'+esc(x.handle)+(x.name?' <span style="color:var(--mute);font-weight:500">'+esc(x.name)+'</span>':'')+'</div><div class="s">'+esc(x.product||'-')+' · '+(x.sentAt?igMd(x.sentAt)+' 발송':'미발송')+(x.status==='발송'&&x.followUp?' · 팔로업 '+igMd(x.followUp):'')+' · '+esc(x.by||'')+'</div></div><div class="e"><span class="pill '+(fu?'a':IG_STC[x.status])+'">'+(fu?'팔로업':esc(x.status))+'</span></div></button>'; })
@@ -3611,7 +3643,13 @@ function igDmBind(){
     var h=igKey(IGF.d.handle), prev=IG.dm[h], td=igYmd(new Date());
     copy().then(function(){ toast('복사됨 · 인스타 대화창에 붙여넣기 하세요'); });
     var keep = prev && ['답장','협의','확정'].indexOf(prev.status)>=0;
-    igDmSave(h,{status:keep?prev.status:'발송', sentAt:td, followUp:igAdd(td,3), product:IGF.d.product, name:IGF.d.name||(prev&&prev.name)||''}, 'DM 발송 ('+((IG.tpl[IGF.d.tpl]||{}).name||'')+(IGF.d.product?' · '+IGF.d.product:'')+')').then(function(){ route(); }).catch(fail);
+    igDmSave(h,{status:keep?prev.status:'발송', sentAt:td, followUp:igAdd(td,3), product:IGF.d.product, name:IGF.d.name||(prev&&prev.name)||''}, 'DM 발송 ('+((IG.tpl[IGF.d.tpl]||{}).name||'')+(IGF.d.product?' · '+IGF.d.product:'')+')'+(IGF.q&&IGF.q.length&&IGF.qi<IGF.q.length?' · 연속':'')).then(function(){
+      var q=IGF.q||[];
+      if (q.length && IGF.qi<q.length && igKey(q[IGF.qi].h)===h){ IGF.qi++; if (IGF.qi<q.length) igQLoad(); igSave();
+        var adv=function(){ if (document.visibilityState==='visible'){ document.removeEventListener('visibilitychange',adv); if ((location.hash||'').indexOf('#influencer')===0) route(); } };
+        if (document.visibilityState==='visible') setTimeout(function(){ document.addEventListener('visibilitychange',adv); },300); else document.addEventListener('visibilitychange',adv);
+      } else route();
+    }).catch(fail);
   };
   document.querySelectorAll('[data-igst]').forEach(function(b){ b.onclick=function(){ var h=igKey(IGF.d.handle); igDmSave(h,{status:b.dataset.igst, product:IGF.d.product||((IG.dm[h]||{}).product)||''}, '상태 → '+b.dataset.igst).then(function(){ toast('「'+b.dataset.igst+'」로 바꿨어요'); route(); }).catch(fail); }; });
   var nt=$('ignote'); if (nt) nt.onchange=function(){ var h=igKey(IGF.d.handle), v=nt.value; igDmSave(h,{note:v}).then(function(){ toast('메모를 저장했어요'); }).catch(fail); };
