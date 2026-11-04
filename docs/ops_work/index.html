@@ -630,13 +630,19 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 .tbl td.num,.tbl td .num,.tbl td:not(:first-child) .c2>b{white-space:nowrap}
 .tbl .nm2>span,.tbl td:first-child:not(.c) .c2>span,.tbl td.c:first-child+td .c2>span{white-space:normal!important;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-overflow:clip}
 .tbl td:not(:first-child) .c2>span{white-space:normal;text-align:center}
+
+/* 상단 열린 탭: 모두 같은 너비 → 닫으면 다음 탭 × 가 같은 자리에 와서 연속으로 닫기 */
+.otab:not(.ohome){width:128px;justify-content:space-between;box-sizing:border-box}
+.otab:not(.ohome) span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+.otab .cx{flex:none;width:18px;text-align:center}
+@media (max-width:900px){.otab:not(.ohome){width:108px}}
 </style>
 </head>
 <body>
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-11-04name'; var APP_BUILD_PREV = '2026-11-04acct';
+var APP_BUILD = '2026-11-04promo-c1'; var APP_BUILD_PREV = '2026-11-04acct';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -1484,9 +1490,9 @@ function cmDraw(){
     o.reg=prods.filter(function(p){ return a.m[p.prd]; }).length; o.miss=prods.length-o.reg; });
   ((OPT&&OPT.rows)||[]).forEach(function(t){ var o=row(t.shop,t.id); o.t=t; o.corp=o.corp||t.corp; });
   var L=Object.keys(idx).map(function(k){ var o=idx[k]; o.h=o.c?regAgo(o.c.orderAt):null;
-    o.issues=[]; if(o.corp==='제외') return o;
-    if(o.c&&o.c.on!=='Y') o.issues.push('스케줄러 꺼짐'); else if(o.c&&o.c.sOrd!=='Y') o.issues.push('주문수집 수동');
-    if(o.c&&(o.h==null||o.h>6)) o.issues.push('6시간+ 미수집'); if(o.c&&o.c.on==='Y'&&o.c.sStk!=='Y') o.issues.push('재고송신 꺼짐');
+    o.issues=[]; if(o.corp==='제외') return o; if(acctOff(o.mall,o.id)){ o.off=1; return o; }
+    if(o.c&&o.c.on!=='Y') o.issues.push('스케줄러 꺼짐');
+    if(o.c&&collectMissed(o.c, collectDue(REG_BASE))) o.issues.push('수집 누락'); if(o.c&&o.c.on==='Y'&&o.c.sStk!=='Y') o.issues.push('재고송신 꺼짐');
     if(o.t&&o.t.warn) o.issues.push('오늘 주문 0건'); if(o.miss) o.issues.push('미등록 '+o.miss); return o; })
     .filter(function(o){ return o.corp!=='제외' && (CM.corp==='전체'||o.corp===CM.corp); });
   var nIss=L.filter(function(o){ return o.issues.length; }).length;
@@ -2971,29 +2977,45 @@ function syncAgeH(v){ var d=syncDate(v); return d?(Date.now()-d)/36e5:null; }
 function syncStaleBanner(v){ var h=syncAgeH(v); if(h==null||h<1) return ''; var t=h>=48?Math.floor(h/24)+'일':Math.round(h)+'시간';
   return '<div class="sel" style="margin:0 0 12px;border-color:#d64545;background:#fdf1f1"><div class="nm" style="color:#b42318"><i class="ti ti-plug-connected-x"></i> 사방넷 동기화가 '+t+'째 멈춰 있어요 (마지막 '+esc(syncFmt(v))+')</div><div class="meta" style="white-space:normal">아래 내용은 그 시점 기준이에요. PC 크롬에서 사방넷 관리자 로그인이 풀렸거나 창이 닫히면 멈춰요.</div><div class="meta" style="white-space:normal"><b>할 일:</b> 사방넷 관리자에 로그인 → 「OPS 사방넷 동기화」 북마크 실행 (또는 OPS 채팅에 「동기화 해줘」)</div></div>'; }
 var REG_BASE=null;
+/* 미진행 계정: 아직 운영 안 하는 쇼핑몰 계정 — 수집·스케줄러 경고에서 뺌 (설정 acct_off 로 바꿀 수 있음) */
+var ACCT_OFF_DEF=[['에이블리','select_in@naver.com'],['Shopee','selectin']];
+function acctOffList(){ try{ var v=S.config.acct_off&&S.config.acct_off.value; if(v) return JSON.parse(v); }catch(e){} return ACCT_OFF_DEF; }
+function acctOff(mall,id){ var m=String(mall||'').replace(/\s/g,'').toLowerCase(); return acctOffList().some(function(x){ return String(id)===String(x[1]) && m.indexOf(String(x[0]).replace(/\s/g,'').toLowerCase())>=0; }); }
+/* 주문서 수집은 사람이 하루 2번: 1차 09~11시, 2차 15~17시 (평일). 가장 최근에 끝난 수집 시간대의 시작 이후로 수집됐는지 봄 */
+function kstMs(t){ if(!t) return null; var d=new Date(String(t).replace(' ','T')+(String(t).length<=16?':00':'')+'+09:00'); return isNaN(d)?null:d.getTime(); }
+function collectDue(base){
+  var k=new Date((base||Date.now())+9*36e5), h=k.getUTCHours(), d0=Date.UTC(k.getUTCFullYear(),k.getUTCMonth(),k.getUTCDate());
+  var wk=function(ms){ var w=new Date(ms).getUTCDay(); return w>0&&w<6; }, md=function(ms){ var x=new Date(ms); return (x.getUTCMonth()+1)+'/'+x.getUTCDate(); };
+  if (wk(d0) && h>=17) return {t:d0+15*36e5-9*36e5, label:'오늘 2차(15~17시)'};
+  if (wk(d0) && h>=11) return {t:d0+9*36e5-9*36e5, label:'오늘 1차(9~11시)'};
+  var p=d0-864e5; while(!wk(p)) p-=864e5;
+  return {t:p+15*36e5-9*36e5, label:md(p)+' 2차(15~17시)'};
+}
+function collectMissed(c, due){ var t=kstMs(c.orderAt); return t==null || t<due.t; }
 function regAgo(t){ if(!t) return null; var d=new Date(String(t).replace(' ','T')+':00+09:00'); return isNaN(d)?null:((REG_BASE||Date.now())-d)/36e5; }
 function regCollectHtml(D){
   var bd=syncDate(SBR.collectAt); REG_BASE=bd?bd.getTime():null;
   var C=(SBR.collect||[]).map(function(c){ var corp=sbrCorp(c); return Object.assign({}, c, {corp:corp, h:regAgo(c.orderAt)}); });
   if (!C.length) return '<div class="card"><h2>주문 수집 상태</h2><div class="empty">아직 정보가 없어요. 사방넷 관리자 화면의 「OPS 사방넷 동기화」를 한 번 실행하면 보여요</div></div>';
-  var act=C.filter(function(c){ return c.corp!=='제외'; });
-  var stale=act.filter(function(c){ return c.h==null || c.h>6; });
+  var off=C.filter(function(c){ return c.corp!=='제외' && acctOff(c.mall,c.id); });
+  var act=C.filter(function(c){ return c.corp!=='제외' && !acctOff(c.mall,c.id); });
+  var due=collectDue(REG_BASE), stale=act.filter(function(c){ return collectMissed(c,due); });
   var schedOff=act.filter(function(c){ return c.on!=='Y'; }), ordOff=act.filter(function(c){ return c.sOrd!=='Y'; }), stkOff=act.filter(function(c){ return c.sStk!=='Y'; });
   var noMap=act.filter(function(c){ return !(SBR.corp||{})[c.id]; });
   var wrong=[]; ['셀렉트인','겐더샵'].forEach(function(cp){ D.accts.filter(function(a){ return a.corp===cp; }).forEach(function(a){ var n=0; Object.keys(a.m).forEach(function(k){ if(D.P[k] && D.P[k].corp!==cp) n++; }); if(n) wrong.push(a.mall+' '+a.id+' ('+cp+' 계정에 다른 법인 상품 '+n+'개)'); }); });
   var nm=function(L){ return L.map(function(c){ return esc(c.mall)+' '+esc(c.id); }).join(', '); };
   var issues=[];
-  if (ordOff.length) issues.push(['alert-triangle','주문이 자동으로 안 들어와요', '스케줄러 「주문수집」이 꺼진 계정 '+ordOff.length+'개'+(ordOff.length===act.length?' (전부)':'')+' — 사람이 [주문서수집]을 눌러야만 사방넷에 주문이 들어와요. OPS·매출판은 사방넷에 들어온 주문만 보여요.', '사방넷 → 스케줄러에서 「주문수집」 켜기 (또는 하루 정해진 시간에 전체 계정 수동 수집)']);
-  if (stale.length) issues.push(['clock','6시간 넘게 주문 수집 안 된 계정 '+stale.length+'개', nm(stale.slice(0,20))+(stale.length>20?' 외':''), '주문서수집(자동)에서 해당 계정까지 체크해 수집']);
+  if (stale.length) issues.push(['clock',due.label+' 수집에서 빠진 계정 '+stale.length+'개', nm(stale.slice(0,20))+(stale.length>20?' 외':''), '주문서수집(자동)에서 해당 계정까지 체크해 수집']);
   if (schedOff.length) issues.push(['plug-off','스케줄러 자체가 꺼진 계정 '+schedOff.length+'개', nm(schedOff)+' — 클레임(취소·반품) 수집과 재고 송신도 안 돼서 품절 상품이 쇼핑몰에서 계속 팔릴 수 있어요', '사방넷 → 스케줄러에서 계정 「사용」 + 클레임수집·재고송신 켜기']);
   if (stkOff.length && stkOff.length!==schedOff.length) issues.push(['package-off','재고 송신이 꺼진 계정 '+stkOff.length+'개', nm(stkOff), '스케줄러 「재고송신」 켜기']);
   if (noMap.length) issues.push(['help','법인 지정이 없는 계정 '+noMap.length+'개', nm(noMap)+' — 지금은 겐더샵으로 계산', '데일리매출판 설정 ③(쇼핑몰ID→법인)에 추가']);
   if (wrong.length) issues.push(['arrows-exchange','다른 법인 상품이 올라간 계정', esc(wrong.join(' · ')), '해당 계정에서 상품 연동 해제 또는 법인(마이카테고리) 확인']);
   if (SBR.sbnMissing) issues.push(['trash','사방넷에 없는 앱 단품 '+won(SBR.sbnMissing)+'개', '사방넷에서 지워진(테스트 등) 상품이 앱에 남아 있어요 · 상품 관리에서 상태 「사방넷없음」', '필요 없으면 앱 상품 관리에서 삭제']);
-  var rows=C.slice().sort(function(a,b){ return (b.h==null?999:b.h)-(a.h==null?999:a.h); }).map(function(c){ var bad=c.corp!=='제외' && (c.h==null||c.h>6);
+  var rows=C.slice().sort(function(a,b){ return (b.h==null?999:b.h)-(a.h==null?999:a.h); }).map(function(c){ var bad=c.corp!=='제외' && !acctOff(c.mall,c.id) && collectMissed(c,due);
     var yn=function(v,l){ return '<span class="pill" style="margin:1px;'+(v==='Y'?'':'opacity:.45;text-decoration:line-through')+'">'+l+'</span>'; };
     return '<tr><td><div class="c2 nm2"><b>'+esc(c.mall)+'</b><span>'+esc(c.id)+'</span></div></td><td class="c"><span class="pill">'+esc(c.corp)+'</span></td><td class="r num">'+c2_((bad?'<em class="wn">':'<em>')+(c.orderAt?esc(c.orderAt.slice(5)):'없음')+'</em>', c.h==null?'':Math.round(c.h)+'시간 전 · '+esc(c.orderBy))+'</td><td class="r num">'+c2_(c.claimAt?esc(c.claimAt.slice(5)):'없음', esc(c.claimBy))+'</td><td>'+(c.on==='Y'?'':'<em class="wn">스케줄러 꺼짐</em> ')+yn(c.sOrd,'주문')+yn(c.sClm,'클레임')+yn(c.sStk,'재고송신')+yn(c.sShip,'송장')+'</td></tr>'; });
   return '<div class="card"><h2><i class="ti ti-list-check"></i> 정리할 것 <small>사방넷 기준 · '+esc(syncFmt(SBR.collectAt))+'</small></h2>'+syncStaleBanner(SBR.collectAt)+
+    '<p class="sm" style="margin:0 0 10px">주문서 수집은 사람이 하루 2번(1차 9~11시 · 2차 15~17시, 평일) — 지금 기준 '+esc(due.label)+' 수집 여부를 봐요'+(off.length?' · 미진행 계정 '+off.length+'개 제외 ('+off.map(function(c){ return esc(c.mall)+' '+esc(c.id); }).join(', ')+')':'')+'</p>'+
     (issues.length?'<div style="display:flex;flex-direction:column;gap:10px">'+issues.map(function(x){ return '<div class="sel" style="margin:0"><div class="nm"><i class="ti ti-'+x[0]+'"></i> '+x[1]+'</div><div class="meta" style="white-space:normal">'+x[2]+'</div><div class="meta" style="white-space:normal"><b>할 일:</b> '+x[3]+'</div></div>'; }).join('')+'</div>':'<div class="empty">정리할 게 없어요</div>')+'</div>'+
     '<div class="card" style="margin-top:16px"><h2>주문 수집 상태 <small>계정별 마지막 수집 · 오래된 순</small></h2><div class="tblwrap"><table class="tbl ktbl"><thead><tr><th>쇼핑몰 · 계정</th><th class="c">법인</th><th class="r">마지막 주문수집</th><th class="r">마지막 클레임수집</th><th>스케줄러 자동</th></tr></thead><tbody>'+rows.join('')+'</tbody></table></div></div>';
 }
@@ -3922,7 +3944,8 @@ VIEWS.owner = {
         '<div class="li"><div class="m"><div class="t">직원 OPS</div><div class="s">'+base+'hub/</div></div><a class="btn sm" href="'+base+'hub/" target="_blank" rel="noopener">열기</a></div>'+
       '</div></div>'+
       '<div class="card"><h2>반영 상태</h2><div id="ownver"><div class="empty">확인 중…</div></div>'+
-        '<p style="margin:10px 0 0;font-size:13px;color:var(--mute)">작업판에서 확인이 끝나면 Claude에게 「직원 OPS에 반영해줘」라고 하면 돼요. 직원 화면은 보는 중에 새로고침되지 않고 「새 버전 적용」 버튼으로 바뀌어요.</p></div>'+
+        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px"><button class="btn pri" id="ownpro"><i class="ti ti-send"></i><span>즉시 반영</span></button><span class="sm" id="ownpst" style="color:var(--mute)">평소에는 매일 8시 · 13시 · 19시에 자동 반영</span></div>'+
+        '<p style="margin:10px 0 0;font-size:13px;color:var(--mute)">ops_admin의 화면·서버를 ops_work(직원)로 넘겨요. 즉시 반영은 5~10분 안에 적용되고, 직원 화면은 보는 중에 새로고침되지 않고 「새 버전 적용」 버튼으로 바뀌어요. 데이터는 원래 같이 써서 바로 보여요.</p></div>'+
       '<div class="card"><h2>계정 · 권한 <a class="btn sm" href="#settings">관리</a></h2><div class="list">'+
         [['총괄','전체 + 관리자 계정·입금·수익·서버 설정·보관함'],['관리자','운영 기능 전체, 직원 계정 관리'],['직원','일반 기능']].map(function(r){ return '<div class="li"><span class="pill '+(r[0]==='총괄'?'b':r[0]==='관리자'?'g':'')+'">'+r[0]+'</span><div class="m"><div class="t num">'+(cnt[r[0]]||0)+'명</div><div class="s">'+r[1]+'</div></div></div>'; }).join('')+
         (off?'<div class="li"><span class="pill r">사용 중지</span><div class="m"><div class="t num">'+off+'명</div></div></div>':'')+
@@ -3938,6 +3961,10 @@ VIEWS.owner = {
       el.innerHTML='<div class="list"><div class="li"><div class="m"><div class="t">직원 OPS</div><div class="s num">'+esc(a)+'</div></div></div><div class="li"><div class="m"><div class="t">총괄 작업판</div><div class="s num">'+esc(n)+'</div></div></div>'+
         '<div class="li"><span class="pill '+(same?'g':'a')+'">'+(same?'같음':'반영 대기')+'</span><div class="m"><div class="s">'+(same?'직원 화면과 작업판이 같아요':'작업판에만 있는 변경이 있어요')+'</div></div></div></div>';
     });
+    var pst=function(j){ var el=$('ownpst'); if(!el||!j) return; var t=+j.req||0; el.textContent='평소에는 매일 '+(j.hours||[8,13,19]).join('시 · ')+'시에 자동 반영'+(t?' · 마지막 즉시 반영 요청 '+new Date(t+9*36e5).toISOString().slice(5,16).replace('T',' ')+(j.by?' ('+j.by+')':''):''); };
+    if(!DEMO) api('promote_state',{}).then(pst).catch(function(){});
+    $('ownpro').onclick=function(){ var b=this; if(DEMO) return toast('체험 모드에서는 반영하지 않아요'); b.disabled=true;
+      api('promote_now',{}).then(function(j){ pst(j); toast('반영을 요청했어요 · 5~10분 안에 ops_work에 적용돼요'); }).catch(function(e){ fail(e); }).then(function(){ setTimeout(function(){ b.disabled=false; }, 3000); }); };
     fetch('https://api.github.com/repos/select-in/sales-app/commits?per_page=12',{cache:'no-store'}).then(function(r){ return r.ok?r.json():[]; }).catch(function(){ return []; }).then(function(L){
       var el=$('ownlog'); if(!el) return;
       if(!L||!L.length){ el.innerHTML='<div class="empty">변경 내역을 불러오지 못했어요</div>'; return; }
