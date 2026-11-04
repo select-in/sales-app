@@ -566,7 +566,7 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 .igwarn{margin-bottom:12px;color:var(--amber);background:var(--amberbg);border-color:transparent;font-size:14px}
 .ggk{text-align:left;font:inherit;cursor:pointer;color:inherit}.ggk:hover{border-color:var(--line2)}.ggk.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);background:var(--soft)}
 .ggtabs{margin-bottom:12px}.ggtabs .seg{width:100%}.ggtabs .seg button .num{color:var(--mute);font-weight:500;margin-left:2px}.ggtabs .seg button.on .num{color:var(--accent)}
-.ggtbl td{padding:10px 12px}.ggtbl td b{font-weight:600}
+.ggtbl th,.ggtbl td{padding:10px 12px;text-align:center;vertical-align:middle}.ggtbl .nw{white-space:nowrap}.ggtbl td b{font-weight:600}
 .ggeq{align-items:stretch}.ggeq>.card{display:flex;flex-direction:column}
 .igol{margin:0;padding-left:18px;font-size:13.5px;display:flex;flex-direction:column;gap:6px}
 @media (max-width:900px){.igsplit{grid-template-columns:1fr}.igf{grid-template-columns:1fr}.igbar{grid-template-columns:96px minmax(0,1fr) 56px}.igbtns .btn{flex:1 1 100%}.igtabs{width:100%}}
@@ -3385,8 +3385,8 @@ VIEWS.gonggu = {
     var kp=function(k,lab,n,cls){ return '<button class="kpi ggk'+(cls||'')+(k===sel?' on':'')+'" data-ggk="'+k+'"><div class="k">'+lab+'</div><div class="v num">'+n+'<small>건</small></div></button>'; };
     var st=function(r){ return r.st==='진행완료'?'g':r.st==='공구/확정'?'b':(r.st==='미확정'||r.st==='가픽스')?'a':r.phase==='cancel'?'r':''; };
     var tbl=function(rows){ var shown=rows.slice(0,15+(IG_MORE['gt_'+sel]||0)*30), more=rows.length-shown.length;
-      return '<div class="pconly" style="overflow-x:auto"><table class="tbl ggtbl"><thead><tr><th>기간</th><th style="text-align:left">셀러 · 상품</th><th>브랜드</th><th>분류</th><th>수수료 / 셀러</th><th>상태</th><th class="r">매출</th>'+(isAdmin()?'<th class="r">수익</th>':'')+'</tr></thead><tbody>'+
-        shown.map(function(r){ return '<tr><td class="num sm" style="white-space:nowrap">'+igMd(r.a)+' ~ '+igMd(r.b)+'</td><td><b>'+esc(r.seller)+'</b> <span class="sm">'+esc(r.product)+'</span>'+(r.handle?' <a href="https://www.instagram.com/'+encodeURIComponent(r.handle)+'/" target="_blank" rel="noopener" class="sm">@'+esc(r.handle)+'</a>':'')+'</td><td class="sm">'+esc(r.brand||'-')+(r.vendor&&r.vendor!=='셀렉트인'?' · '+esc(r.vendor):'')+'</td><td class="sm" style="text-align:center">'+esc(r.cat)+'</td><td class="num sm" style="text-align:center">'+esc(r.fee||'-')+' / '+esc(r.sfee||'-')+'</td><td style="text-align:center"><span class="pill '+st(r)+'">'+esc(r.st||'-')+'</span></td><td class="r num">'+(r.sales?igMan(r.sales):'-')+'</td>'+(isAdmin()?'<td class="r num sm">'+(r.profit?igMan(r.profit):'-')+'</td>':'')+'</tr>'; }).join('')+
+      return '<div class="pconly" style="overflow-x:auto"><table class="tbl ggtbl"><thead><tr><th>기간</th><th>셀러 · 상품</th><th>브랜드</th><th>분류</th><th>수수료 / 셀러</th><th>상태</th><th>매출</th>'+(isAdmin()?'<th>수익</th>':'')+'</tr></thead><tbody>'+
+        shown.map(function(r){ return '<tr><td class="num sm nw">'+igMd(r.a)+' ~ '+igMd(r.b)+'</td><td><b>'+esc(r.seller)+'</b> <span class="sm">'+esc(r.product)+'</span>'+(r.handle?' <a href="https://www.instagram.com/'+encodeURIComponent(r.handle)+'/" target="_blank" rel="noopener" class="sm">@'+esc(r.handle)+'</a>':'')+'</td><td class="sm">'+esc(r.bkey)+(r.vendor&&r.vendor!=='셀렉트인'?' · 벤더 '+esc(r.vendor):'')+'</td><td class="sm">'+esc(r.cat)+'</td><td class="num sm nw">'+esc(r.fee||'-')+' / '+esc(r.sfee||'-')+'</td><td><span class="pill '+st(r)+'">'+esc(r.st||'-')+'</span></td><td class="num">'+(r.sales?igMan(r.sales):'-')+'</td>'+(isAdmin()?'<td class="num sm">'+(r.profit?igMan(r.profit):'-')+'</td>':'')+'</tr>'; }).join('')+
         '</tbody></table></div>'+(more>0?'<button class="btn sm igmore pconly" data-ggmore="1"><i class="ti ti-chevron-down"></i>더보기 <small>/ 남은 '+more+'건</small></button>':'')+
         '<div class="moonly">'+igMore('gm_'+sel,rows,8,igRow)+'</div>'; };
     var body = sel==='need'
@@ -3437,6 +3437,20 @@ var IG_CAT = [
   ['생활·탈취', ['픽싯','보로탈코','디어커스']],
   ['키즈', ['타미키즈','키즈볼캡']]
 ];
+var IG_OWN=/^(겐더샵|셀렉트인|블랭크|타이틀블랭크|코이)$/;
+function igBrand(r){   // 실제 상품 브랜드 (겐더샵·셀렉트인 같은 법인명·벤더 회사명은 빼고)
+  var t=String(r.product||'')+' '+String(r.brand||'');
+  if (/목도리/.test(t)) return '폴로 목도리';
+  if (/잔스포츠/.test(t)) return '잔스포츠';
+  if (/캘빈|ck볼캡|CK볼캡/i.test(t)) return '캘빈클라인';
+  if (/타미/.test(t)) return '타미힐피거 키즈';
+  if (/보로탈코/.test(t)) return '보로탈코';
+  if (/JBJ|세탁바구니/.test(t)) return 'JBJ';
+  var parts=String(r.brand||'').replace(/[()（）]/g,'/').split('/').map(function(x){ return x.trim(); }).filter(function(x){ return x && !IG_OWN.test(x) && !/(커머스|컴퍼니|코퍼레이션)$/.test(x); });
+  var b=parts[0]||String(r.product||'').split('/')[0];
+  b=b.replace(/\s*\d+차.*$/,'').replace(/\s*\(.*$/,'').trim();
+  return (!b||IG_OWN.test(b))?'상품명 미기재':b;
+}
 function igCat(t){ for (var i=0;i<IG_CAT.length;i++) if (IG_CAT[i][1].some(function(k){ return t.indexOf(k)>=0; })) return IG_CAT[i][0]; return '패션'; }
 function igMan(n){ n=Number(n)||0; if (Math.abs(n)>=1e8) return (n/1e8).toFixed(2).replace(/\.?0+$/,'')+'억'; if (Math.abs(n)>=1e4) return Math.round(n/1e4).toLocaleString('ko-KR')+'만'; return won(n); }
 function igYmd(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
@@ -3462,6 +3476,7 @@ function igBuild(j){
     r.cat = igCat(r.title+' '+r.brand);
     r.product = (r.title.split('/').slice(1).join('/')||r.title).trim();
     r.key = r.handle || r.seller;
+    r.bkey = igBrand(r);
     r.phase = r.st==='진행완료' ? 'past' : (r.st==='취소'||r.st==='매출x'||r.st==='매출X') ? 'cancel' : (r.a<=igAdd(td,14) ? 'now' : 'next');
   });
   rows.sort(function(a,b){ return a.a<b.a?-1:a.a>b.a?1:0; });
@@ -3472,9 +3487,8 @@ function igBuild(j){
     if (r.handle) s.handle = r.handle;
     if (r.phase==='past'){ s.n++; s.sales+=r.sales; s.profit+=(r.profit||0); s.cats[r.cat]=(s.cats[r.cat]||0)+1; if (r.b>s.last) s.last=r.b; s.products.push(r.product);
       var c = cats[r.cat] || (cats[r.cat]={cat:r.cat,n:0,sales:0}); c.n++; c.sales+=r.sales;
-      var own = /^(겐더샵|셀렉트인|블랭크|타이틀블랭크|코이)|(커머스|컴퍼니|코퍼레이션)$/.test(String(r.brand||'').trim());   // 공급 법인명이면 실제 상품 브랜드로 묶음
-      var bk = (own||!r.brand ? r.product : r.brand).replace(/\s*\(.*$/,'').replace(/\s*\d+차.*$/,'').replace(/깜공.*$/,'').split('/')[0].trim();
-      if (/목도리/.test(r.product)) bk='폴로 목도리'; else if (/잔스포츠/.test(r.product+r.brand)) bk='잔스포츠'; else if (/캘빈|ck/i.test(r.product)) bk='캘빈클라인'; else if (/타미/.test(r.product)) bk='타미힐피거 키즈'; var b = brands[bk] || (brands[bk]={brand:bk,n:0,sales:0,sellers:{},cat:r.cat}); b.n++; b.sales+=r.sales; b.sellers[r.seller]=1; }
+      var bk = r.bkey;
+      var b = brands[bk] || (brands[bk]={brand:bk,n:0,sales:0,sellers:{},cat:r.cat}); b.n++; b.sales+=r.sales; b.sellers[r.seller]=1; }
     else if (r.phase==='now'||r.phase==='next') s.up++;
     if (r.phase!=='cancel'){ var m = months[r.a.slice(0,7)] || (months[r.a.slice(0,7)]={m:r.a.slice(0,7),n:0,sales:0}); m.n++; m.sales+=r.sales; }
   });
@@ -3562,7 +3576,7 @@ VIEWS.influencer = {
 function igRow(r){
   var c = r.st==='진행완료'?'g':r.st==='공구/확정'?'b':(r.st==='미확정'||r.st==='가픽스')?'a':r.phase==='cancel'?'r':'';
   return '<div class="li"><div class="igdate num">'+igMd(r.a)+'<br>'+igMd(r.b)+'</div><div class="m"><div class="t" style="white-space:normal">'+esc(r.seller)+' · '+esc(r.product)+'</div>'+
-    '<div class="s">'+esc(r.brand||'-')+' · '+esc(r.cat)+(r.vendor&&r.vendor!=='셀렉트인'?' · 벤더 '+esc(r.vendor):'')+(r.fee||r.sfee?' · 수수료 '+esc(r.fee||'-')+' / 셀러 '+esc(r.sfee||'-'):'')+'</div></div>'+
+    '<div class="s">'+esc(r.bkey)+' · '+esc(r.cat)+(r.vendor&&r.vendor!=='셀렉트인'?' · 벤더 '+esc(r.vendor):'')+(r.fee||r.sfee?' · 수수료 '+esc(r.fee||'-')+' / 셀러 '+esc(r.sfee||'-'):'')+'</div></div>'+
     '<div class="e"><span class="pill '+c+'">'+esc(r.st||'-')+'</span>'+(r.sales?'<div class="num" style="font-size:13px;margin-top:3px">'+igMan(r.sales)+'</div>':'')+(isAdmin()&&r.profit?'<div class="num" style="font-size:12px;color:var(--mute)">수익 '+igMan(r.profit)+'</div>':'')+'</div></div>';
 }
 function igBars(list, lab, max){ max=max||Math.max.apply(null,list.map(function(x){ return x.sales; }).concat([1]));
