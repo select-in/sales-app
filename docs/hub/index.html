@@ -497,10 +497,10 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 .kpi .kcol{margin-top:4px;padding-top:4px;border-top:1px dashed var(--line);font-size:12px;color:var(--mute)}
 .sfoot{margin:10px 2px 0;font-size:12px;color:var(--mute);line-height:1.6;word-break:keep-all}.sfoot b{color:var(--sub);font-weight:600}
 
-#hsales .grid.g4>.kpi{display:flex;flex-direction:column}
-#hsales .kpi .kfoot{margin-top:auto;padding-top:8px;border-top:1px dashed var(--line);font-size:12px;color:var(--mute);line-height:1.5;min-height:44px;word-break:keep-all}
-#hsales .kpi .sm{margin-bottom:8px}
-#hsales .kpi .kfoot b{color:var(--sub);font-weight:600;white-space:nowrap}
+#hsales .grid.g4>.kpi,#mcbox .grid.g4>.kpi{display:flex;flex-direction:column}
+#hsales .kpi .kfoot,#mcbox .kpi .kfoot{margin-top:auto;padding-top:8px;border-top:1px dashed var(--line);font-size:12px;color:var(--mute);line-height:1.5;min-height:44px;word-break:keep-all}
+#hsales .kpi .sm,#mcbox .kpi .sm{margin-bottom:8px}
+#hsales .kpi .kfoot b,#mcbox .kpi .kfoot b{color:var(--sub);font-weight:600;white-space:nowrap}
 
 .tbar .trow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.tbar .trow+.trow{margin-top:8px}.tbar .trow>b{font-size:13px;min-width:40px;color:var(--sub)}
 @media (max-width:900px){.tbar .trow>b{width:100%}.otbl h2 small{display:block;margin:4px 0 0}}
@@ -528,6 +528,9 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 .paydt summary::-webkit-details-marker{display:none}
 .paydt summary .ti{color:var(--mute);transition:transform .15s}.paydt[open] summary .ti{transform:rotate(180deg)}
 .paydt summary small b{color:var(--ink)}
+
+/* 모든 카드 숫자: 숫자 중간에서 줄바꿈 금지 */
+.kpi .sm{word-break:keep-all}.kpi .sm .nw,.kpi .sm b{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -1076,10 +1079,10 @@ function mcDraw(){
         '<div class="sm" style="margin-top:4px">'+(j.sent?'<i class="ti ti-mail-check"></i> 보냄 · '+esc(j.sent.v)+' · '+esc(j.sent.at):'아직 안 보냄')+(j.wait&&!j.sent?' · 마감 대기 안내 '+esc(j.wait):'')+'</div></div>'+
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+seg+'<span class="pill mcst" style="background:'+(st?'var(--accentbg,var(--bg))':'var(--redbg)')+';color:'+(st?'var(--accent)':'var(--red)')+'"><i class="ti ti-'+(st?'circle-check':'clock-exclamation')+'"></i>'+(st?'확정 가능':'가마감 · 미반영 '+R.bad+'건')+'</span></div></div>'+
       '<div class="grid g4" style="margin-top:14px">'+
-        '<div class="kpi"><div class="k"><i class="ti ti-chart-bar"></i>매출</div><div class="v num">'+salesMan(T.amt)+'</div><div class="sm">'+won(T.amt)+'원</div></div>'+
-        '<div class="kpi"><div class="k"><i class="ti ti-receipt"></i>주문</div><div class="v num">'+won(T.cnt)+'<small>건</small></div><div class="sm">객단가 '+(T.cnt?won(Math.round(T.amt/T.cnt)):'—')+'원</div></div>'+
-        '<div class="kpi"><div class="k"><i class="ti ti-wallet"></i>정산 예정</div><div class="v num">'+salesMan(T.settle)+'</div><div class="sm">수수료 '+won(T.fee)+' · 미입금 '+won(T.unpaid)+'</div></div>'+
-        '<div class="kpi"><div class="k"><i class="ti ti-trending-up"></i>이익</div><div class="v num">'+salesMan(T.profit)+'</div><div class="sm">이익률 '+mcPct(T.profit,T.costedAmt)+' · 원가 입력분만</div></div>'+
+        '<div class="kpi"><div class="k"><i class="ti ti-chart-bar"></i>매출</div><div class="v num">'+salesMan(T.amt)+'</div><div class="sm"><span class="nw">'+won(T.amt)+'원</span></div>'+kf('')+'</div>'+
+        '<div class="kpi"><div class="k"><i class="ti ti-receipt"></i>주문</div><div class="v num">'+won(T.cnt)+'<small>건</small></div><div class="sm"><span class="nw">객단가 '+(T.cnt?won(Math.round(T.amt/T.cnt)):'—')+'원</span></div>'+kf('')+'</div>'+
+        '<div class="kpi"><div class="k"><i class="ti ti-wallet"></i>정산 예정</div><div class="v num">'+salesMan(T.settle)+'</div><div class="sm"><span class="nw">수수료 '+won(T.fee)+'원</span></div>'+kf('미입금<br><b>'+won(T.unpaid)+'원</b>')+'</div>'+
+        '<div class="kpi"><div class="k"><i class="ti ti-trending-up"></i>이익</div><div class="v num">'+salesMan(T.profit)+'</div><div class="sm"><span class="nw">이익률 '+mcPct(T.profit,T.costedAmt)+'</span></div>'+kf('원가 입력분만<br>계산')+'</div>'+
       '</div>'+
       '<div class="salesbars'+(R.days.length>16?' many':'')+'" title="일별 매출">'+R.days.map(function(o){ return '<div class="sb on" title="'+esc(o.d)+' · '+won(o.amt)+'원"><i style="height:'+Math.max(2,Math.round(o.amt/dmx*100))+'%"></i><span>'+(+o.d.slice(8))+'</span></div>'; }).join('')+'</div>'+
     '</div>'+
