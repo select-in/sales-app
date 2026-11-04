@@ -575,6 +575,7 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 .igaim .b{padding:10px 12px;border-radius:12px;font-size:14px;line-height:1.6;white-space:normal;overflow-wrap:anywhere}.igaim.u .b{background:var(--soft)}.igaim.a .b{background:var(--bg)}
 .igaiin{display:flex;gap:8px;margin-top:10px;align-items:flex-end}.igaiin textarea{flex:1;min-height:52px}
 .igdet{font-size:13px;margin:4px 0}.igdet summary{cursor:pointer;color:var(--accent);font-weight:600}.igdet p{margin:6px 0 0;color:var(--sub);line-height:1.6}
+.igpsearch{display:flex;flex-direction:column;gap:8px}.igpsearch .inp{max-width:420px}
 .igol{margin:0;padding-left:18px;font-size:13.5px;display:flex;flex-direction:column;gap:6px}
 @media (max-width:900px){.igsplit{grid-template-columns:1fr}.igf{grid-template-columns:1fr}.igbar{grid-template-columns:96px minmax(0,1fr) 56px}.igbtns .btn{flex:1 1 100%}.igtabs{width:100%}}
 
@@ -3564,6 +3565,8 @@ VIEWS.influencer = {
     var V=$('view');
     V.querySelectorAll('[data-igmore]').forEach(function(b){ b.onclick=function(){ var y=scrollY; IG_MORE[b.dataset.igmore]=(IG_MORE[b.dataset.igmore]||0)+1; route(); scrollTo(0,y); }; });
     V.querySelectorAll('[data-igless]').forEach(function(b){ b.onclick=function(){ IG_MORE[b.dataset.igless]=0; route(); var t=$('view'); if(t) t.scrollIntoView(); }; });
+    var ps=$('igps'); if (ps) ps.oninput=function(){ IGF.ps=ps.value; igSave(); clearTimeout(ps._t); ps._t=setTimeout(function(){ route(); var x=$('igps'); if(x){ x.focus(); x.setSelectionRange(x.value.length,x.value.length); } },300); };
+    V.querySelectorAll('[data-igpcat]').forEach(function(b){ b.onclick=function(){ IGF.pcat=b.dataset.igpcat; igSave(); route(); }; });
     V.querySelectorAll('[data-igband]').forEach(function(b){ b.onclick=function(){ var p=b.dataset.igband.split('|'); IGF[p[0]]=p[1]; igSave(); route(); }; });
     V.querySelectorAll('[data-igfk]').forEach(function(b){ b.onclick=function(){ IGF.fk=b.dataset.igfk; igSave(); route(); }; });
     V.querySelectorAll('[data-igsl]').forEach(function(b){ b.onclick=function(){ IGF.sl=b.dataset.igsl; igSave(); route(); }; });
@@ -3661,8 +3664,8 @@ function igSellerDet(s){
     '<h2 style="font-size:14px">공구 이력</h2>'+igMore('hist_'+s.key,rows,5,igRow)+
     '<h2 style="font-size:14px;margin-top:14px">다음에 제안할 만한 상품</h2>'+(recs.length?'<div class="list">'+recs.map(function(p){ return '<div class="li"><div class="m"><div class="t">'+esc(p.brand)+'</div><div class="s" style="white-space:normal">'+esc(p.cat)+' · '+esc(p.line)+'</div></div>'+(s.handle?'<div class="e"><a class="btn sm" href="#influencer" data-igc data-h="'+esc(s.handle)+'" data-n="'+esc(s.seller)+'" data-p="'+esc(p.brand)+'" data-tpl="1">이 상품으로 DM</a></div>':'')+'</div>'; }).join('')+'</div>':'<div class="empty">제안 상품이 없어요</div>');
 }
-var IG_BANDS=[['전체',0,1e12],['8~15만',75000,150000],['15~30만',150000,300000],['30~50만',300000,500000],['50만+',500000,1e12]];
-function igBand(n){ n=Number(n)||0; for (var i=1;i<IG_BANDS.length;i++) if (n>=IG_BANDS[i][1]&&n<IG_BANDS[i][2]) return IG_BANDS[i][0]; return n?'8만 미만':''; }
+var IG_BANDS=[['전체',0,1e12],['2~8만',20000,80000],['8~15만',80000,150000],['15~30만',150000,300000],['30~50만',300000,500000],['50~100만',500000,1000001],['100만+',1000001,1e12]];
+function igBand(n){ n=Number(n)||0; for (var i=1;i<IG_BANDS.length;i++) if (n>=IG_BANDS[i][1]&&n<IG_BANDS[i][2]) return IG_BANDS[i][0]; return n?'2만 미만':''; }
 function igQBar(){
   return '<div class="igqbar"><select class="inp" id="igqp"><option value="">제안 상품 선택</option>'+IG.prods.map(function(p){ return '<option'+(p.brand===IGF.qp?' selected':'')+'>'+esc(p.brand)+'</option>'; }).join('')+'</select>'+
     '<button class="btn sm" id="igqall">이 목록 전체 선택</button><button class="btn sm pri" id="igqgo"'+(igQSel().length?'':' disabled')+'><i class="ti ti-player-play"></i>선택 '+igQSel().length+'명 연속 발송</button></div>';
@@ -3679,7 +3682,7 @@ function igPros(){
   var cats=['전체'].concat(IG.pcats.map(function(c){ return c[0]; }));
   var list=IG.pros.filter(function(n){ return (IGF.pc==='전체' || String(n.cats).indexOf(IGF.pc)>=0) && igInBand(n,'pband'); }).sort(function(a,b){ return (Number(b.fnum)||0)-(Number(a.fnum)||0); });
   var bandCnt={}; IG.pros.forEach(function(n){ var b=igBand(n.fnum); bandCnt[b]=(bandCnt[b]||0)+1; });
-  return '<div class="grid igsplit"><div class="card"><h2>비패션 신규 후보 <small>'+list.length+'명 · 매일 10:37 자동 발굴</small></h2>'+
+  return '<div class="grid igsplit"><div class="card"><h2>비패션 신규 후보 <small>'+list.length+'명 · 매일 10:37 자동 발굴 (팔로워 2만~100만)</small></h2>'+
     igBandSeg('pband')+'<div class="seg segwrap" style="margin-bottom:10px">'+cats.map(function(c){ return '<button data-igpc="'+esc(c)+'" class="'+(IGF.pc===c?'on':'')+'">'+esc(c)+'</button>'; }).join('')+'</div>'+
     igQBar()+(list.length?igMore('pros_'+IGF.pc+IGF.pband,list,10,function(n){ return igSRow(n, esc(n.cats)+' · '+esc(n.products)+(n.found?' · '+esc(n.source)+(n.post?' · <a href="'+esc(n.post)+'" target="_blank" rel="noopener">게시물</a>':''):'')); }):'<div class="empty">조건에 맞는 후보가 없어요</div>')+'</div>'+
     '<div class="card"><h2>구간별 후보 수</h2><div class="list">'+IG_BANDS.slice(1).map(function(b){ return '<div class="li"><div class="m"><div class="t">'+b[0]+'</div></div><div class="e num">'+(bandCnt[b[0]]||0)+'명</div></div>'; }).join('')+'</div>'+
@@ -3711,8 +3714,11 @@ function igSourcing(){
     '<p class="ignote">원본: 인스타 공구 모니터링 시트 「6.소싱후보」 탭. 상태 칸에 「제외」라고 적으면 여기서 빠지고, 「확인 메모」에 진행 상황을 적어두면 돼요.</p></div>';
 }
 function igProds(){
+  var q=String(IGF.ps||'').trim().toLowerCase(), pcat=IGF.pcat||'전체';
+  var pc=['전체'].concat(IG.prods.map(function(p){ return String(p.cat).split(/[·(]/)[0].trim(); }).filter(function(v,i,a){ return v&&a.indexOf(v)===i; }));
+  var list=IG.prods.filter(function(p){ return (pcat==='전체'||String(p.cat).indexOf(pcat)===0) && (!q || [p.brand,p.cat,p.line,p.target,p.detail,p.rule].join(' ').toLowerCase().indexOf(q)>=0); });
   return '<div class="card" style="margin-bottom:16px"><h2>제안 상품 <small>노션 「SNS 공동구매 제품 자료」 브랜드 단위</small>'+(IG.notion?'<a class="btn sm" href="'+esc(IG.notion)+'" target="_blank" rel="noopener"><i class="ti ti-external-link"></i>노션 전체</a>':'')+'</h2><p class="ignote" style="margin:0">상품 상세·가격제안서는 노션에 있어요. 셀러에게 맞는 상품을 골라 바로 DM 초안을 만들어요.</p></div>'+
-    '<div class="igcards">'+IG.prods.map(function(p){ var ok=/진행가능|진행중/.test(p.status);
+    (list.length?'':'<div class="card"><div class="empty">검색 결과가 없어요</div></div>')+'<div class="igcards">'+list.map(function(p){ var ok=/진행가능|진행중/.test(p.status);
       return '<div class="card igcard"><div style="display:flex;gap:8px;align-items:center"><b style="font-size:15px">'+esc(p.brand)+'</b><span class="pill '+(ok?'g':/협의/.test(p.status)?'a':'')+'" style="margin-left:auto">'+esc(p.status)+'</span></div>'+
       '<div class="s">'+esc(p.cat)+' · '+esc(p.count)+'개 상품</div><div>'+esc(p.line)+'</div>'+
       (p.detail?'<details class="igdet"><summary>노션 상세 요약</summary><p>'+esc(p.detail)+'</p></details>':'')+'<dl class="igkv"><dt>허들</dt><dd>'+esc(p.hurdle||'-')+'</dd><dt>타겟</dt><dd>'+esc(p.target||'-')+'</dd>'+(p.rule?'<dt>조건</dt><dd>'+esc(p.rule)+'</dd>':'')+(Number(p.pastSales)?'<dt>지난 공구</dt><dd class="num">'+igMan(p.pastSales)+'</dd>':'')+'</dl>'+
