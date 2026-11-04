@@ -577,6 +577,15 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 .igdet{font-size:13px;margin:4px 0}.igdet summary{cursor:pointer;color:var(--accent);font-weight:600}.igdet p{margin:6px 0 0;color:var(--sub);line-height:1.6}
 .igol{margin:0;padding-left:18px;font-size:13.5px;display:flex;flex-direction:column;gap:6px}
 @media (max-width:900px){.igsplit{grid-template-columns:1fr}.igf{grid-template-columns:1fr}.igbar{grid-template-columns:96px minmax(0,1fr) 56px}.igbtns .btn{flex:1 1 100%}.igtabs{width:100%}}
+
+/* 카드 묶음(그리드) 안 카드: 위아래 어긋남 제거 · 높이·줄 맞춤 */
+.igcards>.card,.igcards>.card+.card,[class$="cards"]>.card+.card{margin:0!important}
+.igcards{align-items:stretch}
+.igcard>div:nth-child(3){display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.9em;line-height:1.45}
+.igcard .igkv{grid-auto-rows:minmax(1.45em,auto)}
+.igcard .igkv dd{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.igcard>div:last-child{padding-top:10px;border-top:1px dashed var(--line)}
+.card h2:has(>a.btn){display:flex;align-items:center;gap:8px;flex-wrap:wrap}.card h2>a.btn{margin-left:auto}
 </style>
 </head>
 <body>
