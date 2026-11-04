@@ -537,7 +537,7 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-11-03sw';
+var APP_BUILD = '2026-11-03sw-m1';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -600,6 +600,7 @@ function bindPager(root, onPage){
   root.querySelectorAll('[data-pg]').forEach(function(b){ b.onclick=function(){ onPage(+b.dataset.pg); root.scrollIntoView({block:'start',behavior:'smooth'}); }; });
   var sel=root.querySelector('[data-size]'); if(sel) sel.onchange=function(){ PG.size=+this.value; try{ localStorage.setItem('hubPageSize',PG.size); }catch(e){} onPage(1); };
 }
+function deadNeg(p){ var m=margin(p); return m!==null && m<0 && stockMode(p)!=='위탁' && effStock(p)<=0; }  /* 재고 0 + 역마진: 집계·목록에서 빼고 숨김 */
 function marginMin(){ var v=Number(S.config.margin_min&&S.config.margin_min.value); return isFinite(v)&&v>0?v:20; }
 function isAdmin(){ return S.me && S.me.role==='관리자'; }
 
@@ -1528,7 +1529,7 @@ function todoDefault(){
 }
 function todoChecks(){
   var L=[['out','품절',function(p){ return stockState(p)==='out'; }],['low','재고 부족',function(p){ return stockState(p)==='low'; }],
-    ['margin','마진 '+marginMin()+'% 미만',function(p){ var m=margin(p); return m!==null && m<marginMin(); }]];
+    ['margin','마진 '+marginMin()+'% 미만',function(p){ var m=margin(p); return m!==null && m<marginMin() && !deadNeg(p); }]];
   Object.keys(PCHK).forEach(function(k){ if(k!=='noowner') L.push([k,PCHK[k].t2,function(p){ return p.sbnStatus!=='미사용' && PCHK[k].t(p); }]); });
   return L;
 }
@@ -1572,7 +1573,7 @@ VIEWS.todo = {
     var outQ = todays.filter(function(h){ return h.qty<0; }).reduce(function(a,h){ return a-h.qty; },0);
     var value = sa.reduce(function(a,p){ return a+Math.max(0,p.stock)*p.cost; },0);
     var sch = S.config.scheduler_check, schD = sch ? new Date(sch.at) : null, schToday = sch && (String(sch.at).slice(0,10)===td || (schD && !isNaN(schD) && new Date(schD.getTime()+9*36e5).toISOString().slice(0,10)===td));
-    var lowM = P.filter(function(p){ var m=margin(p); return m!==null && m<marginMin(); });
+    var lowM = P.filter(function(p){ var m=margin(p); return m!==null && m<marginMin() && !deadNeg(p); });
     var d = new Date(Date.now()+9*36e5), wd='일월화수목금토'.charAt(d.getUTCDay());
     var A = P.filter(function(p){ return p.sbnStatus!=='미사용'; });
     var chk = Object.keys(PCHK).map(function(k){ var c=PCHK[k]; return {k:k, c:c, n:A.filter(c.t).length}; });
@@ -3190,19 +3191,19 @@ function scanFix(id, after){
 }
 
 /* ---------- 원가 · 마진 ---------- */
-var CF = {sort:'margin', q:'', page:1, basis:'현재고', open:{}};
+var CF = {sort:'margin', q:'', page:1, basis:'현재고', open:{}, hid:false};
 function costBasis(p){ return CF.basis==='전체' || stockMode(p)===CF.basis; }
 function effStock(p){ var m=stockMode(p); return m==='현재고' ? p.stock : m==='가상재고' ? (p.vstock||0) : m==='모음전' ? ((originOf(p)||{}).stock||0) : 0; }
 VIEWS.cost = {
   html: function(){
-    var B = S.products.filter(costBasis), P = B.filter(function(p){ return p.price; });
+    var B0 = S.products.filter(costBasis), HID = B0.filter(deadNeg), B = B0.filter(function(p){ return !deadNeg(p); }), P = B.filter(function(p){ return p.price; });
     var avg = P.length ? P.reduce(function(a,p){ return a+margin(p); },0)/P.length : 0;
     var low = P.filter(function(p){ return margin(p)<marginMin(); });
     var sa = S.products.filter(function(p){ return stockMode(p)==='현재고'; });
     var value = sa.reduce(function(a,p){ return a+Math.max(0,p.stock)*p.cost; },0);
     var sell = sa.reduce(function(a,p){ return a+Math.max(0,p.stock)*p.price; },0);
     var qty = sa.reduce(function(a,p){ return a+Math.max(0,p.stock); },0);
-    return '<div class="ph"><div><h1>원가 · 마진</h1><p>원가를 바꾸면 변동 기록이 자동으로 남아요 · 마진 기준 '+marginMin()+'%</p></div><div class="acts"><button class="btn" data-xl="1" title="지금 보이는 조건 그대로 엑셀로 받기"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button></div></div>'+
+    return '<div class="ph"><div><h1>원가 · 마진</h1><p>원가를 바꾸면 변동 기록이 자동으로 남아요 · 마진 기준 '+marginMin()+'% · 재고 0 역마진 '+won(HID.length)+'개는 집계 제외</p></div><div class="acts"><button class="btn" data-xl="1" title="지금 보이는 조건 그대로 엑셀로 받기"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button></div></div>'+
       '<div class="grid g4">'+
         '<div class="kpi"><div class="k">평균 마진율</div><div class="v num">'+avg.toFixed(1)+'<small>%</small></div></div>'+
         '<div class="kpi '+(low.length?'red':'')+'"><div class="k">기준 미만</div><div class="v num">'+won(low.length)+'<small>개</small></div></div>'+
@@ -3212,15 +3213,17 @@ VIEWS.cost = {
       '<div class="card" style="margin-top:16px">'+
         '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"><div class="search"><i class="ti ti-search"></i><input class="inp" id="cq" placeholder="상품 검색" value="'+esc(CF.q)+'"></div>'+
         '<div class="seg" id="cb">'+[['현재고','현재고 기준'],['모음전','모음전'],['가상재고','가상재고'],['전체','전체']].map(function(c){ return '<button data-v="'+c[0]+'" class="'+(CF.basis===c[0]?'on':'')+'">'+c[1]+' <small class="num">'+won(S.products.filter(function(p){ return c[0]==='전체'||stockMode(p)===c[0]; }).length)+'</small></button>'; }).join('')+'</div>'+
-        '<div class="seg" id="cs">'+[['margin','마진율 낮은 순'],['value','재고금액 큰 순'],['name','이름순']].map(function(c){ return '<button data-v="'+c[0]+'" class="'+(CF.sort===c[0]?'on':'')+'">'+c[1]+'</button>'; }).join('')+'</div></div>'+
+        '<div class="seg" id="cs">'+[['margin','마진율 낮은 순'],['value','재고금액 큰 순'],['name','이름순']].map(function(c){ return '<button data-v="'+c[0]+'" class="'+(CF.sort===c[0]?'on':'')+'">'+c[1]+'</button>'; }).join('')+'</div>'+
+        '<button class="btn'+(CF.hid?' pri':'')+'" id="chid" title="재고 0이면서 마진율 마이너스인 상품 — 집계에서 빠지고 기본 목록에서 숨겨져요"><i class="ti ti-eye'+(CF.hid?'':'-off')+'"></i><span>'+(CF.hid?'숨김 상품 보는 중 · 돌아가기':'재고 0 역마진 숨김 '+won(HID.length)+'개')+'</span></button></div>'+
+        (CF.hid?'<div style="margin:-4px 0 12px;padding:10px 12px;border-radius:10px;background:var(--amberbg);color:var(--amber);font-size:13px">재고 0 · 마진율 마이너스 상품이에요. 평균 마진율·기준 미만·홈 확인 항목에서 빠져 있어요. 재고가 들어오거나 판매가·원가를 고쳐 마진이 0% 이상이 되면 자동으로 원래 목록으로 돌아가요.</div>':'')+
         '<div id="clist"></div></div>';
   },
   bind: function(){
     var draw = function(){
       var toks = CF.q.toLowerCase().split(/\s+/).filter(Boolean);
-      var L = S.products.filter(costBasis).filter(function(p){ var h=[p.name,p.brand,p.option,p.sku,p.sbnPrd].join(' ').toLowerCase(); return toks.every(function(t){ return h.indexOf(t)>=0; }); });
-      XL_CUR = function(){ return {file:'원가마진_'+CF.basis, sheets:[{name:'원가·마진', head:XL_PROD_HEAD, rows:L.map(xlProdRow)}]}; };
-      if (!L.length){ $('clist').innerHTML='<div class="empty">상품이 없어요</div>'; return; }
+      var L = S.products.filter(costBasis).filter(function(p){ return CF.hid ? deadNeg(p) : !deadNeg(p); }).filter(function(p){ var h=[p.name,p.brand,p.option,p.sku,p.sbnPrd].join(' ').toLowerCase(); return toks.every(function(t){ return h.indexOf(t)>=0; }); });
+      XL_CUR = function(){ return {file:'원가마진_'+CF.basis+(CF.hid?'_재고0역마진':''), sheets:[{name:'원가·마진', head:XL_PROD_HEAD, rows:L.map(xlProdRow)}]}; };
+      if (!L.length){ $('clist').innerHTML='<div class="empty">'+(CF.hid?'재고 0 · 역마진 상품이 없어요':'상품이 없어요')+'</div>'; return; }
       // 메인 품번(사방넷 상품코드) 단위로 묶고, 옵션(상세 품번)은 펼쳐서 보기
       var G=[], gi={};
       L.forEach(function(p){ var k=p.sbnPrd?'P'+p.sbnPrd:'I'+p.id; if(!gi[k]){ gi[k]={k:k,items:[]}; G.push(gi[k]); } gi[k].items.push(p); });
@@ -3265,6 +3268,7 @@ VIEWS.cost = {
       bindPager($('clist'), function(n){ CF.page=n; draw(); });
     };
     $('cq').oninput = function(){ CF.q=this.value; CF.page=1; draw(); };
+    $('chid').onclick = function(){ CF.hid=!CF.hid; CF.page=1; route(); };
     document.querySelectorAll('#cb button').forEach(function(b){ b.onclick=function(){ CF.basis=b.dataset.v; CF.page=1; route(); }; });
     document.querySelectorAll('#cs button').forEach(function(b){ b.onclick=function(){ CF.sort=b.dataset.v; CF.page=1; document.querySelectorAll('#cs button').forEach(function(x){ x.classList.toggle('on',x===b); }); draw(); }; });
     draw();
