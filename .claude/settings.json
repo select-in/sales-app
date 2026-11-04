@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(docs/ops_work/index.html)",
+      "Write(docs/ops_work/index.html)",
+      "Edit(docs/hub/index.html)",
+      "Write(docs/hub/index.html)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [{ "type": "command", "command": "bash tools/hook-layout.sh", "timeout": 120 }]
+      }
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "ops-claude-kit",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "check": "node tools/layout-check.mjs docs/ops_admin/index.html",
+    "check:live": "node tools/layout-check.mjs https://select-in.github.io/sales-app/ops_admin/ https://select-in.github.io/sales-app/ops_work/"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  },
+  "private": true
+}

@@ -1,0 +1,24 @@
+# ops_admin 화면이 바뀌면 PC/MO 레이아웃을 자동 점검한다.
+# 실패하면 커밋에 ❌ 표시 → ops-promote(ops_work 반영)는 이 점검이 통과한 버전만 복사해야 한다.
+name: ops-layout-guard
+on:
+  push:
+    paths: ['docs/ops_admin/**', 'docs/ops_work/**']
+  pull_request:
+    paths: ['docs/ops_admin/**']
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci || npm i -D playwright
+      - run: npx playwright install --with-deps chromium
+      - name: PC·MO 점검
+        run: node tools/layout-check.mjs docs/ops_admin/index.html docs/ops_work/index.html
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: layout-report, path: layout-report/ }

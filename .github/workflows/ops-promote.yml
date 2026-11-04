@@ -35,6 +35,12 @@ jobs:
           if [ -z "$WHY" ] && [ -n "$SLOT" ] && [ "$SLOT" != "$LSLOT" ]; then WHY="정기 $SLOT시"; fi
           echo "why=$WHY" >> "$GITHUB_OUTPUT"; echo "req=$REQ" >> "$GITHUB_OUTPUT"; echo "slot=$SLOT" >> "$GITHUB_OUTPUT"
           echo "REQ=$REQ LREQ=$LREQ SLOT=$SLOT LSLOT=$LSLOT WHY=$WHY"
+      - name: PC·MO 점검 (실패 시 반영 중단 — ops_work는 이전 버전 유지)
+        if: steps.check.outputs.why != ''
+        run: |
+          npm i --no-audit --no-fund playwright@1.63.0
+          npx playwright install --with-deps chromium
+          node tools/layout-check.mjs docs/ops_admin/index.html
       - name: ops_admin → ops_work 복사·푸시
         if: steps.check.outputs.why != ''
         env:
