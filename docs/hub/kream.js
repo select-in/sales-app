@@ -6,7 +6,7 @@
   if (!/(^|\.)partner\.kream\.co\.kr$/.test(location.hostname)) { alert('크림 판매자센터(partner.kream.co.kr)에서 실행해 주세요'); return; }
   if (window.__opsKrm) { window.__opsKrm.show(); return; }
   var API = 'https://partner-api.kream.co.kr/api/v1/';
-  var HUB = 'https://select-in.github.io/sales-app/hub/', HUB_ORIGIN = 'https://select-in.github.io';
+  var HUB = 'https://select-in.github.io/sales-app/ops_work/', HUB_ORIGIN = 'https://select-in.github.io';
   var EVERY = 10 * 60 * 1000, hubWin = null, timer = null, busy = false, first = true;
   var LS = function (k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
 

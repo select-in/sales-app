@@ -7,7 +7,7 @@
 (function () {
   if (!/sbadmin\d*\.sabangnet\.co\.kr$/.test(location.hostname)) { alert('사방넷 관리자(sbadmin) 화면에서 실행해 주세요'); return; }
   if (window.__opsSbn) { window.__opsSbn.show(); return; }
-  var HUB = 'https://select-in.github.io/sales-app/hub/', HUB_ORIGIN = 'https://select-in.github.io';
+  var HUB = 'https://select-in.github.io/sales-app/ops_work/', HUB_ORIGIN = 'https://select-in.github.io';
   var EVERY = 5 * 60 * 1000, REG_EVERY = 60 * 60 * 1000, hubWin = null, timer = null, busy = false;
   var LS = function (k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
   var pad = function (n) { return ('0' + n).slice(-2); };

@@ -6,7 +6,7 @@
 (function () {
   if (!/(^|\.)seller\.poizon\.com$/.test(location.hostname)) { alert('포이즌 판매자센터(seller.poizon.com)에서 실행해 주세요'); return; }
   if (window.__opsPzn) { window.__opsPzn.show(); return; }
-  var HUB = 'https://select-in.github.io/sales-app/hub/', HUB_ORIGIN = 'https://select-in.github.io';
+  var HUB = 'https://select-in.github.io/sales-app/ops_work/', HUB_ORIGIN = 'https://select-in.github.io';
   var EVERY = 10 * 60 * 1000, hubWin = null, timer = null, busy = false;
   var LS = function (k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };

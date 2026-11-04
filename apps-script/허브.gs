@@ -192,7 +192,7 @@ function doPost(e) {
 }
 function doGet(e) {
   if (e && e.parameter && e.parameter.r) return hubIgReplyPage_(e.parameter.r);   // 셀러용 공구 제안 회신(수락·거절) 페이지
-  return ContentService.createTextOutput('셀렉트인 OPS 서버가 동작 중입니다. 화면은 https://select-in.github.io/sales-app/hub/ 에서 여세요.');
+  return ContentService.createTextOutput('셀렉트인 OPS 서버가 동작 중입니다. 화면은 https://select-in.github.io/sales-app/ops_work/ (대장: /ops_admin/) 에서 여세요.');
 }
 function hubOut_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
@@ -1969,7 +1969,7 @@ function hubMcHtml_(rep, note) {
     '<h3 style="font-size:15px;margin:8px 0 0">점검</h3>' + tbl(['결과', '내용'], rep.checks.map(function (c) { var x = C[c.lv]; return '<tr><td ' + td + '><span style="display:inline-block;padding:2px 8px;border-radius:10px;background:' + x[1] + ';color:' + x[0] + ';font-size:12px;font-weight:600;white-space:nowrap">' + x[2] + '</span></td><td ' + td.replace('font-size:13px', 'font-size:13px;text-align:right') + '><b>' + c.item + '</b><br><span style="color:#555">' + c.msg + '</span></td></tr>'; })) +
     '<div style="font-size:12px;color:#888;margin-top:6px">입금완료 ' + won_(rep.tot.paid) + '원 · 미입금 ' + won_(rep.tot.unpaid) + '원 (정산예정액 기준)<br>' +
     '이익은 매입원가가 입력된 매출만으로 계산했어요 (원가 미입력 매출 ' + won_(rep.tot.amt - rep.tot.costedAmt) + '원 제외).<br>' +
-    '플랫폼별·일별·상세 행은 첨부 엑셀에 있어요. OPS 매출: <a href="https://select-in.github.io/sales-app/hub/#close" style="color:#0b7a55">select-in.github.io/sales-app/hub</a></div></div>';
+    '플랫폼별·일별·상세 행은 첨부 엑셀에 있어요. OPS 매출: <a href="https://select-in.github.io/sales-app/ops_work/#close" style="color:#0b7a55">select-in.github.io/sales-app/hub</a></div></div>';
 }
 
 /** 마감 전 사방넷 다시 맞추기 — 매출판 '일별입력'의 그 달 사방넷 행(일×쇼핑몰×ID) 건수·매출을 지금 사방넷 API(주문일) 값으로 갱신.
