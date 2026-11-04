@@ -3781,7 +3781,7 @@ function igLinkAdd(){
   var t=$('igtx'); if (t && /\?r=[\w-]+\.[\w-]+/.test(t.value)) return;
   var k=h+'|'+IGF.d.product, put=function(url){ var t2=$('igtx'); if(!t2 || /\?r=[\w-]+\.[\w-]+/.test(t2.value)) return; t2.value=t2.value.replace(/\s+$/,'')+'\n\n👉 참여 여부 선택 (1초): '+url; IGF.d.text=t2.value; igSave(); };
   if (IG_LINKS[k]) return put(IG_LINKS[k]);
-  api('ig_reply_link',{handle:h, product:IGF.d.product}).then(function(j){ IG_LINKS[k]=j.url; put(j.url); }).catch(function(){});
+  api('ig_reply_link',{handle:h, product:IGF.d.product}).then(function(j){ var u=String(j.url||'').replace(/\/a\/[^/]+\/macros\//,'/macros/'); IG_LINKS[k]=u; put(u); }).catch(function(){});
 }
 function igDmSave(h, patch, logText){
   patch.handle=h; patch.logText=logText||'';
