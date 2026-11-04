@@ -3472,7 +3472,9 @@ function igBuild(j){
     if (r.handle) s.handle = r.handle;
     if (r.phase==='past'){ s.n++; s.sales+=r.sales; s.profit+=(r.profit||0); s.cats[r.cat]=(s.cats[r.cat]||0)+1; if (r.b>s.last) s.last=r.b; s.products.push(r.product);
       var c = cats[r.cat] || (cats[r.cat]={cat:r.cat,n:0,sales:0}); c.n++; c.sales+=r.sales;
-      var bk = (r.brand||r.product).replace(/\s*\(.*$/,'').replace(/\s*\d+차.*$/,'').split('/')[0].trim(); var b = brands[bk] || (brands[bk]={brand:bk,n:0,sales:0,sellers:{},cat:r.cat}); b.n++; b.sales+=r.sales; b.sellers[r.seller]=1; }
+      var own = /^(겐더샵|셀렉트인|블랭크|타이틀블랭크|코이)|(커머스|컴퍼니|코퍼레이션)$/.test(String(r.brand||'').trim());   // 공급 법인명이면 실제 상품 브랜드로 묶음
+      var bk = (own||!r.brand ? r.product : r.brand).replace(/\s*\(.*$/,'').replace(/\s*\d+차.*$/,'').replace(/깜공.*$/,'').split('/')[0].trim();
+      if (/목도리/.test(r.product)) bk='폴로 목도리'; else if (/잔스포츠/.test(r.product+r.brand)) bk='잔스포츠'; else if (/캘빈|ck/i.test(r.product)) bk='캘빈클라인'; else if (/타미/.test(r.product)) bk='타미힐피거 키즈'; var b = brands[bk] || (brands[bk]={brand:bk,n:0,sales:0,sellers:{},cat:r.cat}); b.n++; b.sales+=r.sales; b.sellers[r.seller]=1; }
     else if (r.phase==='now'||r.phase==='next') s.up++;
     if (r.phase!=='cancel'){ var m = months[r.a.slice(0,7)] || (months[r.a.slice(0,7)]={m:r.a.slice(0,7),n:0,sales:0}); m.n++; m.sales+=r.sales; }
   });
