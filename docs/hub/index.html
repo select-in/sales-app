@@ -636,7 +636,7 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 <div id="app"></div>
 
 <script>
-var APP_BUILD = '2026-11-04acct';
+var APP_BUILD = '2026-11-04own'; var APP_BUILD_PREV = '2026-11-04acct';
 var API = (window.HUB_API || '').trim();
 var DEMO = false;
 var S = { me: null, products: [], history: [], config: {}, users: [] };
@@ -877,14 +877,17 @@ var MENU = [
     {k:'gonggu',t:'공동구매',ic:'users-group'},
     {k:'influencer',t:'인스타 공구',ic:'brand-instagram'}]},
   {grp:'기타', ic:'dots', items:[
+    {k:'owner',t:'총괄 관리',ic:'crown',owner:1},
     {k:'links',t:'기존 프로그램',ic:'apps'},
-    {k:'archive',t:'보관함',ic:'archive'},
+    {k:'archive',t:'보관함',ic:'archive',owner:1},
     {k:'settings',t:'설정',ic:'settings'}]}
 ];
+/* 총괄 전용 메뉴는 총괄에게만 */
+function menuGroups(){ return MENU.map(function(g){ return Object.assign({},g,{items:g.items.filter(function(i){ return !i.owner||isOwner(); })}); }).filter(function(g){ return g.items.length; }); }
 function lowCount(){ return S.products.filter(function(p){ return stockState(p)==='low'; }).length; }
 function shell(){
   var navOpen=lsGet('hubNavOpen')||{};
-  var nav = MENU.map(function(g){
+  var nav = menuGroups().map(function(g){
     var ps='', open = !!navOpen[g.grp];
     if (!g.grp) return g.items.map(function(i){ return '<a class="it" href="#'+i.k+'" data-k="'+i.k+'">'+i.t+'</a>'; }).join('')+'<div class="navall"><button type="button" data-navall="1">전체 열기</button><button type="button" data-navall="0">전체 접기</button></div>';
     return '<div class="ngrp'+(open?' open':'')+'" data-ng="'+esc(g.grp)+'"><button class="grp" type="button"><span>'+g.grp+'</span><i class="ti ti-chevron-down"></i></button><div class="nitems">'+g.items.map(function(i){
@@ -1316,7 +1319,7 @@ function arLoad(){
 }
 VIEWS.archive = {
   html: function(){ return '<div class="ph"><div><h1>보관함</h1><p>OPS로 옮긴 예전 프로그램·시트·자동화를 지우지 않고 보관·관리해요</p></div><div class="acts"><button class="btn" data-xl="1"><i class="ti ti-file-spreadsheet"></i><span>엑셀</span></button></div></div><div id="arbox"><div class="card"><div class="empty">불러오는 중…</div></div></div>'; },
-  bind: function(){ if(!isAdmin()){ $('arbox').innerHTML='<div class="card"><div class="empty">보관함은 관리자만 볼 수 있어요</div></div>'; return; } if(AR.d) arDraw(); arLoad(); }
+  bind: function(){ if(!isOwner()){ $('arbox').innerHTML='<div class="card"><div class="empty">보관함·스마트스토어 연결은 총괄만 볼 수 있어요</div></div>'; return; } if(AR.d) arDraw(); arLoad(); }
 };
 
 /* ---------- 홈: 오늘 처리 현황 (사방넷 API 직접 조회) ---------- */
@@ -3459,8 +3462,8 @@ VIEWS.gonggu = {
     var kp=function(k,lab,n,cls){ return '<button class="kpi ggk'+(cls||'')+(k===sel?' on':'')+'" data-ggk="'+k+'"><div class="k">'+lab+'</div><div class="v num">'+n+'<small>건</small></div></button>'; };
     var st=function(r){ return r.st==='진행완료'?'g':r.st==='공구/확정'?'b':(r.st==='미확정'||r.st==='가픽스')?'a':r.phase==='cancel'?'r':''; };
     var tbl=function(rows){ var shown=rows.slice(0,15+(IG_MORE['gt_'+sel]||0)*30), more=rows.length-shown.length;
-      return '<div class="pconly" style="overflow-x:auto"><table class="tbl ggtbl"><thead><tr><th>기간</th><th class="l">셀러 · 상품</th><th>브랜드</th><th>분류</th><th>수수료 / 셀러</th><th>상태</th><th>매출</th>'+(isAdmin()?'<th>수익</th>':'')+'</tr></thead><tbody>'+
-        shown.map(function(r){ return '<tr><td class="num sm nw">'+igMd(r.a)+' ~ '+igMd(r.b)+'</td><td class="l"><b>'+esc(r.seller)+'</b> <span class="sm">'+esc(r.product)+'</span>'+(r.handle?' <a href="https://www.instagram.com/'+encodeURIComponent(r.handle)+'/" target="_blank" rel="noopener" class="sm">@'+esc(r.handle)+'</a>':'')+'</td><td class="sm">'+esc(r.bkey)+(r.vendor&&r.vendor!=='셀렉트인'?' · 벤더 '+esc(r.vendor):'')+'</td><td class="sm">'+esc(r.cat)+'</td><td class="num sm nw">'+esc(r.fee||'-')+' / '+esc(r.sfee||'-')+'</td><td><span class="pill '+st(r)+'">'+esc(r.st||'-')+'</span></td><td class="num">'+(r.sales?igMan(r.sales):'-')+(r.ext?'<div class="sm">본사링크 · 수수료 '+igMan(r.comm)+'</div>':'')+'</td>'+(isAdmin()?'<td class="num sm">'+(r.profit?igMan(r.profit):'-')+'</td>':'')+'</tr>'; }).join('')+
+      return '<div class="pconly" style="overflow-x:auto"><table class="tbl ggtbl"><thead><tr><th>기간</th><th class="l">셀러 · 상품</th><th>브랜드</th><th>분류</th><th>수수료 / 셀러</th><th>상태</th><th>매출</th>'+(isOwner()?'<th>수익</th>':'')+'</tr></thead><tbody>'+
+        shown.map(function(r){ return '<tr><td class="num sm nw">'+igMd(r.a)+' ~ '+igMd(r.b)+'</td><td class="l"><b>'+esc(r.seller)+'</b> <span class="sm">'+esc(r.product)+'</span>'+(r.handle?' <a href="https://www.instagram.com/'+encodeURIComponent(r.handle)+'/" target="_blank" rel="noopener" class="sm">@'+esc(r.handle)+'</a>':'')+'</td><td class="sm">'+esc(r.bkey)+(r.vendor&&r.vendor!=='셀렉트인'?' · 벤더 '+esc(r.vendor):'')+'</td><td class="sm">'+esc(r.cat)+'</td><td class="num sm nw">'+esc(r.fee||'-')+' / '+esc(r.sfee||'-')+'</td><td><span class="pill '+st(r)+'">'+esc(r.st||'-')+'</span></td><td class="num">'+(r.sales?igMan(r.sales):'-')+(r.ext?'<div class="sm">본사링크 · 수수료 '+igMan(r.comm)+'</div>':'')+'</td>'+(isOwner()?'<td class="num sm">'+(r.profit?igMan(r.profit):'-')+'</td>':'')+'</tr>'; }).join('')+
         '</tbody></table></div>'+(more>0?'<button class="btn sm igmore pconly" data-ggmore="1"><i class="ti ti-chevron-down"></i>더보기 <small>/ 남은 '+more+'건</small></button>':'')+
         '<div class="moonly">'+igMore('gm_'+sel,rows,8,igRow)+'</div>'; };
     var body = sel==='need'
@@ -3659,7 +3662,7 @@ function igRow(r){
   var c = r.st==='진행완료'?'g':r.st==='공구/확정'?'b':(r.st==='미확정'||r.st==='가픽스')?'a':r.phase==='cancel'?'r':'';
   return '<div class="li"><div class="igdate num">'+igMd(r.a)+'<br>'+igMd(r.b)+'</div><div class="m"><div class="t" style="white-space:normal">'+esc(r.seller)+' · '+esc(r.product)+'</div>'+
     '<div class="s">'+esc(r.bkey)+' · '+esc(r.cat)+(r.vendor&&r.vendor!=='셀렉트인'?' · 벤더 '+esc(r.vendor):'')+(r.fee||r.sfee?' · 수수료 '+esc(r.fee||'-')+' / 셀러 '+esc(r.sfee||'-'):'')+'</div></div>'+
-    '<div class="e"><span class="pill '+c+'">'+esc(r.st||'-')+'</span>'+(r.sales?'<div class="num" style="font-size:13px;margin-top:3px">'+igMan(r.sales)+(r.ext?' <span class="pill" title="업체(본사) 링크 판매 · 총 매출">본사링크</span>':'')+'</div>'+(r.comm?'<div class="num" style="font-size:12px;color:var(--mute)">셀렉트인 수수료 '+igMan(r.comm)+'</div>':''):'')+(isAdmin()&&r.profit?'<div class="num" style="font-size:12px;color:var(--mute)">수익 '+igMan(r.profit)+'</div>':'')+'</div></div>';
+    '<div class="e"><span class="pill '+c+'">'+esc(r.st||'-')+'</span>'+(r.sales?'<div class="num" style="font-size:13px;margin-top:3px">'+igMan(r.sales)+(r.ext?' <span class="pill" title="업체(본사) 링크 판매 · 총 매출">본사링크</span>':'')+'</div>'+(r.comm?'<div class="num" style="font-size:12px;color:var(--mute)">셀렉트인 수수료 '+igMan(r.comm)+'</div>':''):'')+(isOwner()&&r.profit?'<div class="num" style="font-size:12px;color:var(--mute)">수익 '+igMan(r.profit)+'</div>':'')+'</div></div>';
 }
 function igBars(list, lab, max){ max=max||Math.max.apply(null,list.map(function(x){ return x.sales; }).concat([1]));
   return '<div class="igbars">'+list.map(function(x){ return '<div class="igbar"><span>'+lab(x)+'</span><div class="tr"><i style="width:'+(x.sales/max*100).toFixed(1)+'%"'+(x.cat==='패션'?' class="alt"':'')+'></i></div><b class="num">'+igMan(x.sales)+'</b></div>'; }).join('')+'</div>'; }
@@ -3892,7 +3895,7 @@ VIEWS.more = {
   html: function(){
     var op=lsGet('hubMoreOpen')||{};
     return '<div class="ph"><div><h1>전체 메뉴</h1></div></div><div class="mgrps">'+
-      MENU.filter(function(g){ return g.grp; }).map(function(g){
+      menuGroups().filter(function(g){ return g.grp; }).map(function(g){
         var subs=[], by={}; g.items.forEach(function(i){ var k=i.sub||''; if(!by[k]){ by[k]=[]; subs.push(k); } by[k].push(i); });
         var isOpen = op[g.grp]===undefined ? g.grp!=='기타' : !!op[g.grp];
         return '<details class="card mgrp"'+(isOpen?' open':'')+' data-g="'+esc(g.grp)+'"><summary><b>'+g.grp+'</b><small>'+g.items.filter(function(i){ return !i.soon; }).length+'</small><i class="ti ti-chevron-down cv"></i></summary>'+
@@ -3901,6 +3904,45 @@ VIEWS.more = {
         '</details>';
       }).join('')+'</div>'+
       '<div class="card"><div style="display:flex;align-items:center;gap:12px"><div style="flex:1"><b>'+esc(S.me.name)+'</b> <span class="pill">'+esc(S.me.role)+'</span>'+(DEMO?' <span class="pill a">체험 모드</span>':'')+'</div><button class="btn sm" onclick="logout()"><i class="ti ti-logout"></i>로그아웃</button></div></div>';
+  }
+};
+
+/* ---------- 총괄 관리 (총괄 전용) ---------- */
+var OWN = {ver:null, log:null};
+VIEWS.owner = {
+  html: function(){
+    var h='<div class="ph"><div><h1>총괄 관리</h1><p>계정 · 권한 · 작업판 반영 상태를 한 곳에서</p></div></div>';
+    if(!isOwner()) return h+'<div class="card"><div class="empty">총괄 계정만 볼 수 있어요</div></div>';
+    var U=S.users||[], cnt={총괄:0,관리자:0,직원:0}, off=0; U.forEach(function(u){ if(!u.active){ off++; return; } cnt[u.role]=(cnt[u.role]||0)+1; });
+    var base='https://select-in.github.io/sales-app/';
+    return h+'<div class="grid g2">'+
+      '<div class="card"><h2>지금 보는 곳</h2><div class="list">'+
+        '<div class="li"><div class="m"><div class="t">'+(HUBCH==='next'?'총괄 작업판':'직원 OPS')+' <span class="pill '+(HUBCH==='next'?'a':'g')+'">'+(HUBCH==='next'?'작업 중인 화면':'운영 화면')+'</span></div><div class="s">'+(HUBCH==='next'?'Claude가 바꾼 화면을 먼저 확인하는 곳 · 직원에게는 안 보여요':'진금영·직원이 쓰는 화면')+'</div></div></div>'+
+        '<div class="li"><div class="m"><div class="t">총괄 작업판</div><div class="s">'+base+'hub-next/</div></div><a class="btn sm" href="'+base+'hub-next/" target="_blank" rel="noopener">열기</a></div>'+
+        '<div class="li"><div class="m"><div class="t">직원 OPS</div><div class="s">'+base+'hub/</div></div><a class="btn sm" href="'+base+'hub/" target="_blank" rel="noopener">열기</a></div>'+
+      '</div></div>'+
+      '<div class="card"><h2>반영 상태</h2><div id="ownver"><div class="empty">확인 중…</div></div>'+
+        '<p style="margin:10px 0 0;font-size:13px;color:var(--mute)">작업판에서 확인이 끝나면 Claude에게 「직원 OPS에 반영해줘」라고 하면 돼요. 직원 화면은 보는 중에 새로고침되지 않고 「새 버전 적용」 버튼으로 바뀌어요.</p></div>'+
+      '<div class="card"><h2>계정 · 권한 <a class="btn sm" href="#settings">관리</a></h2><div class="list">'+
+        [['총괄','전체 + 관리자 계정·입금·수익·서버 설정·보관함'],['관리자','운영 기능 전체, 직원 계정 관리'],['직원','일반 기능']].map(function(r){ return '<div class="li"><span class="pill '+(r[0]==='총괄'?'b':r[0]==='관리자'?'g':'')+'">'+r[0]+'</span><div class="m"><div class="t num">'+(cnt[r[0]]||0)+'명</div><div class="s">'+r[1]+'</div></div></div>'; }).join('')+
+        (off?'<div class="li"><span class="pill r">사용 중지</span><div class="m"><div class="t num">'+off+'명</div></div></div>':'')+
+      '</div></div>'+
+      '<div class="card"><h2>최근 변경 내역</h2><div id="ownlog"><div class="empty">불러오는 중…</div></div></div>'+
+    '</div>';
+  },
+  bind: function(){
+    if(!isOwner()) return;
+    var b='https://select-in.github.io/sales-app/', bv=function(t){ var m=t&&t.match(/APP_BUILD = '([^']+)'/); return m?m[1]:'?'; };
+    Promise.all(['hub/','hub-next/'].map(function(x){ return fetch(b+x+'?v='+Date.now(),{cache:'no-store'}).then(function(r){ return r.ok?r.text():''; }).catch(function(){ return ''; }); })).then(function(t){
+      var a=bv(t[0]), n=bv(t[1]), same=t[0]&&t[1]&&t[0].length===t[1].length&&a===n, el=$('ownver'); if(!el) return;
+      el.innerHTML='<div class="list"><div class="li"><div class="m"><div class="t">직원 OPS</div><div class="s num">'+esc(a)+'</div></div></div><div class="li"><div class="m"><div class="t">총괄 작업판</div><div class="s num">'+esc(n)+'</div></div></div>'+
+        '<div class="li"><span class="pill '+(same?'g':'a')+'">'+(same?'같음':'반영 대기')+'</span><div class="m"><div class="s">'+(same?'직원 화면과 작업판이 같아요':'작업판에만 있는 변경이 있어요')+'</div></div></div></div>';
+    });
+    fetch('https://api.github.com/repos/select-in/sales-app/commits?per_page=12',{cache:'no-store'}).then(function(r){ return r.ok?r.json():[]; }).catch(function(){ return []; }).then(function(L){
+      var el=$('ownlog'); if(!el) return;
+      if(!L||!L.length){ el.innerHTML='<div class="empty">변경 내역을 불러오지 못했어요</div>'; return; }
+      el.innerHTML='<div class="list">'+L.map(function(c){ var d=new Date(Date.parse(c.commit.author.date)+9*36e5).toISOString(); return '<div class="li"><span class="pill num" style="flex-basis:84px;width:84px">'+d.slice(5,10)+' '+d.slice(11,16)+'</span><div class="m"><div class="t" style="white-space:normal;overflow-wrap:anywhere;font-size:14px">'+esc(String(c.commit.message).split('\n')[0].slice(0,120))+'</div></div></div>'; }).join('')+'</div>';
+    });
   }
 };
 

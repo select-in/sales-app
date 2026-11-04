@@ -73,13 +73,13 @@ function doPost(e) {
     var me = hubVerify_(req.token);
     if (!me) return hubOut_({ error: 'login' });
     if (req.ch === 'next' && !hubIsOwner_(me.role)) return hubOut_({ error: 'login' });
-    var admin = hubIsAdmin_(me.role);
+    var admin = hubIsAdmin_(me.role), owner = hubIsOwner_(me.role);
     switch (req.action) {
       case 'boot': return hubOut_(hubBoot_(me, req.compact));
       case 'product_save': return hubOut_(hubLocked_(function () { return hubProductSave_(req.p, me); }));
       case 'product_delete': if (!admin) return hubOut_({ error: '관리자만 삭제할 수 있습니다' });
         return hubOut_(hubLocked_(function () { return hubProductDelete_(req.id); }));
-      case 'products_purge_missing': if (!admin) return hubOut_({ error: '관리자만 삭제할 수 있습니다' });
+      case 'products_purge_missing': if (!owner) return hubOut_({ error: '총괄만 할 수 있어요' });
         return hubOut_(hubLocked_(function () { return hubPurgeMissing_(me, req.dry); }));
       case 'products_import': return hubOut_(hubLocked_(function () { return hubImport_(req.rows, me); }));
       case 'sbn_sync': if (!admin) return hubOut_({ error: '관리자만 사방넷 동기화를 할 수 있습니다' });
@@ -111,9 +111,9 @@ function doPost(e) {
         return hubOut_(hubLocked_(function () { return hubMcRawPut_(req); }));
       case 'nv_items': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });
         return hubOut_(hubNvItems_(req.from, req.to));
-      case 'cost_force_set': if (!admin) return hubOut_({ error: '관리자만 바꿀 수 있습니다' });
+      case 'cost_force_set': if (!owner) return hubOut_({ error: '총괄만 할 수 있어요' });
         return hubOut_(hubLocked_(function () { return hubCostForceSet_(req, me); }));
-      case 'cost_force_apply': if (!admin) return hubOut_({ error: '관리자만 실행할 수 있습니다' });   // dry=true: 쓰기 없이 미리보기
+      case 'cost_force_apply': if (!owner) return hubOut_({ error: '총괄만 할 수 있어요' });   // dry=true: 쓰기 없이 미리보기
         return hubOut_(req.dry ? hubCostForceApply_(req.from, req.to, true, req.ordMap) : hubLocked_(function () { return hubCostForceApply_(req.from, req.to, false, req.ordMap); }));
       case 'ig_data': return hubOut_(hubIgData_(me, req.force));   // 인스타그램 공구 영업 (일정 시트 읽기 + DM 기록)
       case 'ig_reply_link': return hubOut_(hubIgReplyLink_(req));   // 셀러 회신 링크 만들기
@@ -123,15 +123,15 @@ function doPost(e) {
         return hubOut_(hubLocked_(function () { return hubIgTplSave_(req.list || [], me); }));
       case 'events': return hubOut_(hubEvents_(req.force));   // 홈 행사 일정 캘린더 (공동구매 일정 시트 「일정」 탭, 읽기 전용)
       case 'sbn_reg_daily': return hubOut_(hubSbnRegDaily_(req.days, req.force));   // 사방넷 수집일 기준 법인별 건수 (조회 전용)
-      case 'archive_list': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });
+      case 'archive_list': if (!owner) return hubOut_({ error: '총괄만 할 수 있어요' });
         return hubOut_(hubLocked_(function () { var o = hubArchList_(); o.nv = hubNvStatus_(); return o; }));
-      case 'archive_save': if (!admin) return hubOut_({ error: '관리자만 바꿀 수 있습니다' });
+      case 'archive_save': if (!owner) return hubOut_({ error: '총괄만 할 수 있어요' });
         return hubOut_(hubLocked_(function () { return hubArchSave_(req, me); }));
-      case 'nv_save': if (!admin) return hubOut_({ error: '관리자만 바꿀 수 있습니다' });   // 스마트스토어 연결 정보 → 스크립트 속성 (화면에는 다시 보내지 않음)
+      case 'nv_save': if (!owner) return hubOut_({ error: '총괄만 할 수 있어요' });   // 스마트스토어 연결 정보 → 스크립트 속성 (화면에는 다시 보내지 않음)
         return hubOut_(hubNvSave_(req));
-      case 'nv_check': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 하루치 네이버 값과 매출판 비교 (쓰기 없음)
+      case 'nv_check': if (!owner) return hubOut_({ error: '총괄만 할 수 있어요' });   // 하루치 네이버 값과 매출판 비교 (쓰기 없음)
         return hubOut_({ ok: true, date: req.date, rows: hubNvRunDay_(String(req.date || ''), true) });
-      case 'nv_sync': if (!admin) return hubOut_({ error: '관리자만 실행할 수 있습니다' });
+      case 'nv_sync': if (!owner) return hubOut_({ error: '총괄만 할 수 있어요' });
         return hubOut_((function () { hubNvSync(); return { ok: true, status: hubNvStatus_() }; })());
       case 'month_close': if (!admin) return hubOut_({ error: '관리자만 볼 수 있습니다' });   // 월 마감 미리보기 (읽기 전용)
         return hubOut_(hubMonthClosePreview_(req.ym));
@@ -141,11 +141,11 @@ function doPost(e) {
         return hubOut_(hubMcdHistSet_(req.rows, me));
       case 'mc_hist_ops': if (!admin) return hubOut_({ error: '관리자만 실행할 수 있습니다' });   // 지난 달 비교 이력을 OPS 기준으로 다시 계산
         return hubOut_({ ok: true, rows: (req.yms || []).map(function (m) { return hubMcdHistFromOps_(hubMcYm_(m), me && me.name); }) });
-      case 'sbn_skip_fix': if (!admin) return hubOut_({ error: '관리자만 실행할 수 있습니다' });   // 스토어팜 중복 계정 사방넷 매출 0 처리
+      case 'sbn_skip_fix': if (!owner) return hubOut_({ error: '총괄만 할 수 있어요' });   // 스토어팜 중복 계정 사방넷 매출 0 처리
         return hubOut_(hubLocked_(hubSbnSkipFix_));
       case 'pzn_sales': if (!admin) return hubOut_({ error: '관리자만 실행할 수 있습니다' });   // 포이즌 거래 성공 → 매출판 비교(write면 반영)
         return hubOut_(req.write ? hubLocked_(function () { return hubPznSales_(hubMcYm_(req.ym), true, req.account, !!req.upOnly); }) : hubPznSales_(hubMcYm_(req.ym), false, req.account));
-      case 'sbn_resync': if (!admin) return hubOut_({ error: '관리자만 실행할 수 있습니다' });   // 매출판 그 달 사방넷 행을 지금 사방넷 API 값으로 맞춤
+      case 'sbn_resync': if (!owner) return hubOut_({ error: '총괄만 할 수 있어요' });   // 매출판 그 달 사방넷 행을 지금 사방넷 API 값으로 맞춤
         return hubOut_(hubLocked_(function () { return hubSbnResync_(hubMcYm_(req.ym)); }));
       case 'mc_dash': if (!admin) return hubOut_({ error: '관리자만 만들 수 있습니다' });   // 월마감 대시보드(내부 회의용) 만들기 → 구글시트 링크
         return hubOut_((function () { var x = hubMcdBuild_(hubMcYm_(req.ym), me && me.name); return { ok: true, url: x.url, sum: x.sum }; })());
@@ -968,7 +968,7 @@ function hubSalesYmd_(v, tz) {
 }
 function hubSales_(me) {
   var ss = SpreadsheetApp.openById(HUB_SALES_ID), tz = 'Asia/Seoul', today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
-  var admin = me && hubIsAdmin_(me.role);
+  var admin = me && hubIsOwner_(me.role);   // 입금 예정 금액·일자는 총괄만
   var sh = ss.getSheetByName('일별입력');
   if (!sh) return { error: "매출판에 '일별입력' 탭이 없어요" };
   var v = sh.getRange(1, 1, Math.max(1, sh.getLastRow()), sh.getLastColumn()).getValues();
@@ -2888,7 +2888,7 @@ function hubIgSched_(admin, force) {
 }
 function hubIgData_(me, force) {
   hubIgSeed_();
-  var admin = hubIsAdmin_(me.role), out = {};
+  var admin = hubIsOwner_(me.role), out = {};   // 셀렉트인 수익은 총괄만
   try { out.sched = hubIgSched_(admin, force); } catch (e) { out.sched = { rows: [], cols: [], err: '공구 일정 시트를 읽지 못했어요: ' + String(e.message || e).slice(0, 80) }; }
   var obj = function (tab, keys) { return hubRows_(tab).vals.filter(function (v) { return v[0] !== ''; }).map(function (v) { var o = {}; keys.forEach(function (k, i) { var x = v[i]; o[k] = x instanceof Date ? Utilities.formatDate(x, 'Asia/Seoul', 'yyyy-MM-dd') : x; }); return o; }); };
   out.dm = obj('인스타DM', ['handle', 'name', 'status', 'product', 'sentAt', 'followUp', 'note', 'log', 'updatedAt', 'by']).map(function (d) { try { d.log = d.log ? JSON.parse(d.log) : []; } catch (e) { d.log = []; } return d; });
@@ -2965,7 +2965,7 @@ function hubIgAi_(req, me) {
   else if (brand) ctx.push('제안 상품: ' + brand + ' (OPS 상품 자료 없음)');
   if (handle) {
     try {
-      var hist = hubIgSched_(hubIsAdmin_(me.role), false).rows.filter(function (r) { return String(r[7]).toLowerCase() === handle; }).slice(-8)
+      var hist = hubIgSched_(hubIsOwner_(me.role), false).rows.filter(function (r) { return String(r[7]).toLowerCase() === handle; }).slice(-8)
         .map(function (r) { return r[0] + '~' + r[1] + ' ' + r[5] + ' (' + r[2] + ', 매출 ' + r[11] + ')'; });
       ctx.push('셀러 @' + handle + ' 지난 공구: ' + (hist.length ? hist.join(' / ') : '없음(신규 셀러)'));
     } catch (e) {}
