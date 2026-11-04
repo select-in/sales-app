@@ -630,6 +630,12 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 .tbl td.num,.tbl td .num,.tbl td:not(:first-child) .c2>b{white-space:nowrap}
 .tbl .nm2>span,.tbl td:first-child:not(.c) .c2>span,.tbl td.c:first-child+td .c2>span{white-space:normal!important;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-overflow:clip}
 .tbl td:not(:first-child) .c2>span{white-space:normal;text-align:center}
+
+/* 상단 열린 탭: 모두 같은 너비 → 닫으면 다음 탭 × 가 같은 자리에 와서 연속으로 닫기 */
+.otab:not(.ohome){width:128px;justify-content:space-between;box-sizing:border-box}
+.otab:not(.ohome) span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+.otab .cx{flex:none;width:18px;text-align:center}
+@media (max-width:900px){.otab:not(.ohome){width:108px}}
 </style>
 </head>
 <body>
