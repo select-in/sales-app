@@ -612,6 +612,24 @@ nav .sgrp{font-size:11px;color:var(--mute);padding:6px 12px 2px 14px;letter-spac
 .navall button{flex:1;border:1px solid var(--line);background:var(--card);border-radius:7px;padding:5px 0;font-size:12px;color:var(--sub);cursor:pointer;font-family:inherit}
 .navall button:hover{color:var(--accent);border-color:var(--accent)}
 .otab span{white-space:nowrap}
+
+/* ===== 표 공통 (최종 규칙 · 개별 화면 규칙보다 우선) =====
+ * 칸 안 2단 내용(.c2)도 칸 정렬을 그대로 따름: 이름 칸 왼쪽, 나머지 가운데
+ * 내용이 칸 밖으로 나가지 않음: 이름은 2줄까지 줄바꿈 후 말줄임 */
+.tbl td .c2,.tbl td.r .c2,.tbl .r .c2{align-items:center!important}
+.tbl td:first-child:not(.c) .c2,.tbl td.c:first-child+td .c2{align-items:flex-start!important}
+.tbl td{overflow:hidden}
+.tbl td .c2{max-width:100%}
+.tbl td .c2>b,.tbl td .c2>span{max-width:100%}
+.tbl .nm2>b,.tbl td:first-child:not(.c) .c2>b,.tbl td.c:first-child+td .c2>b{white-space:normal!important;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;line-height:1.35}
+.tbl .nm2>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* 글자가 길면 칸 안에서 2줄로 (칸 밖으로 넘치지 않게) */
+.tbl td,.ktbl td{white-space:normal!important;word-break:keep-all;overflow-wrap:anywhere}
+.tbl td .pill{white-space:nowrap;margin:1px 2px}
+.tbl td.num,.tbl td .num,.tbl td:not(:first-child) .c2>b{white-space:nowrap}
+.tbl .nm2>span,.tbl td:first-child:not(.c) .c2>span,.tbl td.c:first-child+td .c2>span{white-space:normal!important;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-overflow:clip}
+.tbl td:not(:first-child) .c2>span{white-space:normal;text-align:center}
 </style>
 </head>
 <body>
