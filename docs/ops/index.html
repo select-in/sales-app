@@ -339,6 +339,27 @@ details.more>summary{font-size:13px;font-weight:600;color:var(--muted)}
 #bColList label{white-space:nowrap;display:flex;gap:6px;align-items:center}
 .pager{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;font-size:14px}
 .pager .btn{min-width:40px;font-size:16px;padding:6px 10px}
+/* ---- 휴대폰: 제안서 상품표를 카드형으로 ---- */
+@media (max-width:640px){
+  #pTable{min-width:0;display:block} #pTable thead{display:none} #pTable tbody{display:block}
+  #view-make .tbl-wrap{overflow:visible;border:0;border-radius:0}
+  #pTable tr{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;padding:14px 12px;margin-bottom:10px;border:1px solid var(--line);border-radius:12px;background:var(--panel);position:relative}
+  #pTable td{display:flex;flex-direction:column;justify-content:flex-end;gap:3px;padding:0;border:0!important;min-width:0;text-align:left!important}
+  #pTable td::before{content:attr(data-label);font-size:11.5px;font-weight:600;color:var(--muted);text-align:left}
+  #pTable td.calc{background:var(--calc);border-radius:8px;padding:6px 10px;text-align:right!important;white-space:normal}
+  #pTable td.m-img{grid-column:1/2}
+  #pTable td.m-img::before,#pTable td.m-del::before{content:none}
+  #pTable td.m-name{grid-column:1/-1}
+  #pTable td.m-del{position:absolute;top:8px;right:8px}
+  #pTable td.m-del .del{width:36px;height:36px;font-size:15px}
+  #pTable td.empty{grid-column:1/-1;text-align:center!important}
+  #pTable td.empty::before{content:none}
+  #pTable td input,#pTable td select{font-size:16px!important;padding:9px 10px;min-height:42px}
+  #pTable .thumb{width:72px;height:72px}
+  #pTable.nokream td.col-kream{display:none}
+  .hideint #pTable td.ic{display:none}
+  #btnAddRow{min-height:44px}
+}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -910,7 +931,34 @@ let selected = new Set();
 let draft = lsGet('sel_draft', null) || newDraft();
 function newDraft() { return { pid: uid(), brand: '', supplier: '', info: { ...settings.info }, aiKeys: [], rows: [], notes: '' }; }
 /* 이미지(220px JPEG)까지 저장 — 브라우저 저장 공간이 모자라면 이미지만 빼고 저장 */
-const saveDraft = () => { try { localStorage.setItem('sel_draft', JSON.stringify(draft)); } catch { lsSet('sel_draft', { ...draft, rows: draft.rows.map(r => ({ ...r, img: null })) }); } };
+const saveDraftLocal = () => { try { localStorage.setItem('sel_draft', JSON.stringify(draft)); } catch { lsSet('sel_draft', { ...draft, rows: draft.rows.map(r => ({ ...r, img: null })) }); } };
+/* 작성 중인 제안서: ① 이 기기 ② 팀 저장소 drafts/proposal (1.2초 뒤) — 휴대폰·PC 어디서 고쳐도 이어서 작업 */
+let pDraftTimer = null, pDraftDirty = false;
+const saveDraft = () => { draft.savedAt = Date.now(); saveDraftLocal(); pDraftDirty = true; clearTimeout(pDraftTimer); pDraftTimer = setTimeout(saveDraftPRemote, 1200); };
+async function saveDraftPRemote() {
+  if (!db) { pDraftDirty = false; return; }
+  const at = draft.savedAt || Date.now();
+  try { await db.doc('drafts/proposal').set({ state: JSON.stringify(draft), savedAt: at }); }
+  catch (e) {   // 이미지가 너무 크면 이미지 빼고라도 저장
+    try { await db.doc('drafts/proposal').set({ state: JSON.stringify({ ...draft, rows: draft.rows.map(r => ({ ...r, img: null })) }), savedAt: at }); }
+    catch (e2) { setSync(false, '⚠ 제안서 저장 실패 — 이 기기에만 저장됨'); return; }
+  }
+  if ((draft.savedAt || 0) === at) pDraftDirty = false;
+  setSync(true, `제안서 자동 저장됨 ${nowHM()}`);
+}
+async function loadDraftPRemote(force) {
+  if (!db || pDraftDirty) return false;
+  try {
+    const d = await db.doc('drafts/proposal').get(); if (!d.exists) return false;
+    const v = d.data(); if (!v.state || (!force && (draft.savedAt || 0) >= (v.savedAt || 0)) || pDraftDirty) return false;
+    const a = document.activeElement; if (!force && a && $('#view-make').contains(a) && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) return false;   // 입력 중엔 덮어쓰지 않음
+    draft = { ...newDraft(), ...JSON.parse(v.state) }; draft.savedAt = v.savedAt; saveDraftLocal(); renderDraft();
+    setSync(true, `다른 기기에서 고친 제안서 불러옴 ${nowHM()}`);
+    return true;
+  } catch { return false; }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') loadDraftPRemote(); });
+setInterval(() => { if (document.visibilityState === 'visible') loadDraftPRemote(); }, 30000);
 
 /* ---------- 탭 ---------- */
 document.querySelectorAll('nav.tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
@@ -987,6 +1035,9 @@ function renderRows() {
     const del = document.createElement('button'); del.className = 'btn ghost del'; del.textContent = '✕'; del.title = '행 삭제'; del.setAttribute('aria-label', '행 삭제');
     del.onclick = () => { draft.rows.splice(idx, 1); saveDraft(); renderRows(); };
     tr.append(td(del));
+    const LB = ['이미지', '카테고리', '상품명', '정상판매가', '크림 최저가', '공구 판매가', '할인율', '매입원가', '원 수수료%', '공급가 (VAT포함)', '인플 마진', '제안 수수료%', '셀렉트인 순마진', ''];
+    [...tr.cells].forEach((c, i) => { c.dataset.label = LB[i] || ''; });
+    tr.cells[0].classList.add('m-img'); tr.cells[2].classList.add('m-name'); tr.cells[13].classList.add('m-del');
     tb.append(tr); paintCalc(tr, r);
   });
   renderKpis(); schedulePreview();
@@ -2559,6 +2610,7 @@ $('#btnRefresh').onclick = async () => {
     }
     if (typeof sdb !== 'undefined' && sdb) { try { hist = await store.list('settlements'); } catch {} }
     renderSettings(); renderDraft(); renderBuy();
+    if (db) { clearTimeout(pDraftTimer); if (pDraftDirty) await saveDraftPRemote(); else await loadDraftPRemote(); }
     if (typeof renderHistory === 'function') renderHistory();
     const t = new Date(); setSync(!!db, `${db ? '팀 공유 저장소' : '이 브라우저'} · ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')} 갱신`);
   } catch (e) { setSync(false, '새로고침 실패: ' + (e.code || e.message || '')); }
@@ -2579,6 +2631,7 @@ function setSync(on, txt) { $('#syncDot').className = 'dot' + (on ? ' on' : '');
     db = d;
     if (!db) { setSync(false, '이 브라우저에만 저장'); return; }
     setSync(true, '팀 공유 저장소 연결됨');
+    loadDraftPRemote().then(ok => { if (!ok && !pDraftDirty && (draft.rows.length || draft.brand)) saveDraftPRemote(); });
     db.collection('brands').onSnapshot(s => { s.docs.forEach(d => { const v = d.data(); if (v.name && Array.isArray(v.ko)) brandAlias[norm(v.name)] = v.ko; }); lsSet('sel_brand_alias', brandAlias); }, () => {});
     db.doc('config/main').onSnapshot(s => {
       if (!s.exists) return; const v = s.data();
