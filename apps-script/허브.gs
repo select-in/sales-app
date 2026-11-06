@@ -2879,16 +2879,23 @@ var HUB_IG_TPL_ = [
   ['재진행 제안 (기존 셀러)', '{이름}님 안녕하세요! 셀렉트인입니다 :)\n지난번 {지난공구} 공구 함께해주셔서 정말 감사했어요.\n\n이번 시즌에 [{상품}] 조건이 좋게 나와서 {이름}님께 먼저 여쭤보고 싶었어요.\n· 상품: {라인}\n· 일정: 원하시는 주차로 맞춰드릴게요\n\n괜찮으시면 일정 가능하신 주 알려주세요!'],
   ['팔로업 (3일 무응답)', '{이름}님 안녕하세요, 셀렉트인입니다.\n지난번 보내드린 [{상품}] 공구 제안 혹시 확인하셨을까요?\n부담 없이 의견만 주셔도 괜찮아요. 샘플 먼저 받아보시는 것도 가능합니다 :)']
 ];
-/* 본사(업체) 링크 공구: 시트 P열(수량 칸)에 총 매출, Q열에 셀렉트인이 받은 수수료를 적는 경우 → 매출은 총 매출, comm=셀렉트인 수수료 */
-function hubIgExt_(r) { var p = hubNum_(r[15]), q = hubNum_(r[16]); return (p >= 100000 && p > q) ? 1 : 0; }
-function hubIgSales_(r) { return hubIgExt_(r) ? hubNum_(r[15]) : hubNum_(r[16]); }
+/* 본사(업체) 링크 공구: 시트 「수량」 칸에 총 매출, 「매출」 칸에 셀렉트인이 받은 수수료를 적는 경우 → 매출은 총 매출, comm=셀렉트인 수수료 */
+/* 열 위치는 3행 머리글로 찾는다 → 시트에 열을 추가·이동해도 그대로 동작 (못 찾으면 예전 위치 P·Q·AC) */
+function hubIgCols_(hdr) {
+  var I = {}; (hdr || []).forEach(function (c, j) { var k = String(c).replace(/\s+/g, ''); if (k && !(k in I)) I[k] = j; });
+  var f = function (k, d) { return I[k] != null ? I[k] : d; };
+  return { qty: f('수량', 15), sales: f('매출', 16), profit: f('셀렉트인최종매출', 28) };
+}
+function hubIgExt_(r, C) { C = C || hubIgCols_(); var p = hubNum_(r[C.qty]), q = hubNum_(r[C.sales]); return (p >= 100000 && p > q) ? 1 : 0; }
+function hubIgSales_(r, C) { C = C || hubIgCols_(); return hubIgExt_(r, C) ? hubNum_(r[C.qty]) : hubNum_(r[C.sales]); }
 function hubIgSched_(admin, force) {
-  var cache = CacheService.getScriptCache(), key = 'ig_sched_v3';
+  var cache = CacheService.getScriptCache(), key = 'ig_sched_v4';
   var base = null;
   if (!force) { var hit = cache.get(key); if (hit) try { base = JSON.parse(hit); } catch (e) {} }
   if (!base) {
     var sh = SpreadsheetApp.openById(HUB_EVENT_ID).getSheetByName('일정');
-    var v = sh.getRange(4, 1, Math.max(1, sh.getLastRow() - 3), 29).getDisplayValues(), rows = [];
+    var W = Math.max(29, sh.getLastColumn()), C = hubIgCols_(sh.getRange(3, 1, 1, W).getDisplayValues()[0]);
+    var v = sh.getRange(4, 1, Math.max(1, sh.getLastRow() - 3), W).getDisplayValues(), rows = [];
     v.forEach(function (r) {
       var ym = String(r[0]).trim(), m = String(r[1]).replace(/\s/g, '').match(/^(\d{2})(\d{2})-(\d{2})?(\d{2})?$/);
       if (!/^\d{6}$/.test(ym) || !m) return;
@@ -2896,7 +2903,7 @@ function hubIgSched_(admin, force) {
       var sy = y + (sm - ymM > 6 ? -1 : ymM - sm > 6 ? 1 : 0), ey = sy + (em < sm ? 1 : 0);
       var a = sy + '-' + m[1] + '-' + m[2], b = m[3] ? ey + '-' + m[3] + '-' + m[4] : a;
       var link = String(r[7]).trim(), hm = link.match(/instagram\.com\/([A-Za-z0-9._]+)/);
-      rows.push([a, b, String(r[2]).trim(), String(r[3]).trim(), String(r[4]).trim(), String(r[5]).replace(/\s+/g, ' ').trim(), String(r[6]).trim(), hm ? hm[1] : '', String(r[8]).trim(), String(r[9]).trim(), String(r[10]).trim(), hubIgSales_(r), hubNum_(r[28]), hubIgExt_(r), hubIgExt_(r) ? hubNum_(r[16]) : 0]);
+      rows.push([a, b, String(r[2]).trim(), String(r[3]).trim(), String(r[4]).trim(), String(r[5]).replace(/\s+/g, ' ').trim(), String(r[6]).trim(), hm ? hm[1] : '', String(r[8]).trim(), String(r[9]).trim(), String(r[10]).trim(), hubIgSales_(r, C), hubNum_(r[C.profit]), hubIgExt_(r, C), hubIgExt_(r, C) ? hubNum_(r[C.sales]) : 0]);
     });
     base = { cols: ['a', 'b', 'st', 'kind', 'vendor', 'title', 'seller', 'handle', 'brand', 'fee', 'sfee', 'sales', 'profit', 'ext', 'comm'], rows: rows, at: Utilities.formatDate(new Date(), 'Asia/Seoul', 'MM-dd HH:mm') };
     try { cache.put(key, JSON.stringify(base), 600); } catch (e) {}
