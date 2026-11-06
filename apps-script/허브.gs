@@ -2880,14 +2880,16 @@ var HUB_IG_TPL_ = [
   ['팔로업 (3일 무응답)', '{이름}님 안녕하세요, 셀렉트인입니다.\n지난번 보내드린 [{상품}] 공구 제안 혹시 확인하셨을까요?\n부담 없이 의견만 주셔도 괜찮아요. 샘플 먼저 받아보시는 것도 가능합니다 :)']
 ];
 /* 본사(업체) 링크 공구: 시트 「수량」 칸에 총 매출, 「매출」 칸에 셀렉트인이 받은 수수료를 적는 경우 → 매출은 총 매출, comm=셀렉트인 수수료 */
-/* 열 위치는 3행 머리글로 찾는다 → 시트에 열을 추가·이동해도 그대로 동작 (못 찾으면 예전 위치 P·Q·AC) */
+/* 열 위치는 3행 머리글로 찾는다 → 시트에 열을 추가·이동해도 그대로 동작.
+ * 제목을 못 찾으면 틀린 열을 읽지 않도록 오류로 멈춘다 (교차 검증 반영, 2026-11-06) */
 function hubIgCols_(hdr) {
   var I = {}; (hdr || []).forEach(function (c, j) { var k = String(c).replace(/\s+/g, ''); if (k && !(k in I)) I[k] = j; });
-  var f = function (k, d) { return I[k] != null ? I[k] : d; };
-  return { qty: f('수량', 15), sales: f('매출', 16), profit: f('셀렉트인최종매출', 28) };
+  var miss = ['수량', '매출', '셀렉트인최종매출'].filter(function (k) { return I[k] == null; });
+  if (miss.length) throw new Error('일정 탭 3행에서 「' + miss.join('·') + '」 제목을 못 찾았어요');
+  return { qty: I['수량'], sales: I['매출'], profit: I['셀렉트인최종매출'] };
 }
-function hubIgExt_(r, C) { C = C || hubIgCols_(); var p = hubNum_(r[C.qty]), q = hubNum_(r[C.sales]); return (p >= 100000 && p > q) ? 1 : 0; }
-function hubIgSales_(r, C) { C = C || hubIgCols_(); return hubIgExt_(r, C) ? hubNum_(r[C.qty]) : hubNum_(r[C.sales]); }
+function hubIgExt_(r, C) { var p = hubNum_(r[C.qty]), q = hubNum_(r[C.sales]); return (p >= 100000 && p > q) ? 1 : 0; }
+function hubIgSales_(r, C) { return hubIgExt_(r, C) ? hubNum_(r[C.qty]) : hubNum_(r[C.sales]); }
 function hubIgSched_(admin, force) {
   var cache = CacheService.getScriptCache(), key = 'ig_sched_v4';
   var base = null;
